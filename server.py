@@ -15,7 +15,11 @@ import geo_audit
 
 app = FastAPI(title="GEO Audit · verticalai")
 
-# Cache in memoria dei report (Fase A). In Fase B → Supabase (persistente).
+# Vercel sets this env var in all serverless invocations.
+# On Vercel: no Playwright, no PDF, no in-memory RESULTS (stateless).
+IS_VERCEL = bool(os.environ.get("VERCEL"))
+
+# Cache in memoria dei report (solo quando non su Vercel). In Fase B → Supabase.
 RESULTS: dict[str, dict] = {}
 MAX_RESULTS = 200
 
@@ -40,7 +44,14 @@ a{{color:#9B8CFF}}</style></head><body><div>{body}</div></body></html>"""
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return FORM_HTML
+    if not IS_VERCEL:
+        return FORM_HTML
+    # On Vercel: remove 20-page option and default to 6 (timeout headroom)
+    form = (FORM_HTML
+            .replace('<option value="20">20 — approfondito</option>', '')
+            .replace('<option value="12" selected>12 — consigliato</option>',
+                     '<option value="6" selected>6 — consigliato</option>'))
+    return form
 
 
 @app.get("/health")
@@ -53,14 +64,29 @@ async def scan(url: str = Form(...), max_pages: int = Form(12)):
     url = (url or "").strip()
     if not url:
         return RedirectResponse("/", status_code=303)
-    max_pages = max(1, min(int(max_pages or 12), 40))
+
+    if IS_VERCEL:
+        # No Playwright on serverless; cap pages to stay within the 60s timeout.
+        effective_pages = max(1, min(int(max_pages or 6), 8))
+        render = False
+    else:
+        effective_pages = max(1, min(int(max_pages or 12), 40))
+        render = True
+
     try:
-        res = await run_in_threadpool(geo_audit.run_audit, url, max_pages, True, False)
+        res = await run_in_threadpool(
+            geo_audit.run_audit, url, effective_pages, render, False
+        )
     except Exception as e:
         return HTMLResponse(
             _page("Errore", f"<h2>Non riesco ad analizzare questo sito</h2>"
                   f"<p>{geo_audit.esc(str(e))}</p><p><a href='/'>← Riprova</a></p>"),
             status_code=400)
+
+    if IS_VERCEL:
+        # Stateless: return HTML directly, no storage, no redirect.
+        return HTMLResponse(_inject_bar(res["html"], rid=None))
+
     rid = uuid.uuid4().hex[:12]
     RESULTS[rid] = {"html": res["html"], "ts": time.time(),
                     "domain": res["domain"], "overall": res["overall"]}
@@ -69,15 +95,25 @@ async def scan(url: str = Form(...), max_pages: int = Form(12)):
 
 
 def _inject_bar(html, rid):
-    bar = (
-        f'<div style="position:fixed;top:14px;right:14px;z-index:999;display:flex;gap:8px;'
-        f'font-family:system-ui,sans-serif">'
-        f'<a href="/r/{rid}/pdf" style="background:#6C5CE7;color:#fff;text-decoration:none;'
-        f'font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px">↓ PDF</a>'
-        f'<a href="/" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
-        f'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">Nuova analisi</a>'
-        f'</div>'
-    )
+    if rid is None:
+        # Vercel: PDF not available, only "new scan" button.
+        bar = (
+            '<div style="position:fixed;top:14px;right:14px;z-index:999;'
+            'font-family:system-ui,sans-serif">'
+            '<a href="/" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
+            'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
+            'Nuova analisi</a></div>'
+        )
+    else:
+        bar = (
+            f'<div style="position:fixed;top:14px;right:14px;z-index:999;display:flex;gap:8px;'
+            f'font-family:system-ui,sans-serif">'
+            f'<a href="/r/{rid}/pdf" style="background:#6C5CE7;color:#fff;text-decoration:none;'
+            f'font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px">↓ PDF</a>'
+            f'<a href="/" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
+            f'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">Nuova analisi</a>'
+            f'</div>'
+        )
     return html.replace('<div class="sheet">', bar + '<div class="sheet">', 1)
 
 
@@ -93,6 +129,10 @@ def report(rid: str):
 
 @app.get("/r/{rid}/pdf")
 def report_pdf(rid: str):
+    if IS_VERCEL:
+        return HTMLResponse(_page("PDF non disponibile",
+            "<h2>PDF non disponibile su questa piattaforma</h2>"
+            "<p><a href='/'>← Nuova analisi</a></p>"), status_code=410)
     r = RESULTS.get(rid)
     if not r:
         return HTMLResponse(_page("Non trovato", "<h2>Report non disponibile</h2>"), status_code=404)

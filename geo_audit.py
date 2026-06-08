@@ -807,8 +807,41 @@ def run_audit(url, max_pages=20, render=True, respect_robots=False, log=lambda *
             "site_checks": [c.__dict__ for c in site.site_checks]}
 
 
+def _patch_macos_weasyprint():
+    # On macOS with Homebrew (Apple Silicon), ctypes.util.find_library() doesn't
+    # search /opt/homebrew/lib, so WeasyPrint falls back to the Linux name
+    # "libpango-1.0-0" which doesn't exist. We patch find_library to return the
+    # correct .dylib path before WeasyPrint is imported.
+    import sys
+    if sys.platform != "darwin":
+        return
+    import ctypes.util, os
+    brew = "/opt/homebrew/lib"
+    _libs = {
+        "pango-1.0":      "libpango-1.0.0.dylib",
+        "pangocairo-1.0": "libpangocairo-1.0.0.dylib",
+        "pangoft2-1.0":   "libpangoft2-1.0.0.dylib",
+        "cairo":          "libcairo.2.dylib",
+        "gdk_pixbuf-2.0": "libgdk_pixbuf-2.0.0.dylib",
+        "gobject-2.0":    "libgobject-2.0.0.dylib",
+        "glib-2.0":       "libglib-2.0.0.dylib",
+        "fontconfig":     "libfontconfig.1.dylib",
+        "freetype":       "libfreetype.6.dylib",
+    }
+    _orig = ctypes.util.find_library
+    def _patched(name):
+        dylib = _libs.get(name)
+        if dylib:
+            path = os.path.join(brew, dylib)
+            if os.path.exists(path):
+                return path
+        return _orig(name)
+    ctypes.util.find_library = _patched
+
+
 def render_pdf(html):
     """Ritorna i byte del PDF a partire dall'HTML del report (richiede WeasyPrint)."""
+    _patch_macos_weasyprint()
     from weasyprint import HTML
     return HTML(string=html).write_pdf()
 
