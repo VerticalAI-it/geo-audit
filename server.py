@@ -54,6 +54,16 @@ def _sb_get(job_id: str) -> dict | None:
     return d[0] if d else None
 
 
+def _sb_get_by_email(email: str) -> list:
+    r = req.get(f"{SUPABASE_URL}/rest/v1/audits",
+                headers=_SB_H,
+                params={"pending_email": f"eq.{email}",
+                        "select": "id,domain,overall,grade,created_at",
+                        "order": "created_at.desc"},
+                timeout=10)
+    return r.json() if r.ok else []
+
+
 # ── Token helpers ────────────────────────────────────────────────────────────
 
 def _make_token(job_id: str) -> str:
@@ -138,6 +148,9 @@ def _inject_bar(html: str) -> str:
         '<a href="#" onclick="window.print();return false;" '
         'style="background:#6C5CE7;color:#fff;text-decoration:none;'
         'font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px">↓ PDF</a>'
+        '<a href="/miei-report" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
+        'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
+        'I miei report</a>'
         '<a href="/" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
         'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
         "Nuova analisi</a></div>"
@@ -150,10 +163,11 @@ def _inject_gate(html: str, job_id: str) -> str:
     gate = f"""
 <style>
 @media print{{.geo-gate-blur,.geo-gate-overlay{{display:none!important}}}}
+html,body{{overflow:hidden!important;height:100vh!important}}
 .geo-gate-blur{{
-  position:fixed;inset:360px 0 0 0;
-  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
-  background:linear-gradient(to bottom,transparent,rgba(11,11,22,.97) 100px);
+  position:fixed;inset:480px 0 0 0;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  background:linear-gradient(to bottom,transparent 0,rgba(11,11,22,.98) 140px);
   z-index:200;pointer-events:none
 }}
 .geo-gate-overlay{{
@@ -301,13 +315,11 @@ def unlock(job_id: str, email: str = Form(...)):
     if not email:
         return Response(status_code=400)
 
-    # Salva email su Supabase
     try:
         _sb_patch(job_id, {"pending_email": email})
     except Exception:
         pass
 
-    # Recupera dati per l'email
     try:
         job = _sb_get(job_id)
         domain  = job.get("domain") or job.get("url") or "il sito"
@@ -322,3 +334,137 @@ def unlock(job_id: str, email: str = Form(...)):
         pass
 
     return Response(status_code=200)
+
+
+_MIEI_REPORT_PAGE = """<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>I miei report · GEO Audit</title>
+<style>
+:root{{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}}
+*{{box-sizing:border-box}}
+body{{margin:0;min-height:100vh;background:var(--bg);color:var(--text);
+  font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}}
+.wrap{{width:100%;max-width:480px}}
+h1{{font-size:22px;font-weight:800;margin:0 0 8px}}
+p.sub{{color:var(--muted);font-size:14px;margin:0 0 24px}}
+form{{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}}
+label{{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}}
+input[type=email]{{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  color:var(--text);font-size:15px;padding:12px 14px;font-family:inherit;outline:none}}
+input[type=email]:focus{{border-color:var(--violet)}}
+button{{width:100%;margin-top:12px;background:var(--violet);color:#fff;border:none;
+  border-radius:10px;font-weight:700;font-size:15px;padding:13px;cursor:pointer;font-family:inherit}}
+button:hover{{background:#5b4bd8}}
+.back{{display:block;margin-top:16px;font-size:13px;color:var(--muted);text-decoration:none;text-align:center}}
+.back:hover{{color:var(--text)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>I miei report</h1>
+  <p class="sub">Inserisci l'email con cui hai richiesto i report: ti inviamo tutti i link.</p>
+  <form method="post" action="/miei-report">
+    <label for="email">La tua email</label>
+    <input id="email" name="email" type="email" placeholder="nome@esempio.it" required autofocus>
+    <button type="submit">Inviami i link →</button>
+  </form>
+  <a class="back" href="/">← Nuova analisi</a>
+</div>
+</body>
+</html>"""
+
+_MIEI_REPORT_SENT = """<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Email inviata · GEO Audit</title>
+<style>
+body{{margin:0;min-height:100vh;background:#0B0B16;color:#F2F1F8;
+  font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:24px}}
+h2{{font-size:22px;font-weight:800;margin:0 0 10px}}
+p{{color:#9C99B5;font-size:14px;margin:0 0 20px}}
+a{{color:#9B8CFF;font-size:14px}}
+</style>
+</head>
+<body>
+<div>
+  <h2>✓ Email inviata</h2>
+  <p>Controlla la tua casella: troverai i link a tutti i report associati a quell'indirizzo.</p>
+  <a href="/">← Nuova analisi</a>
+</div>
+</body>
+</html>"""
+
+
+def _send_my_reports_email(to: str, jobs: list):
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    rows = ""
+    for j in jobs:
+        token = _make_token(j["id"])
+        link  = f"{SITE_URL}/r/{j['id']}?token={token}"
+        score_color = "#00b894" if (j.get("overall") or 0) >= 75 else ("#fdcb6e" if (j.get("overall") or 0) >= 45 else "#d63031")
+        rows += (
+            f'<tr><td style="padding:10px 0;border-bottom:1px solid #2A2640">'
+            f'<b style="color:#F2F1F8">{j.get("domain","?")}</b>'
+            f'<span style="color:{score_color};font-weight:700;margin-left:10px">{j.get("overall","?")}/100</span>'
+            f'<span style="color:#9C99B5;margin-left:6px">({j.get("grade","?")})</span></td>'
+            f'<td style="padding:10px 0 10px 16px;border-bottom:1px solid #2A2640;text-align:right">'
+            f'<a href="{link}" style="color:#9B8CFF;text-decoration:none;font-size:13px">Apri →</a>'
+            f'</td></tr>'
+        )
+    html = f"""<!doctype html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0B0B16;color:#F2F1F8;font-family:system-ui,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:40px auto;padding:0 16px">
+<tr><td>
+  <p style="font-size:13px;color:#9C99B5;margin:0 0 24px">
+    <b style="color:#9B8CFF">vertical</b><span style="color:#9C99B5">ai</span> · GEO Audit
+  </p>
+  <h1 style="font-size:22px;font-weight:800;margin:0 0 8px">I tuoi report GEO</h1>
+  <p style="color:#9C99B5;font-size:14px;margin:0 0 20px">
+    Ecco tutti i report associati a {to}.
+  </p>
+  <table width="100%" cellpadding="0" cellspacing="0">{rows}</table>
+  <p style="font-size:12px;color:#6E6B86;margin-top:24px;line-height:1.6">
+    I link sono personali e danno accesso diretto al report completo.
+  </p>
+</td></tr>
+</table>
+</body></html>"""
+    req.post("https://api.resend.com/emails",
+             json={"from": FROM_EMAIL, "to": [to],
+                   "subject": "I tuoi report GEO Audit",
+                   "html": html},
+             headers={"Authorization": f"Bearer {RESEND_KEY}",
+                      "Content-Type": "application/json"},
+             timeout=10)
+
+
+@app.get("/miei-report", response_class=HTMLResponse)
+def miei_report_form():
+    return HTMLResponse(_MIEI_REPORT_PAGE)
+
+
+@app.post("/miei-report", response_class=HTMLResponse)
+def miei_report_send(email: str = Form(...)):
+    email = (email or "").strip().lower()
+    if not email:
+        return RedirectResponse("/miei-report", status_code=303)
+
+    try:
+        jobs = _sb_get_by_email(email)
+    except Exception:
+        jobs = []
+
+    if jobs:
+        try:
+            _send_my_reports_email(email, jobs)
+        except Exception:
+            pass
+
+    return HTMLResponse(_MIEI_REPORT_SENT)
