@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt && \
+    pip install "weasyprint>=60" "playwright>=1.44"
 
 # Chromium + le sue dipendenze di sistema (per il rendering JS)
 RUN playwright install --with-deps chromium
