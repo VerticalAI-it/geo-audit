@@ -95,26 +95,32 @@ async def scan(url: str = Form(...), max_pages: int = Form(12)):
 
 
 def _inject_bar(html, rid):
+    # Hide the bar when the user prints to PDF (applies to both Vercel and local).
+    hide_on_print = '<style>@media print{#geo-bar{display:none}}</style>'
+
     if rid is None:
-        # Vercel: PDF not available, only "new scan" button.
+        # Vercel: no server-side PDF — use browser print instead (CSS already set for A4).
         bar = (
-            '<div style="position:fixed;top:14px;right:14px;z-index:999;'
-            'font-family:system-ui,sans-serif">'
+            '<div id="geo-bar" style="position:fixed;top:14px;right:14px;z-index:999;'
+            'display:flex;gap:8px;font-family:system-ui,sans-serif">'
+            '<a href="#" onclick="window.print();return false;" '
+            'style="background:#6C5CE7;color:#fff;text-decoration:none;'
+            'font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px">↓ PDF</a>'
             '<a href="/" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
             'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
             'Nuova analisi</a></div>'
         )
     else:
         bar = (
-            f'<div style="position:fixed;top:14px;right:14px;z-index:999;display:flex;gap:8px;'
-            f'font-family:system-ui,sans-serif">'
+            f'<div id="geo-bar" style="position:fixed;top:14px;right:14px;z-index:999;'
+            f'display:flex;gap:8px;font-family:system-ui,sans-serif">'
             f'<a href="/r/{rid}/pdf" style="background:#6C5CE7;color:#fff;text-decoration:none;'
             f'font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px">↓ PDF</a>'
             f'<a href="/" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
             f'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">Nuova analisi</a>'
             f'</div>'
         )
-    return html.replace('<div class="sheet">', bar + '<div class="sheet">', 1)
+    return html.replace('<div class="sheet">', hide_on_print + bar + '<div class="sheet">', 1)
 
 
 @app.get("/r/{rid}", response_class=HTMLResponse)
