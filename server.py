@@ -267,8 +267,9 @@ async def scan(url: str = Form(...)):
 
     if job_id:
         return RedirectResponse(f"/r/{job_id}", status_code=303)
-    # Fallback se Supabase non disponibile: mostra il report direttamente
-    return HTMLResponse(_inject_bar(res["html"]))
+    # Fallback se Supabase non disponibile: mostra comunque il gate inline
+    # (il link email non funzionerà, ma il gate appare)
+    return HTMLResponse(_inject_gate(res["html"], "offline"))
 
 
 @app.get("/r/{job_id}", response_class=HTMLResponse)
