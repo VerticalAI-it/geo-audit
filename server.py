@@ -8,6 +8,7 @@ Avvio locale (richiede variabili d'ambiente da .env):
 import os, json
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, Response, RedirectResponse, JSONResponse
+from pydantic import BaseModel
 from supabase import create_client, Client
 
 import geo_audit
@@ -89,7 +90,18 @@ def get_current_user(request: Request):
         return None
 
 
+# ──────────────────────────────────────────── Request models
+
+class SessionBody(BaseModel):
+    access_token: str
+    refresh_token: str = ""
+    job_id: str = ""
+
+
 # ──────────────────────────────────────────── Endpoints
+# Tutti gli handler sono sync (`def`, non `async def`) perché supabase-py usa
+# httpx in modalità sincrona. FastAPI esegue i handler sync in un threadpool,
+# evitando il blocco dell'event loop.
 
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -102,7 +114,7 @@ def health():
 
 
 @app.post("/scan")
-async def scan(url: str = Form(...)):
+def scan(url: str = Form(...)):
     url = (url or "").strip()
     if not url:
         return RedirectResponse("/", status_code=303)
@@ -115,7 +127,7 @@ async def scan(url: str = Form(...)):
 
 
 @app.get("/job/{job_id}/gate", response_class=HTMLResponse)
-async def gate(job_id: str, request: Request):
+def gate(job_id: str, request: Request):
     res = (sb_svc.table("audits")
                  .select("id,url,domain,status,user_id")
                  .eq("id", job_id)
@@ -128,7 +140,7 @@ async def gate(job_id: str, request: Request):
         )
     job = res.data[0]
 
-    # Se il report è pronto e l'utente già autenticato, vai direttamente al report
+    # Se il report è pronto e l'utente è già autenticato, vai al report
     user = get_current_user(request)
     if job["status"] == "done" and user and job.get("user_id") == str(user.id):
         return RedirectResponse(f"/r/{job_id}", status_code=303)
@@ -142,12 +154,12 @@ async def gate(job_id: str, request: Request):
 
 
 @app.post("/job/{job_id}/request-access")
-async def request_access(job_id: str, email: str = Form(...)):
+def request_access(job_id: str, email: str = Form(...)):
     email = (email or "").strip().lower()
     if not email:
         return Response(status_code=400)
 
-    # Salva l'email nel job (usata dal cron per inviare la notifica)
+    # Salva l'email nel job (usata dal cron per la notifica)
     sb_svc.table("audits").update({"pending_email": email}).eq("id", job_id).execute()
 
     # Invia magic link — Supabase Auth gestisce il double opt-in nativamente
@@ -164,23 +176,18 @@ async def request_access(job_id: str, email: str = Form(...)):
 
 
 @app.get("/auth/callback", response_class=HTMLResponse)
-async def auth_callback():
+def auth_callback():
     # Il job_id è nel query string e viene letto dal JS nella pagina
     return HTMLResponse(AUTH_CALLBACK_HTML)
 
 
 @app.post("/auth/set-session")
-async def set_session(request: Request):
-    body = await request.json()
-    access_token  = body.get("access_token", "")
-    refresh_token = body.get("refresh_token", "")
-    job_id        = body.get("job_id", "")
-
-    if not access_token:
+def set_session(body: SessionBody):
+    if not body.access_token:
         return JSONResponse({"error": "missing token"}, status_code=400)
 
     try:
-        user = sb_anon.auth.get_user(access_token).user
+        user = sb_anon.auth.get_user(body.access_token).user
     except Exception:
         return JSONResponse({"error": "invalid token"}, status_code=401)
 
@@ -191,17 +198,17 @@ async def set_session(request: Request):
            .is_("user_id", "null")
            .execute())
 
-    redirect_url = f"/r/{job_id}" if job_id else "/dashboard"
+    redirect_url = f"/r/{body.job_id}" if body.job_id else "/dashboard"
     resp = JSONResponse({"redirect": redirect_url})
-    resp.set_cookie("sb-access-token",  access_token,
+    resp.set_cookie("sb-access-token",  body.access_token,
                     httponly=True, secure=True, samesite="lax", max_age=3600)
-    resp.set_cookie("sb-refresh-token", refresh_token,
+    resp.set_cookie("sb-refresh-token", body.refresh_token,
                     httponly=True, secure=True, samesite="lax", max_age=60 * 60 * 24 * 30)
     return resp
 
 
 @app.get("/r/{job_id}", response_class=HTMLResponse)
-async def report(job_id: str, request: Request):
+def report(job_id: str, request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse(f"/job/{job_id}/gate", status_code=303)
@@ -246,7 +253,7 @@ async def report(job_id: str, request: Request):
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
+def dashboard(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/", status_code=303)
