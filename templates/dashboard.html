@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>I tuoi report · GEO Audit · verticalai</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);
+    font-family:"Hanken Grotesk",system-ui,sans-serif}
+  .topbar{border-bottom:1px solid var(--line);padding:16px 32px;display:flex;align-items:center;justify-content:space-between}
+  .logo{display:flex;align-items:center;gap:9px;font-family:"Archivo",sans-serif;font-size:18px;text-decoration:none;color:var(--text)}
+  .logo b{font-weight:800}.logo .ai{color:var(--muted)}
+  .bars{display:inline-flex;align-items:flex-end;gap:3px;height:20px}
+  .bars i{width:4px;border-radius:2px;display:block}
+  .b1{height:11px;background:var(--violet)}.b2{height:20px;background:var(--vbright)}.b3{height:8px;background:var(--violet)}
+  .new-btn{background:var(--violet);color:#fff;text-decoration:none;border-radius:9px;
+    font-family:"Archivo",sans-serif;font-weight:700;font-size:13px;padding:9px 16px}
+  .main{max-width:860px;margin:40px auto;padding:0 24px}
+  h1{font-family:"Archivo",sans-serif;font-weight:800;font-size:26px;margin:0 0 6px}
+  .subtitle{color:var(--muted);font-size:15px;margin:0 0 28px}
+  .audit-list{display:flex;flex-direction:column;gap:12px}
+  .audit-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;
+    display:flex;align-items:center;gap:16px;text-decoration:none;color:var(--text);
+    transition:border-color .15s}
+  .audit-card:hover{border-color:var(--violet)}
+  .score-badge{width:52px;height:52px;border-radius:12px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;flex-shrink:0}
+  .score-badge .num{font-family:"Archivo",sans-serif;font-weight:800;font-size:18px;line-height:1}
+  .score-badge .grd{font-family:"IBM Plex Mono",monospace;font-size:10px;margin-top:2px}
+  .score-a,.score-b{background:#0d2218;color:#00b894}
+  .score-c{background:#1a1a10;color:#fdcb6e}
+  .score-d,.score-e,.score-f{background:#2a1515;color:#d63031}
+  .score-unknown{background:var(--line);color:var(--muted)}
+  .audit-info{flex:1;min-width:0}
+  .audit-domain{font-family:"Archivo",sans-serif;font-weight:700;font-size:16px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .audit-meta{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);margin-top:4px}
+  .status-badge{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:1px;
+    padding:4px 10px;border-radius:6px;flex-shrink:0}
+  .s-done{background:#0d2218;color:#00b894}
+  .s-pending,.s-processing{background:#17152A;color:var(--vbright);animation:blink 1.5s ease-in-out infinite}
+  .s-failed{background:#2a1515;color:#d63031}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
+  .empty{text-align:center;padding:60px 24px;color:var(--muted)}
+  .empty h2{font-family:"Archivo",sans-serif;font-weight:800;font-size:22px;color:var(--text);margin:0 0 8px}
+  .empty p{font-size:15px;margin:0 0 24px}
+  .empty a{background:var(--violet);color:#fff;text-decoration:none;border-radius:10px;
+    font-family:"Archivo",sans-serif;font-weight:700;font-size:15px;padding:12px 24px;display:inline-block}
+  @media(max-width:520px){.audit-card{flex-wrap:wrap}.topbar{padding:14px 16px}.main{padding:0 16px}}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="/" class="logo">
+      <span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span>
+      <span><b>vertical</b><span class="ai">ai</span></span>
+    </a>
+    <a href="/" class="new-btn">+ Nuova analisi</a>
+  </div>
+
+  <div class="main">
+    <h1>I tuoi report</h1>
+    <p class="subtitle">Storico delle analisi GEO per i siti che hai verificato.</p>
+    <div class="audit-list" id="list"></div>
+  </div>
+
+  <script>
+    const audits = {{AUDITS_JSON}};
+
+    function scoreClass(grade) {
+      if (!grade) return "score-unknown";
+      const g = grade.toUpperCase();
+      if (g === "A") return "score-a";
+      if (g === "B") return "score-b";
+      if (g === "C") return "score-c";
+      return "score-d";
+    }
+
+    function statusBadge(status) {
+      const map = {
+        "done": ["s-done","COMPLETATO"],
+        "pending": ["s-pending","IN CODA"],
+        "processing": ["s-processing","IN CORSO"],
+        "failed": ["s-failed","ERRORE"],
+      };
+      const [cls, label] = map[status] || ["s-pending", status.toUpperCase()];
+      return `<span class="status-badge ${cls}">${label}</span>`;
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      return d.toLocaleDateString("it-IT", {day:"2-digit",month:"short",year:"numeric"});
+    }
+
+    const list = document.getElementById("list");
+
+    if (!audits.length) {
+      list.innerHTML = `
+        <div class="empty">
+          <h2>Nessun report ancora</h2>
+          <p>Analizza il tuo primo sito per scoprire il suo punteggio GEO.</p>
+          <a href="/">Inizia l'analisi →</a>
+        </div>`;
+    } else {
+      list.innerHTML = audits.map(a => {
+        const href = a.status === "done" ? `/r/${a.id}` : `/job/${a.id}/gate`;
+        const domain = a.domain || a.url || "—";
+        const score = a.overall != null ? a.overall : "—";
+        const grade = a.grade || "—";
+        const sc = scoreClass(a.grade);
+        return `
+          <a href="${href}" class="audit-card">
+            <div class="score-badge ${sc}">
+              <span class="num">${score}</span>
+              <span class="grd">${grade}</span>
+            </div>
+            <div class="audit-info">
+              <div class="audit-domain">${domain}</div>
+              <div class="audit-meta">${fmtDate(a.created_at)} · ${a.pages_count || "—"} pagine analizzate</div>
+            </div>
+            ${statusBadge(a.status)}
+          </a>`;
+      }).join("");
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Accesso in corso · verticalai</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0B0B16;--vbright:#9B8CFF;--violet:#6C5CE7;--text:#F2F1F8;--muted:#9C99B5;--line:#2A2640}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:#0B0B16;color:var(--text);font-family:"Hanken Grotesk",system-ui,sans-serif;
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  .wrap{text-align:center;max-width:380px}
+  .spin{width:48px;height:48px;border:4px solid var(--line);border-top-color:var(--vbright);border-radius:50%;
+    animation:r 1s linear infinite;margin:0 auto 24px}
+  @keyframes r{to{transform:rotate(360deg)}}
+  h2{font-family:"Archivo",sans-serif;font-weight:800;font-size:22px;margin:0 0 8px}
+  p{color:var(--muted);font-size:15px;margin:0}
+  .err{display:none;background:#2a1515;border:1px solid #d63031;border-radius:10px;padding:14px;
+    font-size:14px;color:#ff7675;margin-top:16px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="spin" id="spin"></div>
+    <h2>Accesso in corso…</h2>
+    <p>Ti stiamo autenticando. Verrai reindirizzato automaticamente.</p>
+    <div class="err" id="err">
+      Qualcosa è andato storto. <a href="/" style="color:#ff7675">Torna alla home →</a>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    const JOB_ID = new URLSearchParams(window.location.search).get("job_id") || "";
+    const sb = supabase.createClient("{{SUPABASE_URL}}", "{{SUPABASE_ANON_KEY}}");
+
+    sb.auth.onAuthStateChange(async function(event, session) {
+      if (event === "SIGNED_IN" && session) {
+        try {
+          const resp = await fetch("/auth/set-session", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              access_token: session.access_token,
+              refresh_token: session.refresh_token,
+              job_id: JOB_ID
+            })
+          });
+          const data = await resp.json();
+          if (data.redirect) {
+            window.location.href = data.redirect;
+          } else {
+            showError();
+          }
+        } catch(e) {
+          showError();
+        }
+      } else if (event === "SIGNED_OUT") {
+        showError();
+      }
+    });
+
+    function showError() {
+      document.getElementById("spin").style.display = "none";
+      document.getElementById("err").style.display = "block";
+    }
+
+    // Fallback: if no auth event fires within 8s, show error
+    setTimeout(showError, 8000);
+  </script>
+</body>
+</html>

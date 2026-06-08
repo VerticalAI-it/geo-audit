@@ -50,18 +50,8 @@
     <form method="post" action="/scan" onsubmit="document.getElementById('ov').classList.add('on')">
       <label for="url">Indirizzo del sito</label>
       <input id="url" name="url" type="url" placeholder="https://www.esempio.it" required autofocus>
-      <div class="row">
-        <div>
-          <label for="max_pages">Pagine da analizzare</label>
-          <select id="max_pages" name="max_pages">
-            <option value="6">6 — veloce</option>
-            <option value="12" selected>12 — consigliato</option>
-            <option value="20">20 — approfondito</option>
-          </select>
-        </div>
-      </div>
       <button type="submit">Analizza il sito →</button>
-      <div class="note">L'analisi usa un browser reale per leggere anche i contenuti caricati via JavaScript. Può richiedere da 30 secondi a un paio di minuti.</div>
+      <div class="note">L'analisi avviene in background: inserisci la tua email nel passaggio successivo per ricevere il report appena pronto (di solito 2–3 minuti).</div>
     </form>
     <div class="foot">verticalai.it · GEO Audit</div>
   </div>

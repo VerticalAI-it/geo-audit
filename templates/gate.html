@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GEO Audit in corso · verticalai</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:radial-gradient(120% 80% at 80% -10%,#1a1633 0%,#0B0B16 55%);
+    color:var(--text);font-family:"Hanken Grotesk",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}
+  .wrap{width:100%;max-width:560px}
+  .logo{display:flex;align-items:center;gap:9px;font-family:"Archivo",sans-serif;font-size:19px;margin-bottom:30px}
+  .logo b{font-weight:800}.logo .ai{color:var(--muted)}
+  .bars{display:inline-flex;align-items:flex-end;gap:3px;height:22px}
+  .bars i{width:5px;border-radius:2px;display:block}
+  .b1{height:13px;background:var(--violet)}.b2{height:22px;background:var(--vbright)}.b3{height:9px;background:var(--violet)}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:3px;color:var(--vbright);text-transform:uppercase;margin-bottom:12px}
+  h1{font-family:"Archivo",sans-serif;font-weight:800;font-size:28px;line-height:1.1;margin:0 0 8px}
+  .domain{font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--vbright);margin:0 0 10px;word-break:break-all}
+  p.sub{color:var(--muted);font-size:15px;margin:0 0 26px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px}
+  .card-title{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:0 0 16px}
+  label{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}
+  input[type=email]{width:100%;background:#0B0B16;border:1px solid var(--line);border-radius:10px;color:var(--text);
+    font-size:16px;padding:13px 14px;font-family:inherit;outline:none}
+  input[type=email]:focus{border-color:var(--violet)}
+  button{width:100%;margin-top:12px;background:var(--violet);color:#fff;border:none;border-radius:10px;
+    font-family:"Archivo",sans-serif;font-weight:700;font-size:16px;padding:14px;cursor:pointer}
+  button:hover{background:#5b4bd8}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .note{color:var(--muted);font-size:12.5px;margin-top:14px;line-height:1.6}
+  .status-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);margin-bottom:20px}
+  .pulse{width:10px;height:10px;border-radius:50%;background:var(--vbright);flex-shrink:0;
+    animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+  .status-text{font-size:14px;color:var(--muted)}
+  .foot{margin-top:22px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6E6B86}
+  .success-msg{display:none;background:#0d2218;border:1px solid #00b894;border-radius:10px;padding:14px 16px;
+    font-size:14px;color:#00b894;margin-top:12px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">
+      <span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span>
+      <span><b>vertical</b><span class="ai">ai</span></span>
+    </div>
+    <div class="eyebrow">GEO Audit</div>
+    <h1>Analisi in coda</h1>
+    <p class="domain">{{DOMAIN}}</p>
+    <p class="sub">Il report sarà pronto in circa 2–3 minuti. Inserisci la tua email per riceverlo appena è disponibile.</p>
+
+    <div class="card">
+      <div class="status-row">
+        <div class="pulse"></div>
+        <span class="status-text">Analisi in elaborazione…</span>
+      </div>
+      <p class="card-title">Ricevi il report via email</p>
+      <form id="gate-form" method="post" action="/job/{{JOB_ID}}/request-access">
+        <label for="email">La tua email</label>
+        <input id="email" name="email" type="email" placeholder="nome@esempio.it" required autofocus>
+        <button type="submit" id="btn">Inviami il report →</button>
+        <div class="success-msg" id="ok-msg">
+          ✓ Email inviata! Controlla la casella e clicca il link per accedere al report.
+        </div>
+        <div class="note">
+          Riceverai un link sicuro (nessuna password). Potrai accedere a tutti i tuoi report futuri da un'unica area personale.
+        </div>
+      </form>
+    </div>
+
+    <div class="foot">verticalai.it · GEO Audit</div>
+  </div>
+
+  <script>
+    document.getElementById('gate-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn');
+      btn.disabled = true;
+      btn.textContent = 'Invio in corso…';
+      const data = new FormData(this);
+      try {
+        const resp = await fetch(this.action, {method:'POST', body: data});
+        if (resp.ok || resp.redirected) {
+          document.getElementById('ok-msg').style.display = 'block';
+          btn.textContent = 'Email inviata ✓';
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Inviami il report →';
+        }
+      } catch(err) {
+        btn.disabled = false;
+        btn.textContent = 'Inviami il report →';
+      }
+    });
+  </script>
+</body>
+</html>
