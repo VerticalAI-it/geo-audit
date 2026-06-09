@@ -5,9 +5,11 @@ note varie.
 # 2 "prenota una call" da implementare 
 - come? 
 
-# 3  Pagia "i miei report" da implementare
+# 3  "i miei report" 
  - valida flusso
 
 # 4 landing page 
 - add info su servizio/prodotto
--  
+- fatta MIC, valida ed integra
+
+# 5 Form deve funzionare anche senza http o https davanti

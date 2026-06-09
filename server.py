@@ -423,12 +423,20 @@ def _send_my_reports_email(to: str, jobs: list):
             token = _make_token(j["id"])
             link  = f"{SITE_URL}/r/{j['id']}?token={token}"
             sc = "#00b894" if (j.get("overall") or 0) >= 75 else ("#fdcb6e" if (j.get("overall") or 0) >= 45 else "#d63031")
+            raw_date = j.get("created_at", "")
+            try:
+                date_str = raw_date[:10]  # "2026-06-09" from ISO timestamp
+                d, m, y = date_str.split("-")
+                date_fmt = f"{d}/{m}/{y}"
+            except Exception:
+                date_fmt = raw_date[:10] if raw_date else "—"
             rows += (
-                f'<tr><td style="padding:10px 0;border-bottom:1px solid #2A2640">'
-                f'<b style="color:#F2F1F8">{j.get("domain","?")}</b>'
+                f'<tr><td style="padding:12px 0;border-bottom:1px solid #2A2640">'
+                f'<div><b style="color:#F2F1F8">{j.get("domain","?")}</b>'
                 f'<span style="color:{sc};font-weight:700;margin-left:10px">{j.get("overall","?")}/100</span>'
-                f'<span style="color:#9C99B5;margin-left:6px">({j.get("grade","?")})</span></td>'
-                f'<td style="padding:10px 0 10px 16px;border-bottom:1px solid #2A2640;text-align:right">'
+                f'<span style="color:#9C99B5;margin-left:6px">({j.get("grade","?")})</span></div>'
+                f'<div style="color:#6E6B86;font-size:12px;margin-top:3px">{date_fmt}</div></td>'
+                f'<td style="padding:12px 0 12px 16px;border-bottom:1px solid #2A2640;text-align:right;vertical-align:middle">'
                 f'<a href="{link}" style="color:#9B8CFF;text-decoration:none;font-size:13px">Apri →</a>'
                 f'</td></tr>'
             )
