@@ -336,38 +336,41 @@ def unlock(job_id: str, email: str = Form(...)):
     return Response(status_code=200)
 
 
-_SHARED_HEAD = """\
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-:root{{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}}
-*{{box-sizing:border-box}}
-body{{margin:0;min-height:100vh;background:radial-gradient(120% 80% at 80% -10%,#1a1633 0%,#0B0B16 55%);
-  color:var(--text);font-family:"Hanken Grotesk",system-ui,sans-serif;
-  display:flex;align-items:center;justify-content:center;padding:24px}}
-.wrap{{width:100%;max-width:560px}}
-.logo{{display:flex;align-items:center;gap:9px;font-family:"Archivo",sans-serif;font-size:19px;margin-bottom:30px}}
-.logo b{{font-weight:800}}.logo .ai{{color:var(--muted)}}
-.bars{{display:inline-flex;align-items:flex-end;gap:3px;height:22px}}
-.bars i{{width:5px;border-radius:2px;display:block}}
-.b1{{height:13px;background:var(--violet)}}.b2{{height:22px;background:var(--vbright)}}.b3{{height:9px;background:var(--violet)}}
-.eyebrow{{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:3px;color:var(--vbright);text-transform:uppercase;margin-bottom:12px}}
-h1{{font-family:"Archivo",sans-serif;font-weight:800;font-size:28px;line-height:1.1;margin:0 0 10px}}
-p.sub{{color:var(--muted);font-size:15px;margin:0 0 26px}}
-form{{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}}
-label{{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}}
-input[type=email]{{width:100%;background:#0B0B16;border:1px solid var(--line);border-radius:10px;
-  color:var(--text);font-size:16px;padding:13px 14px;font-family:inherit;outline:none}}
-input[type=email]:focus{{border-color:var(--violet)}}
-button{{width:100%;margin-top:16px;background:var(--violet);color:#fff;border:none;
-  border-radius:10px;font-family:"Archivo",sans-serif;font-weight:700;font-size:16px;padding:14px;cursor:pointer}}
-button:hover{{background:#5b4bd8}}
-.foot{{margin-top:22px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6E6B86}}
-a.back{{display:block;margin-top:4px;font-size:13px;color:var(--muted);text-decoration:none;text-align:center}}
-a.back:hover{{color:var(--text)}}
-</style>"""
+_SHARED_HEAD = (
+    '<meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800'
+    '&family=Hanken+Grotesk:wght@400;500;600;700'
+    '&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">'
+    "<style>"
+    ":root{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}"
+    "*{box-sizing:border-box}"
+    "body{margin:0;min-height:100vh;background:radial-gradient(120% 80% at 80% -10%,#1a1633 0%,#0B0B16 55%);"
+    "color:var(--text);font-family:'Hanken Grotesk',system-ui,sans-serif;"
+    "display:flex;align-items:center;justify-content:center;padding:24px}"
+    ".wrap{width:100%;max-width:560px}"
+    ".logo{display:flex;align-items:center;gap:9px;font-family:'Archivo',sans-serif;font-size:19px;margin-bottom:30px}"
+    ".logo b{font-weight:800}.logo .ai{color:var(--muted)}"
+    ".bars{display:inline-flex;align-items:flex-end;gap:3px;height:22px}"
+    ".bars i{width:5px;border-radius:2px;display:block}"
+    ".b1{height:13px;background:var(--violet)}.b2{height:22px;background:var(--vbright)}.b3{height:9px;background:var(--violet)}"
+    ".eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:3px;color:var(--vbright);text-transform:uppercase;margin-bottom:12px}"
+    "h1{font-family:'Archivo',sans-serif;font-weight:800;font-size:28px;line-height:1.1;margin:0 0 10px}"
+    "p.sub{color:var(--muted);font-size:15px;margin:0 0 26px}"
+    "form{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}"
+    "label{display:block;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}"
+    "input[type=email]{width:100%;background:#0B0B16;border:1px solid var(--line);border-radius:10px;"
+    "color:var(--text);font-size:16px;padding:13px 14px;font-family:inherit;outline:none}"
+    "input[type=email]:focus{border-color:var(--violet)}"
+    "button{width:100%;margin-top:16px;background:var(--violet);color:#fff;border:none;"
+    "border-radius:10px;font-family:'Archivo',sans-serif;font-weight:700;font-size:16px;padding:14px;cursor:pointer}"
+    "button:hover{background:#5b4bd8}"
+    ".foot{margin-top:22px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#6E6B86}"
+    "a.back{display:block;margin-top:4px;font-size:13px;color:var(--muted);text-decoration:none;text-align:center}"
+    "a.back:hover{color:var(--text)}"
+    "</style>"
+)
 
 _MIEI_REPORT_PAGE = f"""<!doctype html>
 <html lang="it">
