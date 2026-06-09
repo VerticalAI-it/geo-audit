@@ -336,34 +336,49 @@ def unlock(job_id: str, email: str = Form(...)):
     return Response(status_code=200)
 
 
-_MIEI_REPORT_PAGE = """<!doctype html>
-<html lang="it">
-<head>
+_SHARED_HEAD = """\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>I miei report · GEO Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}}
 *{{box-sizing:border-box}}
-body{{margin:0;min-height:100vh;background:var(--bg);color:var(--text);
-  font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}}
-.wrap{{width:100%;max-width:480px}}
-h1{{font-size:22px;font-weight:800;margin:0 0 8px}}
-p.sub{{color:var(--muted);font-size:14px;margin:0 0 24px}}
+body{{margin:0;min-height:100vh;background:radial-gradient(120% 80% at 80% -10%,#1a1633 0%,#0B0B16 55%);
+  color:var(--text);font-family:"Hanken Grotesk",system-ui,sans-serif;
+  display:flex;align-items:center;justify-content:center;padding:24px}}
+.wrap{{width:100%;max-width:560px}}
+.logo{{display:flex;align-items:center;gap:9px;font-family:"Archivo",sans-serif;font-size:19px;margin-bottom:30px}}
+.logo b{{font-weight:800}}.logo .ai{{color:var(--muted)}}
+.bars{{display:inline-flex;align-items:flex-end;gap:3px;height:22px}}
+.bars i{{width:5px;border-radius:2px;display:block}}
+.b1{{height:13px;background:var(--violet)}}.b2{{height:22px;background:var(--vbright)}}.b3{{height:9px;background:var(--violet)}}
+.eyebrow{{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:3px;color:var(--vbright);text-transform:uppercase;margin-bottom:12px}}
+h1{{font-family:"Archivo",sans-serif;font-weight:800;font-size:28px;line-height:1.1;margin:0 0 10px}}
+p.sub{{color:var(--muted);font-size:15px;margin:0 0 26px}}
 form{{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}}
-label{{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}}
-input[type=email]{{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;
-  color:var(--text);font-size:15px;padding:12px 14px;font-family:inherit;outline:none}}
+label{{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}}
+input[type=email]{{width:100%;background:#0B0B16;border:1px solid var(--line);border-radius:10px;
+  color:var(--text);font-size:16px;padding:13px 14px;font-family:inherit;outline:none}}
 input[type=email]:focus{{border-color:var(--violet)}}
-button{{width:100%;margin-top:12px;background:var(--violet);color:#fff;border:none;
-  border-radius:10px;font-weight:700;font-size:15px;padding:13px;cursor:pointer;font-family:inherit}}
+button{{width:100%;margin-top:16px;background:var(--violet);color:#fff;border:none;
+  border-radius:10px;font-family:"Archivo",sans-serif;font-weight:700;font-size:16px;padding:14px;cursor:pointer}}
 button:hover{{background:#5b4bd8}}
-.back{{display:block;margin-top:16px;font-size:13px;color:var(--muted);text-decoration:none;text-align:center}}
-.back:hover{{color:var(--text)}}
-</style>
+.foot{{margin-top:22px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6E6B86}}
+a.back{{display:block;margin-top:4px;font-size:13px;color:var(--muted);text-decoration:none;text-align:center}}
+a.back:hover{{color:var(--text)}}
+</style>"""
+
+_MIEI_REPORT_PAGE = f"""<!doctype html>
+<html lang="it">
+<head>
+{_SHARED_HEAD}
+<title>I miei report · GEO Audit</title>
 </head>
 <body>
 <div class="wrap">
+  <div class="logo"><span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span><span><b>vertical</b><span class="ai">ai</span></span></div>
+  <div class="eyebrow">GEO Audit</div>
   <h1>I miei report</h1>
   <p class="sub">Inserisci l'email con cui hai richiesto i report: ti inviamo tutti i link.</p>
   <form method="post" action="/miei-report">
@@ -372,30 +387,25 @@ button:hover{{background:#5b4bd8}}
     <button type="submit">Inviami i link →</button>
   </form>
   <a class="back" href="/">← Nuova analisi</a>
+  <div class="foot">verticalai.it · GEO Audit</div>
 </div>
 </body>
 </html>"""
 
-_MIEI_REPORT_SENT = """<!doctype html>
+_MIEI_REPORT_SENT = f"""<!doctype html>
 <html lang="it">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+{_SHARED_HEAD}
 <title>Email inviata · GEO Audit</title>
-<style>
-body{{margin:0;min-height:100vh;background:#0B0B16;color:#F2F1F8;
-  font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;
-  text-align:center;padding:24px}}
-h2{{font-size:22px;font-weight:800;margin:0 0 10px}}
-p{{color:#9C99B5;font-size:14px;margin:0 0 20px}}
-a{{color:#9B8CFF;font-size:14px}}
-</style>
+<style>.check{{font-size:40px;margin-bottom:16px}}h2{{text-align:center}}p.sub{{text-align:center}}</style>
 </head>
 <body>
-<div>
-  <h2>✓ Email inviata</h2>
-  <p>Controlla la tua casella: troverai i link a tutti i report associati a quell'indirizzo.</p>
-  <a href="/">← Nuova analisi</a>
+<div class="wrap" style="text-align:center">
+  <div class="logo" style="justify-content:center"><span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span><span><b>vertical</b><span class="ai">ai</span></span></div>
+  <div class="check">✓</div>
+  <h1>Email inviata</h1>
+  <p class="sub">Controlla la tua casella: troverai i link a tutti i report associati a quell'indirizzo.</p>
+  <a class="back" href="/">← Nuova analisi</a>
 </div>
 </body>
 </html>"""
@@ -404,45 +414,53 @@ a{{color:#9B8CFF;font-size:14px}}
 def _send_my_reports_email(to: str, jobs: list):
     if not RESEND_KEY or not FROM_EMAIL:
         return
-    rows = ""
-    for j in jobs:
-        token = _make_token(j["id"])
-        link  = f"{SITE_URL}/r/{j['id']}?token={token}"
-        score_color = "#00b894" if (j.get("overall") or 0) >= 75 else ("#fdcb6e" if (j.get("overall") or 0) >= 45 else "#d63031")
-        rows += (
-            f'<tr><td style="padding:10px 0;border-bottom:1px solid #2A2640">'
-            f'<b style="color:#F2F1F8">{j.get("domain","?")}</b>'
-            f'<span style="color:{score_color};font-weight:700;margin-left:10px">{j.get("overall","?")}/100</span>'
-            f'<span style="color:#9C99B5;margin-left:6px">({j.get("grade","?")})</span></td>'
-            f'<td style="padding:10px 0 10px 16px;border-bottom:1px solid #2A2640;text-align:right">'
-            f'<a href="{link}" style="color:#9B8CFF;text-decoration:none;font-size:13px">Apri →</a>'
-            f'</td></tr>'
+    if jobs:
+        rows = ""
+        for j in jobs:
+            token = _make_token(j["id"])
+            link  = f"{SITE_URL}/r/{j['id']}?token={token}"
+            sc = "#00b894" if (j.get("overall") or 0) >= 75 else ("#fdcb6e" if (j.get("overall") or 0) >= 45 else "#d63031")
+            rows += (
+                f'<tr><td style="padding:10px 0;border-bottom:1px solid #2A2640">'
+                f'<b style="color:#F2F1F8">{j.get("domain","?")}</b>'
+                f'<span style="color:{sc};font-weight:700;margin-left:10px">{j.get("overall","?")}/100</span>'
+                f'<span style="color:#9C99B5;margin-left:6px">({j.get("grade","?")})</span></td>'
+                f'<td style="padding:10px 0 10px 16px;border-bottom:1px solid #2A2640;text-align:right">'
+                f'<a href="{link}" style="color:#9B8CFF;text-decoration:none;font-size:13px">Apri →</a>'
+                f'</td></tr>'
+            )
+        body = (
+            f'<h1 style="font-size:22px;font-weight:800;margin:0 0 8px">I tuoi report GEO</h1>'
+            f'<p style="color:#9C99B5;font-size:14px;margin:0 0 20px">Ecco tutti i report associati a {to}.</p>'
+            f'<table width="100%" cellpadding="0" cellspacing="0">{rows}</table>'
+            f'<p style="font-size:12px;color:#6E6B86;margin-top:24px;line-height:1.6">'
+            f'I link sono personali e danno accesso diretto al report completo.</p>'
         )
-    html = f"""<!doctype html><html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#0B0B16;color:#F2F1F8;font-family:system-ui,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:40px auto;padding:0 16px">
-<tr><td>
-  <p style="font-size:13px;color:#9C99B5;margin:0 0 24px">
-    <b style="color:#9B8CFF">vertical</b><span style="color:#9C99B5">ai</span> · GEO Audit
-  </p>
-  <h1 style="font-size:22px;font-weight:800;margin:0 0 8px">I tuoi report GEO</h1>
-  <p style="color:#9C99B5;font-size:14px;margin:0 0 20px">
-    Ecco tutti i report associati a {to}.
-  </p>
-  <table width="100%" cellpadding="0" cellspacing="0">{rows}</table>
-  <p style="font-size:12px;color:#6E6B86;margin-top:24px;line-height:1.6">
-    I link sono personali e danno accesso diretto al report completo.
-  </p>
-</td></tr>
-</table>
-</body></html>"""
-    req.post("https://api.resend.com/emails",
-             json={"from": FROM_EMAIL, "to": [to],
-                   "subject": "I tuoi report GEO Audit",
-                   "html": html},
-             headers={"Authorization": f"Bearer {RESEND_KEY}",
-                      "Content-Type": "application/json"},
-             timeout=10)
+        subject = "I tuoi report GEO Audit"
+    else:
+        body = (
+            f'<h1 style="font-size:22px;font-weight:800;margin:0 0 8px">Nessun report trovato</h1>'
+            f'<p style="color:#9C99B5;font-size:14px;margin:0">Non abbiamo trovato report associati a {to}.<br>'
+            f'Prova con un\'altra email o <a href="{SITE_URL}" style="color:#9B8CFF">avvia una nuova analisi</a>.</p>'
+        )
+        subject = "GEO Audit — nessun report trovato"
+    html = (
+        '<!doctype html><html><head><meta charset="utf-8"></head>'
+        '<body style="margin:0;padding:0;background:#0B0B16;color:#F2F1F8;font-family:system-ui,sans-serif">'
+        '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:40px auto;padding:0 16px">'
+        '<tr><td>'
+        '<p style="font-size:13px;color:#9C99B5;margin:0 0 24px">'
+        '<b style="color:#9B8CFF">vertical</b><span style="color:#9C99B5">ai</span> · GEO Audit</p>'
+        + body +
+        '</td></tr></table></body></html>'
+    )
+    r = req.post("https://api.resend.com/emails",
+                 json={"from": FROM_EMAIL, "to": [to],
+                       "subject": subject, "html": html},
+                 headers={"Authorization": f"Bearer {RESEND_KEY}",
+                          "Content-Type": "application/json"},
+                 timeout=10)
+    r.raise_for_status()
 
 
 @app.get("/miei-report", response_class=HTMLResponse)
@@ -461,10 +479,9 @@ def miei_report_send(email: str = Form(...)):
     except Exception:
         jobs = []
 
-    if jobs:
-        try:
-            _send_my_reports_email(email, jobs)
-        except Exception:
-            pass
+    try:
+        _send_my_reports_email(email, jobs)
+    except Exception:
+        pass
 
     return HTMLResponse(_MIEI_REPORT_SENT)
