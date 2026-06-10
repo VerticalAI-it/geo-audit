@@ -309,7 +309,9 @@ async def scan(url: str = Form(...)):
     url = (url or "").strip()
     if not url:
         return RedirectResponse("/", status_code=303)
-    if not url.startswith("http"):
+    if url.startswith("//"):
+        url = "https:" + url
+    elif not url.startswith(("http://", "https://")):
         url = "https://" + url
 
     try:

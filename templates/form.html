@@ -22,9 +22,9 @@
   p.sub{color:var(--muted);font-size:15px;margin:0 0 26px}
   form{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
   label{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}
-  input[type=url]{width:100%;background:#0B0B16;border:1px solid var(--line);border-radius:10px;color:var(--text);
+  input[type=text]{width:100%;background:#0B0B16;border:1px solid var(--line);border-radius:10px;color:var(--text);
     font-size:16px;padding:13px 14px;font-family:inherit;outline:none}
-  input[type=url]:focus{border-color:var(--violet)}
+  input[type=text]:focus{border-color:var(--violet)}
   .row{display:flex;gap:12px;align-items:flex-end;margin-top:14px}
   .row > div:first-child{flex:1}
   select{background:#0B0B16;border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:14px;padding:13px 12px;font-family:inherit}
@@ -49,7 +49,7 @@
     <p class="sub">Inserisci un indirizzo: analizziamo quanto il sito è visibile e citabile da ChatGPT, Gemini, Perplexity e principali LLM.</p>
     <form method="post" action="/scan" onsubmit="document.getElementById('ov').classList.add('on')">
       <label for="url">Indirizzo del sito</label>
-      <input id="url" name="url" type="url" placeholder="https://www.esempio.it" required autofocus>
+      <input id="url" name="url" type="text" placeholder="www.esempio.it" required autofocus>
       <button type="submit">Analizza il sito →</button>
       <div class="note">L'analisi può richiedere fino a un minuto. Non chiudere la pagina.</div>
     </form>
