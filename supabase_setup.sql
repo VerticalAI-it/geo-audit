@@ -29,3 +29,20 @@ CREATE POLICY "own_audits" ON public.audits
 -- Indici per performance del cron worker e del lookup pending_email
 CREATE INDEX audits_status_created  ON public.audits (status, created_at);
 CREATE INDEX audits_pending_email   ON public.audits (pending_email) WHERE pending_email IS NOT NULL;
+
+-- ── Richieste di contatto ────────────────────────────────────────────────────
+CREATE TABLE public.contact_requests (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    audit_id    UUID        REFERENCES public.audits(id) ON DELETE SET NULL,
+    email       TEXT        NOT NULL,
+    phone       TEXT,
+    preference  TEXT,       -- 'email' | 'phone'
+    domain      TEXT,
+    overall     INTEGER,
+    grade       TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.contact_requests ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX contact_requests_created ON public.contact_requests (created_at DESC);

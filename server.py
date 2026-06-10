@@ -2,7 +2,7 @@
 GEO Audit — servizio web
 Scan sincrono → salva su Supabase via REST → report oscurato → sblocco via email.
 """
-import os, hmac, hashlib
+import os, hmac, hashlib, json
 import requests as req
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -54,6 +54,12 @@ def _sb_get(job_id: str) -> dict | None:
     return d[0] if d else None
 
 
+def _sb_insert_contact(data: dict):
+    r = req.post(f"{SUPABASE_URL}/rest/v1/contact_requests",
+                 json=data, headers=_SB_H, timeout=10)
+    r.raise_for_status()
+
+
 def _sb_get_by_email(email: str) -> list:
     r = req.get(f"{SUPABASE_URL}/rest/v1/audits",
                 headers=_SB_H,
@@ -82,6 +88,52 @@ def _has_access(request: Request, job_id: str) -> bool:
 
 
 # ── Email helpers ─────────────────────────────────────────────────────────────
+
+_NOTIFY_TO = ["geo@verticalai.it", "info@verticalai.it"]
+
+
+def _send_contact_notif(job_id: str, domain: str, overall: int, grade: str,
+                         email: str, phone: str, preference: str):
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    pref_label = "Telefono" if preference == "phone" else "Email"
+    report_link = f"{SITE_URL}/r/{job_id}?token={_make_token(job_id)}"
+    sc = "#00b894" if overall >= 75 else ("#fdcb6e" if overall >= 45 else "#d63031")
+    html = (
+        '<!doctype html><html><head><meta charset="utf-8"></head>'
+        '<body style="margin:0;padding:0;background:#0B0B16;color:#F2F1F8;font-family:system-ui,sans-serif">'
+        '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:40px auto;padding:0 16px">'
+        '<tr><td>'
+        '<p style="font-size:13px;color:#9C99B5;margin:0 0 24px">'
+        '<b style="color:#9B8CFF">vertical</b><span style="color:#9C99B5">ai</span> · GEO Audit</p>'
+        '<h1 style="font-size:22px;font-weight:800;margin:0 0 20px">Nuova richiesta di contatto</h1>'
+        f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#17152A;border:1px solid #2A2640;border-radius:12px;padding:20px;margin-bottom:20px">'
+        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5;width:140px">Email</td>'
+        f'<td style="padding:6px 0;font-size:13px;color:#F2F1F8"><b>{email}</b></td></tr>'
+        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5">Telefono</td>'
+        f'<td style="padding:6px 0;font-size:13px;color:#F2F1F8">{phone or "—"}</td></tr>'
+        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5">Preferenza</td>'
+        f'<td style="padding:6px 0;font-size:13px;color:#F2F1F8">{pref_label}</td></tr>'
+        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5">Sito analizzato</td>'
+        f'<td style="padding:6px 0;font-size:13px;color:#F2F1F8">{domain}</td></tr>'
+        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5">Punteggio GEO</td>'
+        f'<td style="padding:6px 0;font-size:13px;font-weight:700;color:{sc}">{overall}/100 (grado {grade})</td></tr>'
+        '</table>'
+        f'<a href="{report_link}" style="display:block;background:#6C5CE7;color:#fff;text-decoration:none;'
+        'border-radius:10px;padding:13px 20px;font-weight:700;font-size:14px;text-align:center">'
+        'Apri il report →</a>'
+        '</td></tr></table></body></html>'
+    )
+    r = req.post("https://api.resend.com/emails",
+                 json={"from": FROM_EMAIL,
+                       "to": _NOTIFY_TO,
+                       "subject": f"GEO: richiesta di contatto — {domain}",
+                       "html": html},
+                 headers={"Authorization": f"Bearer {RESEND_KEY}",
+                          "Content-Type": "application/json"},
+                 timeout=10)
+    r.raise_for_status()
+
 
 def _send_unlock_email(to: str, job_id: str, domain: str, overall: int, grade: str):
     if not RESEND_KEY or not FROM_EMAIL:
@@ -139,8 +191,8 @@ def _page(title, body):
     )
 
 
-def _inject_bar(html: str) -> str:
-    """Barra azioni per report sbloccato."""
+def _inject_bar(html: str, job_id: str = "", email: str = "") -> str:
+    """Barra azioni per report sbloccato. Sostituisce il placeholder __JOB_ID__ e pre-compila la mail nel form CTA."""
     hide = "<style>@media print{#geo-bar{display:none}}</style>"
     bar = (
         '<div id="geo-bar" style="position:fixed;top:14px;right:14px;z-index:9999;'
@@ -155,6 +207,14 @@ def _inject_bar(html: str) -> str:
         'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
         "Nuova analisi</a></div>"
     )
+    if job_id:
+        html = html.replace("__JOB_ID__", job_id)
+    if email:
+        prefill = (
+            f'<script>var _e=document.getElementById("cta-email");'
+            f'if(_e)_e.value={json.dumps(email)};</script>'
+        )
+        html = html.replace("</body>", prefill + "</body>", 1)
     return html.replace('<div class="sheet">', hide + bar + '<div class="sheet">', 1)
 
 
@@ -304,7 +364,7 @@ def report(job_id: str, request: Request, token: str = ""):
         )
 
     if _has_access(request, job_id):
-        return HTMLResponse(_inject_bar(job["html"]))
+        return HTMLResponse(_inject_bar(job["html"], job_id, job.get("pending_email", "")))
 
     return HTMLResponse(_inject_gate(job["html"], job_id))
 
@@ -496,3 +556,45 @@ def miei_report_send(email: str = Form(...)):
         pass
 
     return HTMLResponse(_MIEI_REPORT_SENT)
+
+
+@app.post("/contact/{job_id}")
+def contact(job_id: str,
+            email: str = Form(...),
+            phone: str = Form(""),
+            preference: str = Form("email")):
+    email = (email or "").strip().lower()
+    if not email:
+        return Response(status_code=400)
+    phone = (phone or "").strip()
+    preference = preference if preference in ("email", "phone") else "email"
+
+    job = None
+    try:
+        job = _sb_get(job_id)
+    except Exception:
+        pass
+
+    domain  = (job or {}).get("domain") or "—"
+    overall = int((job or {}).get("overall") or 0)
+    grade   = (job or {}).get("grade") or "?"
+
+    try:
+        _sb_insert_contact({
+            "audit_id":   job_id,
+            "email":      email,
+            "phone":      phone or None,
+            "preference": preference,
+            "domain":     domain,
+            "overall":    overall,
+            "grade":      grade,
+        })
+    except Exception:
+        pass
+
+    try:
+        _send_contact_notif(job_id, domain, overall, grade, email, phone, preference)
+    except Exception:
+        pass
+
+    return Response(status_code=200)

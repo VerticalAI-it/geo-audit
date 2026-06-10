@@ -604,16 +604,30 @@ tr:first-child td{border-top:none}.cdot{width:18px}.dot{display:inline-block;wid
 .pill{font-family:"IBM Plex Mono";font-size:9.5px;font-weight:600;border:1px solid;border-radius:20px;padding:2px 8px}
 .adesc{font-size:12.5px;color:var(--muted)}
 .notes{background:var(--soft);border-radius:12px;padding:15px 19px;font-size:12.5px;color:#46435A}.notes b{color:var(--ink)}
-.cta{background:var(--ink);color:#fff;padding:30px 56px;margin-top:32px;display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap}
-.cta h3{font-size:22px;font-weight:800;margin-bottom:8px}.cta ul{list-style:none;display:flex;flex-direction:column;gap:5px}
-.cta li{font-size:13px;color:#CFCDE0}.cta li b{color:#fff;font-weight:600}
-.btn{background:var(--violet);color:#fff;font-family:"Archivo";font-weight:700;font-size:14px;padding:13px 22px;border-radius:10px;text-decoration:none;white-space:nowrap}
+.cta{background:var(--ink);color:#fff;padding:40px 56px;margin-top:32px;display:flex;justify-content:space-between;align-items:flex-start;gap:40px;flex-wrap:wrap}
+.cta-l{flex:1;min-width:220px}
+.cta-badge{display:inline-block;background:rgba(108,92,231,.25);color:#B8AEFF;font-family:"IBM Plex Mono";font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:4px 10px;border-radius:20px;margin-bottom:14px}
+.cta h3{font-size:23px;font-weight:800;margin:0 0 12px;line-height:1.25;color:#fff}
+.cta-desc{font-size:13.5px;color:#CFCDE0;margin:0 0 14px;line-height:1.6}
+.cta ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px}
+.cta li{font-size:13px;color:#CFCDE0;padding-left:18px;position:relative}
+.cta li::before{content:"✓";position:absolute;left:0;color:#9B8CFF;font-weight:700}
+.cta-r{flex:0 0 290px;min-width:260px}
+.cta-r p{font-size:13px;color:#CFCDE0;margin:0 0 12px;line-height:1.5}
+.cta-r input{width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:9px;color:#fff;font-size:14px;padding:11px 13px;font-family:inherit;outline:none;margin-bottom:8px;box-sizing:border-box}
+.cta-r input::placeholder{color:rgba(255,255,255,.35)}
+.cta-r input:focus{border-color:#9B8CFF}
+.cta-pref{display:flex;align-items:center;gap:12px;font-size:13px;color:#CFCDE0;margin-bottom:12px;flex-wrap:wrap}
+.cta-pref label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.cta-btn{width:100%;background:#6C5CE7;color:#fff;border:none;border-radius:10px;font-family:"Archivo";font-weight:700;font-size:15px;padding:13px;cursor:pointer}
+.cta-btn:hover{background:#5b4bd8}
+.cta-ok{display:none;color:#00b894;font-size:14px;margin-top:12px;font-weight:600;text-align:center}
 .foot{padding:16px 56px;font-size:11px;color:var(--muted);font-family:"IBM Plex Mono";display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
 @page{size:A4;margin:13mm 0}
 @media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none}.sec,.summary,.top,.cta,.foot{padding-left:15mm;padding-right:15mm}}
 @media (max-width:760px){.sheet{margin:0;max-width:none}.top,.sec,.cta,.foot{padding-left:22px;padding-right:22px}.top h1{font-size:25px}
 .summary{flex-direction:column;align-items:stretch;padding:26px 22px 4px;gap:18px}.gaugewrap{align-self:center}.catname{width:120px}.cst{width:90px}
-.phead{flex-wrap:wrap;gap:8px}.cta{flex-direction:column;align-items:flex-start}.btn{width:100%;text-align:center}.foot{flex-direction:column}}
+.phead{flex-wrap:wrap;gap:8px}.cta{flex-direction:column;align-items:flex-start}.cta-r{width:100%}.foot{flex-direction:column}}
 """
 
 def derive_actions(site_checks, pages, limit=8):
@@ -739,11 +753,51 @@ def render_report(domain, site, pages, render_used, respect_robots):
       'answerability, autorità). Sono esclusi dalla scansione gli URL non-pagina (immagini, file, feed). Le voci '
       '<b>“da verificare”</b> non incidono sul punteggio. <b>Fase 2:</b> analisi semantica dei contenuti via LLM e '
       'presenza off-site (Wikipedia/Wikidata, citazioni di terzi, visibilità reale nelle risposte AI).</div></div>')
-    cta = ('<div class="cta"><div><h3>Vuoi che li sistemiamo noi?</h3><ul>'
-      '<li><b>Implementazione</b> di schema, FAQ, meta e dati strutturati</li>'
-      '<li><b>Ottimizzazione</b> dei contenuti per le risposte AI</li>'
-      '<li><b>Re-scan</b> e monitoraggio dei progressi nel tempo</li></ul></div>'
-      '<a class="btn" href="https://verticalai.it">Prenota una call →</a></div>')
+    cta = (
+      '<div class="cta">'
+        '<div class="cta-l">'
+          '<div class="cta-badge">Ottimizzazione professionale</div>'
+          '<h3>Il tuo sito può fare molto di più.<br>Ci occupiamo noi di tutto.</h3>'
+          '<p class="cta-desc">Schema.org, dati strutturati, contenuti riscritti per ChatGPT, Gemini e Perplexity: '
+          'ti riportiamo al massimo della visibilità AI e monitoriamo i progressi nel tempo. '
+          'Tu non devi fare nulla.</p>'
+          '<ul>'
+            '<li>Schema.org, FAQ e dati strutturati</li>'
+            '<li>Contenuti ottimizzati per le risposte AI</li>'
+            '<li>Re-scan e monitoraggio progressi</li>'
+          '</ul>'
+        '</div>'
+        '<div class="cta-r">'
+          '<p>Lasciaci i tuoi contatti: ti scriviamo o ti chiamiamo noi.</p>'
+          '<form id="cta-contact-form">'
+            '<input type="email" id="cta-email" name="email" placeholder="La tua email" required>'
+            '<input type="tel" id="cta-phone" name="phone" placeholder="Telefono (opzionale)">'
+            '<div class="cta-pref">'
+              '<span>Contattami via</span>'
+              '<label><input type="radio" name="preference" value="email" checked> Email</label>'
+              '<label><input type="radio" name="preference" value="phone"> Telefono</label>'
+            '</div>'
+            '<button type="submit" class="cta-btn">Voglio essere contattato →</button>'
+          '</form>'
+          '<p class="cta-ok" id="cta-ok">✓ Ricevuto! Ti contatteremo presto.</p>'
+        '</div>'
+      '</div>'
+      '<script>'
+      'document.getElementById("cta-contact-form").addEventListener("submit",async function(e){'
+        'e.preventDefault();'
+        'var btn=this.querySelector("button");'
+        'btn.disabled=true;btn.textContent="Invio…";'
+        'var fd=new FormData(this);'
+        'try{'
+          'var r=await fetch("/contact/__JOB_ID__",{method:"POST",body:fd});'
+          'if(r.ok){'
+            'document.getElementById("cta-ok").style.display="block";'
+            'this.style.display="none";'
+          '}else{btn.disabled=false;btn.textContent="Voglio essere contattato →";}'
+        '}catch(err){btn.disabled=false;btn.textContent="Voglio essere contattato →";}'
+      '});'
+      '</script>'
+    )
     foot = f'<div class="foot"><span>verticalai.it · GEO Audit</span><span>Generato il {fmt_date()}</span></div>'
 
     return (head + top + summ + health + profile + dist + site_sec + wins_sec
