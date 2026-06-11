@@ -23,6 +23,11 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`pay2vertical server running on http://localhost:${PORT}`);
-});
+// Local dev: listen directly. Vercel imports this file as a module (no listen needed).
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`pay2vertical server running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
