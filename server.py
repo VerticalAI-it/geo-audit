@@ -22,6 +22,7 @@ _SECRET      = os.environ.get("CRON_SECRET", "fallback-secret").encode()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 FORM_HTML = open(os.path.join(_HERE, "templates", "form.html"), encoding="utf-8").read()
+HOME_HTML = open(os.path.join(_HERE, "templates", "home.html"), encoding="utf-8").read()
 
 # Supabase REST headers (service role bypassa RLS)
 _SB_H = {
@@ -203,7 +204,7 @@ def _inject_bar(html: str, job_id: str = "", email: str = "") -> str:
         '<a href="/miei-report" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
         'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
         'I miei report</a>'
-        '<a href="/" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
+        '<a href="/audit" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
         'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
         "Nuova analisi</a></div>"
     )
@@ -296,6 +297,11 @@ document.getElementById('geo-gate-form').addEventListener('submit', async functi
 
 @app.get("/", response_class=HTMLResponse)
 def index():
+    return HOME_HTML
+
+
+@app.get("/audit", response_class=HTMLResponse)
+def audit_form():
     return FORM_HTML
 
 
@@ -308,7 +314,7 @@ def health():
 async def scan(url: str = Form(...)):
     url = (url or "").strip()
     if not url:
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/audit", status_code=303)
     if url.startswith("//"):
         url = "https:" + url
     elif not url.startswith(("http://", "https://")):
@@ -320,7 +326,7 @@ async def scan(url: str = Form(...)):
         return HTMLResponse(
             _page("Errore",
                   f"<h2>Non riesco ad analizzare questo sito</h2>"
-                  f"<p>{geo_audit.esc(str(e))}</p><p><a href='/'>← Riprova</a></p>"),
+                  f"<p>{geo_audit.esc(str(e))}</p><p><a href='/audit'>← Riprova</a></p>"),
             status_code=400,
         )
 
@@ -361,7 +367,7 @@ def report(job_id: str, request: Request, token: str = ""):
     job = _sb_get(job_id)
     if not job or not job.get("html"):
         return HTMLResponse(
-            _page("Non trovato", "<h2>Report non trovato.</h2><p><a href='/'>← Nuova analisi</a></p>"),
+            _page("Non trovato", "<h2>Report non trovato.</h2><p><a href='/audit'>← Nuova analisi</a></p>"),
             status_code=404,
         )
 
@@ -451,7 +457,7 @@ _MIEI_REPORT_PAGE = f"""<!doctype html>
     <input id="email" name="email" type="email" placeholder="nome@esempio.it" required autofocus>
     <button type="submit">Inviami i link →</button>
   </form>
-  <a class="back" href="/">← Nuova analisi</a>
+  <a class="back" href="/audit">← Nuova analisi</a>
   <div class="foot">verticalai.it · GEO Audit</div>
 </div>
 </body>
@@ -470,7 +476,7 @@ _MIEI_REPORT_SENT = f"""<!doctype html>
   <div class="check">✓</div>
   <h1>Email inviata</h1>
   <p class="sub">Controlla la tua casella: troverai i link a tutti i report associati a quell'indirizzo.</p>
-  <a class="back" href="/">← Nuova analisi</a>
+  <a class="back" href="/audit">← Nuova analisi</a>
 </div>
 </body>
 </html>"""
@@ -514,7 +520,7 @@ def _send_my_reports_email(to: str, jobs: list):
         body = (
             f'<h1 style="font-size:22px;font-weight:800;margin:0 0 8px">Nessun report trovato</h1>'
             f'<p style="color:#9C99B5;font-size:14px;margin:0">Non abbiamo trovato report associati a {to}.<br>'
-            f'Prova con un\'altra email o <a href="{SITE_URL}" style="color:#9B8CFF">avvia una nuova analisi</a>.</p>'
+            f'Prova con un\'altra email o <a href="{SITE_URL}/audit" style="color:#9B8CFF">avvia una nuova analisi</a>.</p>'
         )
         subject = "GEO Audit — nessun report trovato"
     html = (
