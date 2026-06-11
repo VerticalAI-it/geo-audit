@@ -1,15 +1,11 @@
 const { Pool } = require('pg');
 
-// pg-connection-string chokes on Supabase's "postgres.projectref" username.
-// Parse with Node's URL instead and pass individual params.
-const dbUrl = new URL(process.env.DATABASE_URL);
-
 const pool = new Pool({
-  host:     dbUrl.hostname,
-  port:     parseInt(dbUrl.port, 10) || 5432,
-  database: dbUrl.pathname.replace(/^\//, ''),
-  user:     decodeURIComponent(dbUrl.username),
-  password: decodeURIComponent(dbUrl.password),
+  host:     process.env.DB_HOST,
+  port:     parseInt(process.env.DB_PORT, 10) || 5432,
+  database: process.env.DB_NAME     || 'postgres',
+  user:     process.env.DB_USER     || 'postgres',
+  password: process.env.DB_PASSWORD,
   ssl:      { rejectUnauthorized: false },
 });
 
