@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GEO – Piano Personalizzato</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .strike-price { text-decoration: line-through; }
+    #offer-box { transition: all 0.3s ease; }
+    .spinner { border-top-color: #6366f1; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+
+  <!-- Hero -->
+  <header class="bg-white shadow-sm">
+    <div class="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
+      <span class="text-2xl font-bold text-indigo-600 tracking-tight">GEO</span>
+      <span class="text-sm text-gray-400">Sistema di Checkout Sicuro</span>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-6 py-14">
+
+    <!-- Anchor pricing -->
+    <section class="text-center mb-14">
+      <p class="text-sm uppercase tracking-widest text-indigo-500 font-semibold mb-3">Consulenza &amp; Posizionamento GEO</p>
+      <h1 class="text-4xl font-extrabold text-gray-900 mb-4">Il tuo piano personalizzato</h1>
+      <p class="text-gray-500 mb-8">Hai ricevuto un'offerta? Inserisci il tuo codice qui sotto per sbloccarla.</p>
+
+      <!-- Anchor price cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-10">
+        <div class="rounded-2xl border border-gray-200 bg-white p-6 text-left shadow-sm">
+          <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Piano Standard</p>
+          <p class="text-4xl font-bold text-gray-300 strike-price mb-1">2.500€</p>
+          <p class="text-gray-400 text-sm strike-price">/mese</p>
+          <ul class="mt-4 space-y-1 text-sm text-gray-400">
+            <li>✓ Audit GEO completo</li>
+            <li>✓ Ottimizzazione contenuti</li>
+            <li>✓ Report mensile</li>
+          </ul>
+        </div>
+        <div class="rounded-2xl border border-gray-200 bg-white p-6 text-left shadow-sm">
+          <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Piano Enterprise</p>
+          <p class="text-4xl font-bold text-gray-300 strike-price mb-1">4.800€</p>
+          <p class="text-gray-400 text-sm strike-price">/mese</p>
+          <ul class="mt-4 space-y-1 text-sm text-gray-400">
+            <li>✓ Tutto del Piano Standard</li>
+            <li>✓ Supporto dedicato</li>
+            <li>✓ Strategia multi-canale</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Code input card -->
+    <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
+      <h2 class="text-xl font-bold text-gray-800 mb-2">Hai un codice offerta?</h2>
+      <p class="text-sm text-gray-500 mb-6">Inserisci il codice ricevuto per visualizzare il tuo preventivo personalizzato.</p>
+
+      <div class="flex gap-3 mb-4">
+        <input
+          id="code-input"
+          type="text"
+          placeholder="Es. OFFERTA50"
+          maxlength="50"
+          autocomplete="off"
+          class="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-base font-mono uppercase focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+        />
+        <button
+          id="validate-btn"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Verifica
+        </button>
+      </div>
+
+      <!-- Status messages -->
+      <div id="error-msg" class="hidden text-red-500 text-sm mb-4 flex items-center gap-2">
+        <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+        <span id="error-text">Codice non valido o scaduto</span>
+      </div>
+
+      <!-- Offer summary (hidden until valid code) -->
+      <div id="offer-box" class="hidden mt-4 rounded-xl bg-indigo-50 border border-indigo-200 p-6">
+        <div class="flex items-start justify-between mb-4">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-indigo-500 font-semibold mb-1">Offerta Personalizzata</p>
+            <p id="offer-description" class="text-lg font-bold text-gray-800"></p>
+          </div>
+          <span id="offer-badge" class="bg-indigo-100 text-indigo-700 text-xs font-semibold px-3 py-1 rounded-full"></span>
+        </div>
+
+        <div class="flex items-baseline gap-3 mb-2">
+          <span id="offer-price" class="text-4xl font-extrabold text-indigo-700"></span>
+          <span id="offer-cycle" class="text-gray-500 text-sm"></span>
+          <span class="text-gray-400 text-sm strike-price">invece di 2.500€/mese</span>
+        </div>
+
+        <p class="text-xs text-gray-400 mb-6">Codice: <span id="offer-code" class="font-mono font-semibold text-gray-600"></span></p>
+
+        <button
+          id="pay-btn"
+          class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold py-4 rounded-xl text-base transition flex items-center justify-center gap-2"
+        >
+          <span id="pay-btn-text">Procedi al pagamento sicuro</span>
+          <div id="pay-spinner" class="hidden w-5 h-5 border-2 border-white border-t-transparent rounded-full spinner"></div>
+        </button>
+
+        <p class="text-xs text-center text-gray-400 mt-3">
+          Pagamento sicuro con <strong>Stripe</strong> · Nessuna commissione aggiuntiva
+        </p>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="text-center py-8 text-xs text-gray-300">
+    &copy; 2026 GEO · Pagamenti gestiti da Stripe
+  </footer>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
