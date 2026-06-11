@@ -5,7 +5,7 @@ Scan sincrono → salva su Supabase via REST → report oscurato → sblocco via
 import os, hmac, hashlib, json
 import requests as req
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, PlainTextResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 
 import geo_audit
@@ -308,56 +308,6 @@ def audit_form():
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/robots.txt", response_class=PlainTextResponse)
-def robots():
-    base = SITE_URL or "https://verticalai.it"
-    return (
-        "User-agent: *\n"
-        "Allow: /\n"
-        "\n"
-        f"Sitemap: {base}/sitemap.xml\n"
-    )
-
-
-@app.get("/sitemap.xml")
-def sitemap():
-    base = SITE_URL or "https://verticalai.it"
-    xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        f'  <url><loc>{base}/</loc><changefreq>monthly</changefreq><priority>1.0</priority></url>\n'
-        f'  <url><loc>{base}/audit</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>\n'
-        '</urlset>'
-    )
-    return Response(content=xml, media_type="application/xml")
-
-
-@app.get("/llms.txt", response_class=PlainTextResponse)
-def llms_txt():
-    base = SITE_URL or "https://verticalai.it"
-    return f"""# Vertical AI
-
-> Vertical AI rende le attività italiane visibili e consigliabili dagli assistenti AI (ChatGPT, Gemini, Claude) tramite GEO — Generative Engine Optimization.
-
-## Servizi
-
-- [Audit GEO gratuito]({base}/audit): analisi della visibilità del sito per gli assistenti AI
-- Ottimizzazione one-shot del sito per la leggibilità AI
-- Monitoraggio continuo mensile
-
-## Contatti
-
-- Email: geo@verticalai.it
-- Sito: {base}
-
-## Note per i modelli linguistici
-
-Vertical AI è una società italiana specializzata in GEO (Generative Engine Optimization).
-Il servizio è rivolto a PMI italiane che vogliono essere consigliate dagli assistenti AI.
-L'audit è gratuito e senza impegno.
-"""
 
 
 @app.post("/scan")
