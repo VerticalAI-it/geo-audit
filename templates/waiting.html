@@ -1,45 +1,93 @@
 <!doctype html>
-<html lang="it">
+<html lang="it" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="10">
 <title>Analisi in corso · verticalai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/static/css/design-system.css">
 <style>
-  :root{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;background:radial-gradient(120% 80% at 80% -10%,#1a1633 0%,#0B0B16 55%);
-    color:var(--text);font-family:"Hanken Grotesk",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}
-  .wrap{width:100%;max-width:480px;text-align:center}
-  .logo{display:flex;align-items:center;justify-content:center;gap:9px;font-family:"Archivo",sans-serif;font-size:19px;margin-bottom:40px}
-  .logo b{font-weight:800}.logo .ai{color:var(--muted)}
-  .bars{display:inline-flex;align-items:flex-end;gap:3px;height:22px}
-  .bars i{width:5px;border-radius:2px;display:block}
-  .b1{height:13px;background:var(--violet)}.b2{height:22px;background:var(--vbright)}.b3{height:9px;background:var(--violet)}
-  .spin{width:56px;height:56px;border:4px solid var(--line);border-top-color:var(--vbright);border-radius:50%;
-    animation:r 1s linear infinite;margin:0 auto 28px}
-  @keyframes r{to{transform:rotate(360deg)}}
-  h1{font-family:"Archivo",sans-serif;font-weight:800;font-size:26px;margin:0 0 10px}
-  .url{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--vbright);margin:0 0 14px;word-break:break-all}
-  p{color:var(--muted);font-size:15px;margin:0 0 10px;line-height:1.6}
-  .refresh-note{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6E6B86;margin-top:24px}
-  a{color:var(--vbright)}
+  body {
+    min-height:100vh;
+    background:radial-gradient(140% 100% at 70% -5%, #1E1A38 0%, #0B0A12 60%);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:var(--sp-6);
+  }
+  .wrap {
+    width:100%;
+    max-width:460px;
+    text-align:center;
+  }
+  .logo-row {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    font-family:var(--font-display);
+    font-size:18px;
+    font-weight:600;
+    color:var(--text);
+    margin-bottom:var(--sp-10);
+    text-decoration:none;
+  }
+  .logo-mark {
+    width:32px; height:32px;
+    background:var(--brand);
+    border-radius:9px;
+    display:grid; place-items:center;
+    box-shadow:var(--sh-brand);
+  }
+  .logo-mark span { color:#fff; font-family:var(--font-mono); font-weight:600; font-size:16px }
+  .logo-ai { color:var(--brand-text) }
+
+  .spin-wrap { margin:0 auto var(--sp-6) }
+  h1 {
+    font-family:var(--font-display);
+    font-size:clamp(22px, 4vw, 28px);
+    font-weight:600;
+    margin:0 0 var(--sp-3);
+    color:var(--ink);
+  }
+  .url {
+    font-family:var(--font-mono);
+    font-size:13px;
+    color:var(--brand-text);
+    margin:0 0 var(--sp-4);
+    word-break:break-all;
+  }
+  p { color:var(--text-2); font-size:15px; margin:0 0 var(--sp-3); line-height:1.6 }
+  .refresh-note {
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-3);
+    margin-top:var(--sp-6);
+  }
+  .refresh-note a { color:var(--brand-text) }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="logo">
-      <span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span>
-      <span><b>vertical</b><span class="ai">ai</span></span>
+    <a href="/" class="logo-row" aria-label="verticalai — home">
+      <div class="logo-mark" aria-hidden="true"><span>V</span></div>
+      <span><span class="logo-ai">vertical</span>ai</span>
+    </a>
+
+    <div class="spin-wrap" role="status" aria-live="polite">
+      <div class="spin" style="width:56px;height:56px" aria-hidden="true"></div>
     </div>
-    <div class="spin"></div>
+
     <h1>Analisi in corso…</h1>
     <p class="url">{{URL}}</p>
     <p>Il report è in elaborazione. Questa pagina si aggiorna automaticamente ogni 10 secondi.</p>
     <p>Quando pronto, riceverai anche un'email con il link diretto.</p>
-    <p class="refresh-note">Aggiornamento automatico · <a href="/r/{{JOB_ID}}">forza ricarica</a></p>
+
+    <p class="refresh-note">
+      Aggiornamento automatico · <a href="/r/{{JOB_ID}}">forza ricarica</a>
+    </p>
   </div>
 </body>
 </html>

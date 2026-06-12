@@ -1,129 +1,252 @@
 <!doctype html>
-<html lang="it">
+<html lang="it" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>I tuoi report · GEO Audit · verticalai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/static/css/design-system.css">
 <style>
-  :root{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);
-    font-family:"Hanken Grotesk",system-ui,sans-serif}
-  .topbar{border-bottom:1px solid var(--line);padding:16px 32px;display:flex;align-items:center;justify-content:space-between}
-  .logo{display:flex;align-items:center;gap:9px;font-family:"Archivo",sans-serif;font-size:18px;text-decoration:none;color:var(--text)}
-  .logo b{font-weight:800}.logo .ai{color:var(--muted)}
-  .bars{display:inline-flex;align-items:flex-end;gap:3px;height:20px}
-  .bars i{width:4px;border-radius:2px;display:block}
-  .b1{height:11px;background:var(--violet)}.b2{height:20px;background:var(--vbright)}.b3{height:8px;background:var(--violet)}
-  .new-btn{background:var(--violet);color:#fff;text-decoration:none;border-radius:9px;
-    font-family:"Archivo",sans-serif;font-weight:700;font-size:13px;padding:9px 16px}
-  .main{max-width:860px;margin:40px auto;padding:0 24px}
-  h1{font-family:"Archivo",sans-serif;font-weight:800;font-size:26px;margin:0 0 6px}
-  .subtitle{color:var(--muted);font-size:15px;margin:0 0 28px}
-  .audit-list{display:flex;flex-direction:column;gap:12px}
-  .audit-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;
-    display:flex;align-items:center;gap:16px;text-decoration:none;color:var(--text);
-    transition:border-color .15s}
-  .audit-card:hover{border-color:var(--violet)}
-  .score-badge{width:52px;height:52px;border-radius:12px;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;flex-shrink:0}
-  .score-badge .num{font-family:"Archivo",sans-serif;font-weight:800;font-size:18px;line-height:1}
-  .score-badge .grd{font-family:"IBM Plex Mono",monospace;font-size:10px;margin-top:2px}
-  .score-a,.score-b{background:#0d2218;color:#00b894}
-  .score-c{background:#1a1a10;color:#fdcb6e}
-  .score-d,.score-e,.score-f{background:#2a1515;color:#d63031}
-  .score-unknown{background:var(--line);color:var(--muted)}
-  .audit-info{flex:1;min-width:0}
-  .audit-domain{font-family:"Archivo",sans-serif;font-weight:700;font-size:16px;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .audit-meta{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);margin-top:4px}
-  .status-badge{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:1px;
-    padding:4px 10px;border-radius:6px;flex-shrink:0}
-  .s-done{background:#0d2218;color:#00b894}
-  .s-pending,.s-processing{background:#17152A;color:var(--vbright);animation:blink 1.5s ease-in-out infinite}
-  .s-failed{background:#2a1515;color:#d63031}
-  @keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
-  .empty{text-align:center;padding:60px 24px;color:var(--muted)}
-  .empty h2{font-family:"Archivo",sans-serif;font-weight:800;font-size:22px;color:var(--text);margin:0 0 8px}
-  .empty p{font-size:15px;margin:0 0 24px}
-  .empty a{background:var(--violet);color:#fff;text-decoration:none;border-radius:10px;
-    font-family:"Archivo",sans-serif;font-weight:700;font-size:15px;padding:12px 24px;display:inline-block}
-  @media(max-width:520px){.audit-card{flex-wrap:wrap}.topbar{padding:14px 16px}.main{padding:0 16px}}
+  body {
+    min-height:100vh;
+    background:var(--canvas);
+    padding-bottom:var(--sp-16);
+  }
+  .topbar {
+    position:sticky; top:0;
+    background:color-mix(in srgb, var(--canvas) 86%, transparent);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    padding:0 clamp(16px, 4vw, 40px);
+    height:60px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:var(--sp-4);
+    z-index:30;
+  }
+  .logo-row {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:var(--font-display);
+    font-size:17px;
+    font-weight:600;
+    color:var(--text);
+    text-decoration:none;
+  }
+  .logo-mark {
+    width:28px; height:28px;
+    background:var(--brand);
+    border-radius:8px;
+    display:grid; place-items:center;
+    flex:none;
+  }
+  .logo-mark span { color:#fff; font-family:var(--font-mono); font-weight:600; font-size:14px }
+  .logo-ai { color:var(--brand-text) }
+
+  .topbar-actions { display:flex; align-items:center; gap:var(--sp-3) }
+
+  main {
+    max-width:820px;
+    margin:var(--sp-10) auto 0;
+    padding:0 clamp(16px, 4vw, 32px);
+  }
+  .page-head { margin-bottom:var(--sp-8) }
+  .page-head h1 {
+    font-size:clamp(22px, 4vw, 28px);
+    margin:0 0 var(--sp-2);
+    letter-spacing:-.02em;
+  }
+  .page-head p { color:var(--text-2); font-size:15px }
+
+  /* Lista audit */
+  .audit-list { display:flex; flex-direction:column; gap:var(--sp-3) }
+
+  .audit-card {
+    display:flex;
+    align-items:center;
+    gap:var(--sp-4);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--r-lg);
+    padding:var(--sp-4) var(--sp-5);
+    text-decoration:none;
+    color:var(--text);
+    transition:border-color var(--t-fast), box-shadow var(--t-fast);
+    box-shadow:var(--sh-xs);
+  }
+  .audit-card:hover {
+    border-color:var(--brand);
+    box-shadow:var(--sh-sm);
+    text-decoration:none;
+  }
+  .audit-card:focus-visible {
+    outline:2px solid var(--focus);
+    outline-offset:2px;
+  }
+
+  /* Score number widget */
+  .score-block {
+    width:52px; height:52px;
+    border-radius:var(--r-md);
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    flex-shrink:0;
+    border:1px solid var(--border);
+  }
+  .score-block .num {
+    font-family:var(--font-display);
+    font-weight:600;
+    font-size:18px;
+    line-height:1;
+  }
+  .score-block .grd {
+    font-family:var(--font-mono);
+    font-size:10px;
+    margin-top:2px;
+    color:var(--text-3);
+  }
+  .score-ottimo     { background:var(--success-bg);  border-color:var(--success-border) }
+  .score-ottimo .num    { color:var(--success) }
+  .score-migliorabile   { background:var(--warning-bg);  border-color:var(--warning-border) }
+  .score-migliorabile .num  { color:var(--warning) }
+  .score-critico    { background:var(--danger-bg);   border-color:var(--danger-border) }
+  .score-critico .num   { color:var(--danger) }
+  .score-unknown    { background:var(--surface-2);   border-color:var(--border) }
+  .score-unknown .num   { color:var(--text-3) }
+
+  .audit-info { flex:1; min-width:0 }
+  .audit-domain {
+    font-family:var(--font-display);
+    font-weight:600;
+    font-size:15px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    color:var(--text);
+  }
+  .audit-meta {
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-3);
+    margin-top:3px;
+  }
+
+  /* Status badge */
+  .status-pill {
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    font-weight:600;
+    letter-spacing:.06em;
+    padding:4px 10px;
+    border-radius:var(--r-pill);
+    flex-shrink:0;
+    border:1px solid transparent;
+    text-transform:uppercase;
+  }
+  .s-done       { background:var(--success-bg);  color:var(--success);  border-color:var(--success-border) }
+  .s-pending,
+  .s-processing { background:var(--brand-soft);   color:var(--brand-text) }
+  .s-failed     { background:var(--danger-bg);    color:var(--danger);   border-color:var(--danger-border) }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.45} }
+  .s-pending, .s-processing { animation:blink 1.6s ease-in-out infinite }
+
+  /* Empty state */
+  .empty {
+    text-align:center;
+    padding:var(--sp-16) var(--sp-6);
+    color:var(--text-3);
+  }
+  .empty h2 {
+    font-size:22px;
+    color:var(--text);
+    margin:0 0 var(--sp-3);
+  }
+  .empty p { font-size:15px; margin:0 0 var(--sp-6); color:var(--text-2) }
+
+  @media (max-width:520px) {
+    .audit-card { flex-wrap:wrap }
+    .topbar { padding:0 var(--sp-4) }
+  }
 </style>
 </head>
 <body>
-  <div class="topbar">
-    <a href="/" class="logo">
-      <span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span>
-      <span><b>vertical</b><span class="ai">ai</span></span>
+  <header class="topbar">
+    <a href="/" class="logo-row" aria-label="verticalai — home">
+      <div class="logo-mark" aria-hidden="true"><span>V</span></div>
+      <span><span class="logo-ai">vertical</span>ai</span>
     </a>
-    <a href="/" class="new-btn">+ Nuova analisi</a>
-  </div>
+    <div class="topbar-actions">
+      <a href="/audit" class="btn btn--primary btn--sm">+ Nuova analisi</a>
+    </div>
+  </header>
 
-  <div class="main">
-    <h1>I tuoi report</h1>
-    <p class="subtitle">Storico delle analisi GEO per i siti che hai verificato.</p>
-    <div class="audit-list" id="list"></div>
-  </div>
+  <main>
+    <div class="page-head">
+      <h1>I tuoi report</h1>
+      <p>Storico delle analisi GEO per i siti che hai verificato.</p>
+    </div>
+    <div class="audit-list" id="list" role="list" aria-label="Report GEO"></div>
+  </main>
 
   <script>
     const audits = {{AUDITS_JSON}};
 
-    function scoreClass(grade) {
-      if (!grade) return "score-unknown";
-      const g = grade.toUpperCase();
-      if (g === "A") return "score-a";
-      if (g === "B") return "score-b";
-      if (g === "C") return "score-c";
-      return "score-d";
+    function scoreClass(overall, grade) {
+      if (overall == null || !grade) return "score-unknown";
+      if (overall >= 75) return "score-ottimo";
+      if (overall >= 50) return "score-migliorabile";
+      return "score-critico";
     }
 
-    function statusBadge(status) {
+    function statusPill(status) {
       const map = {
-        "done": ["s-done","COMPLETATO"],
-        "pending": ["s-pending","IN CODA"],
-        "processing": ["s-processing","IN CORSO"],
-        "failed": ["s-failed","ERRORE"],
+        "done":       ["s-done",       "Completato"],
+        "pending":    ["s-pending",    "In coda"],
+        "processing": ["s-processing", "In corso"],
+        "failed":     ["s-failed",     "Errore"],
       };
-      const [cls, label] = map[status] || ["s-pending", status.toUpperCase()];
-      return `<span class="status-badge ${cls}">${label}</span>`;
+      const [cls, label] = map[status] || ["s-pending", status];
+      return `<span class="status-pill ${cls}" aria-label="stato: ${label}">${label}</span>`;
     }
 
     function fmtDate(iso) {
       if (!iso) return "";
       const d = new Date(iso);
-      return d.toLocaleDateString("it-IT", {day:"2-digit",month:"short",year:"numeric"});
+      return d.toLocaleDateString("it-IT", { day:"2-digit", month:"short", year:"numeric" });
     }
 
     const list = document.getElementById("list");
 
     if (!audits.length) {
       list.innerHTML = `
-        <div class="empty">
+        <div class="empty" role="status">
           <h2>Nessun report ancora</h2>
           <p>Analizza il tuo primo sito per scoprire il suo punteggio GEO.</p>
-          <a href="/">Inizia l'analisi →</a>
+          <a href="/audit" class="btn btn--primary">Inizia l'analisi →</a>
         </div>`;
     } else {
       list.innerHTML = audits.map(a => {
-        const href = a.status === "done" ? `/r/${a.id}` : `/job/${a.id}/gate`;
+        const href   = a.status === "done" ? `/r/${a.id}` : `/job/${a.id}/gate`;
         const domain = a.domain || a.url || "—";
-        const score = a.overall != null ? a.overall : "—";
-        const grade = a.grade || "—";
-        const sc = scoreClass(a.grade);
+        const score  = a.overall != null ? a.overall : "—";
+        const grade  = a.grade || "—";
+        const sc     = scoreClass(a.overall, a.grade);
         return `
-          <a href="${href}" class="audit-card">
-            <div class="score-badge ${sc}">
+          <a href="${href}" class="audit-card" role="listitem">
+            <div class="score-block ${sc}" aria-label="Punteggio ${score}/100">
               <span class="num">${score}</span>
-              <span class="grd">${grade}</span>
+              <span class="grd" aria-hidden="true">${grade}</span>
             </div>
             <div class="audit-info">
               <div class="audit-domain">${domain}</div>
-              <div class="audit-meta">${fmtDate(a.created_at)} · ${a.pages_count || "—"} pagine analizzate</div>
+              <div class="audit-meta">${fmtDate(a.created_at)}${a.pages_count ? " · " + a.pages_count + " pagine" : ""}</div>
             </div>
-            ${statusBadge(a.status)}
+            ${statusPill(a.status)}
           </a>`;
       }).join("");
     }
