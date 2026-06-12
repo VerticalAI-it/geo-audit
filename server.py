@@ -92,6 +92,107 @@ def _has_access(request: Request, job_id: str) -> bool:
 
 _NOTIFY_TO = ["geo@verticalai.it", "info@verticalai.it"]
 
+_EMAIL_FONTS = (
+    'https://fonts.googleapis.com/css2?'
+    'family=Space+Grotesk:wght@500;600;700'
+    '&family=Inter:wght@400;500;600;700'
+    '&family=JetBrains+Mono:wght@500;600&display=swap'
+)
+
+_EMAIL_HEAD = """
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+<link href="{fonts}" rel="stylesheet">
+<style>
+  :root{{color-scheme:light dark;supported-color-schemes:light dark}}
+  body,table,td{{margin:0;padding:0}}
+  img{{border:0;line-height:100%;-ms-interpolation-mode:bicubic}}
+  table{{border-collapse:collapse!important}}
+  a{{text-decoration:none}}
+  @media only screen and (max-width:600px){{
+    .container{{width:100%!important}}
+    .px{{padding-left:22px!important;padding-right:22px!important}}
+    .stack{{display:block!important;width:100%!important;padding-bottom:14px!important}}
+    .btn a{{display:block!important}}
+    .h1{{font-size:21px!important}}
+    .scorebig{{font-size:52px!important}}
+  }}
+  @media (prefers-color-scheme:dark){{
+    .bg-canvas{{background:#0B0A12!important}}
+    .bg-card{{background:#131220!important}}
+    .bg-soft{{background:#1A1925!important}}
+    .t-ink{{color:#F4F3F8!important}}
+    .t-2{{color:#BCBBCB!important}}
+    .t-3{{color:#8A8A9E!important}}
+    .brd{{border-color:#272636!important}}
+    .hairline{{background:#272636!important}}
+  }}
+</style>
+""".format(fonts=_EMAIL_FONTS)
+
+
+def _email_logo_row(right_text: str = "GEO Audit") -> str:
+    return (
+        '<tr><td class="px" style="padding:4px 8px 18px">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+        '<td align="left">'
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
+        '<td style="width:30px;height:30px;background:#5A45D8;border-radius:9px;'
+        'text-align:center;vertical-align:middle">'
+        '<span style="color:#fff;font-size:15px;font-weight:600;'
+        "font-family:'JetBrains Mono','Courier New',monospace\">V</span>"
+        '</td>'
+        '<td style="padding-left:10px">'
+        '<span class="t-ink" style="font-size:15px;font-weight:600;color:#16151E;'
+        "font-family:'Space Grotesk',Arial,sans-serif\">"
+        '<span style="color:#5A45D8">vertical</span>ai</span>'
+        '</td>'
+        '</tr></table>'
+        '</td>'
+        f'<td align="right" class="t-3" style="font-size:11px;letter-spacing:.12em;'
+        f'text-transform:uppercase;color:#76768A;'
+        f"font-family:'JetBrains Mono','Courier New',monospace\">{right_text}</td>"
+        '</tr></table>'
+        '</td></tr>'
+    )
+
+
+def _email_footer() -> str:
+    return (
+        '<tr><td class="px" style="padding:24px 28px">'
+        '<p class="t-3" style="font-size:12px;line-height:1.7;color:#76768A;margin:0;'
+        "text-align:center;font-family:'Inter',Arial,sans-serif\">"
+        '<b style="color:#4A4A5A">Vertical AI</b> · Rendiamo la tua attività consigliabile dagli assistenti AI<br>'
+        'verticalai.it · '
+        '<a href="#" style="color:#76768A;text-decoration:underline">Preferenze email</a>'
+        ' · '
+        '<a href="#" style="color:#76768A;text-decoration:underline">Disiscriviti</a>'
+        '</p>'
+        '</td></tr>'
+    )
+
+
+def _score_band(overall: int) -> tuple[str, str, str]:
+    """Restituisce (etichetta, bg, color) in base alle soglie del design system."""
+    if overall >= 75:
+        return "Ottimo", "#E7F8F0", "#0E9F6E"
+    if overall >= 50:
+        return "Buona, migliorabile", "#FCF3E3", "#9a5b00"
+    return "Critico", "#FCEBEC", "#D92D34"
+
+
+def _resend_post(to: list, subject: str, html: str) -> None:
+    req.post(
+        "https://api.resend.com/emails",
+        json={"from": FROM_EMAIL, "to": to, "subject": subject, "html": html},
+        headers={"Authorization": f"Bearer {RESEND_KEY}", "Content-Type": "application/json"},
+        timeout=10,
+    )
+
 
 def _send_contact_notif(job_id: str, domain: str, overall: int, grade: str,
                          email: str, phone: str, preference: str):
@@ -99,32 +200,65 @@ def _send_contact_notif(job_id: str, domain: str, overall: int, grade: str,
         return
     pref_label = "Telefono" if preference == "phone" else "Email"
     report_link = f"{SITE_URL}/r/{job_id}?token={_make_token(job_id)}"
-    sc = "#00b894" if overall >= 75 else ("#fdcb6e" if overall >= 45 else "#d63031")
-    html = (
-        '<!doctype html><html><head><meta charset="utf-8"></head>'
-        '<body style="margin:0;padding:0;background:#0B0B16;color:#F2F1F8;font-family:system-ui,sans-serif">'
-        '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:40px auto;padding:0 16px">'
-        '<tr><td>'
-        '<p style="font-size:13px;color:#9C99B5;margin:0 0 24px">'
-        '<b style="color:#9B8CFF">vertical</b><span style="color:#9C99B5">ai</span> · GEO Audit</p>'
-        '<h1 style="font-size:22px;font-weight:800;margin:0 0 20px">Nuova richiesta di contatto</h1>'
-        f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#17152A;border:1px solid #2A2640;border-radius:12px;padding:20px;margin-bottom:20px">'
-        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5;width:140px">Email</td>'
-        f'<td style="padding:6px 0;font-size:13px;color:#F2F1F8"><b>{email}</b></td></tr>'
-        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5">Telefono</td>'
-        f'<td style="padding:6px 0;font-size:13px;color:#F2F1F8">{phone or "—"}</td></tr>'
-        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5">Preferenza</td>'
-        f'<td style="padding:6px 0;font-size:13px;color:#F2F1F8">{pref_label}</td></tr>'
-        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5">Sito analizzato</td>'
-        f'<td style="padding:6px 0;font-size:13px;color:#F2F1F8">{domain}</td></tr>'
-        f'<tr><td style="padding:6px 0;font-size:13px;color:#9C99B5">Punteggio GEO</td>'
-        f'<td style="padding:6px 0;font-size:13px;font-weight:700;color:{sc}">{overall}/100 (grado {grade})</td></tr>'
-        '</table>'
-        f'<a href="{report_link}" style="display:block;background:#6C5CE7;color:#fff;text-decoration:none;'
-        'border-radius:10px;padding:13px 20px;font-weight:700;font-size:14px;text-align:center">'
-        'Apri il report →</a>'
-        '</td></tr></table></body></html>'
-    )
+    band_lbl, band_bg, band_color = _score_band(overall)
+    html = f"""<!doctype html>
+<html lang="it" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>{_EMAIL_HEAD}<title>Nuova richiesta di contatto</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F1F1F6">
+  Richiesta di contatto da {email} per {domain} — punteggio {overall}/100.&nbsp;&zwnj;&nbsp;&zwnj;
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("GEO Audit")}
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-card brd" style="background:#FFFFFF;border:1px solid #E6E6EF;border-radius:20px;overflow:hidden">
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <div class="t-ink h1" style="font-size:22px;font-weight:600;color:#16151E;font-family:'Space Grotesk',Arial,sans-serif">Nuova richiesta di contatto</div>
+        </td></tr>
+        <tr><td class="px" style="padding:16px 36px 4px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-soft brd" style="background:#F6F6FB;border:1px solid #E6E6EF;border-radius:12px">
+            <tr><td style="padding:16px 18px">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="padding:6px 0;font-size:13px;color:#76768A;width:130px;font-family:'Inter',Arial,sans-serif">Email</td>
+                  <td style="padding:6px 0;font-size:13px;color:#16151E;font-family:'Inter',Arial,sans-serif"><b>{email}</b></td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-size:13px;color:#76768A;font-family:'Inter',Arial,sans-serif">Telefono</td>
+                  <td style="padding:6px 0;font-size:13px;color:#16151E;font-family:'Inter',Arial,sans-serif">{phone or "—"}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-size:13px;color:#76768A;font-family:'Inter',Arial,sans-serif">Preferenza</td>
+                  <td style="padding:6px 0;font-size:13px;color:#16151E;font-family:'Inter',Arial,sans-serif">{pref_label}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-size:13px;color:#76768A;font-family:'Inter',Arial,sans-serif">Sito</td>
+                  <td style="padding:6px 0;font-size:13px;color:#16151E;font-family:'Inter',Arial,sans-serif">{domain}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-size:13px;color:#76768A;font-family:'Inter',Arial,sans-serif">Punteggio GEO</td>
+                  <td style="padding:6px 0;font-size:13px;font-weight:700;color:{band_color};font-family:'Inter',Arial,sans-serif">{overall}/100 · {band_lbl}</td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td class="px" style="padding:22px 36px 32px" align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" class="btn" style="width:100%"><tr>
+            <td align="center" bgcolor="#5A45D8" style="border-radius:10px">
+              <a href="{report_link}" target="_blank" style="display:inline-block;padding:14px 28px;font-size:14px;font-weight:700;color:#ffffff;border-radius:10px;font-family:'Inter',Arial,sans-serif">Apri il report →</a>
+            </td>
+          </tr></table>
+        </td></tr>
+      </table>
+    </td></tr>
+    {_email_footer()}
+  </table>
+</td></tr>
+</table>
+</body></html>"""
     r = req.post("https://api.resend.com/emails",
                  json={"from": FROM_EMAIL,
                        "to": _NOTIFY_TO,
@@ -141,41 +275,88 @@ def _send_unlock_email(to: str, job_id: str, domain: str, overall: int, grade: s
         return
     token = _make_token(job_id)
     link  = f"{SITE_URL}/r/{job_id}?token={token}"
-    score_color = "#00b894" if overall >= 75 else ("#fdcb6e" if overall >= 45 else "#d63031")
-    html = f"""<!doctype html><html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#0B0B16;color:#F2F1F8;font-family:system-ui,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:40px auto;padding:0 16px">
-<tr><td>
-  <p style="font-size:13px;color:#9C99B5;margin:0 0 24px">
-    <b style="color:#9B8CFF">vertical</b><span style="color:#9C99B5">ai</span> · GEO Audit
-  </p>
-  <h1 style="font-size:22px;font-weight:800;margin:0 0 8px">Il tuo report GEO è pronto</h1>
-  <p style="color:#9C99B5;font-size:15px;margin:0 0 20px">
-    Abbiamo analizzato <b style="color:#F2F1F8">{domain}</b>.
-  </p>
-  <div style="background:#17152A;border:1px solid #2A2640;border-radius:16px;
-              padding:24px;margin-bottom:24px;text-align:center">
-    <div style="font-size:52px;font-weight:800;color:{score_color};line-height:1">{overall}</div>
-    <div style="font-size:14px;color:#9C99B5;margin-top:4px">punteggio su 100 · grado {grade}</div>
-  </div>
-  <a href="{link}" style="display:block;background:#6C5CE7;color:#fff;text-decoration:none;
-     border-radius:10px;padding:14px 24px;font-weight:700;font-size:16px;text-align:center">
-    Visualizza il report completo →
-  </a>
-  <p style="font-size:12px;color:#6E6B86;margin-top:20px;line-height:1.6">
-    Il link è personale e ti dà accesso al report completo.<br>
-    Hai ricevuto questa email perché hai richiesto un'analisi GEO per {domain}.
-  </p>
+    band_lbl, band_bg, band_color = _score_band(overall)
+    score_pct = min(overall, 100)
+    html = f"""<!doctype html>
+<html lang="it" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>{_EMAIL_HEAD}<title>Il tuo report è pronto</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F1F1F6">
+  Leggibilità AI di {domain}: {overall}/100. Ecco cosa va già bene e cosa conviene sistemare.&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("GEO Audit")}
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-card brd" style="background:#FFFFFF;border:1px solid #E6E6EF;border-radius:20px;overflow:hidden">
+
+        <!-- score band -->
+        <tr><td style="background:#5A45D8;background:linear-gradient(135deg,#5A45D8,#3D2F9B);padding:32px 36px" class="px">
+          <div style="color:#D0C9FB;font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-family:'JetBrains Mono','Courier New',monospace">Report leggibilità AI</div>
+          <div style="color:#ffffff;font-size:22px;font-weight:600;margin-top:6px;font-family:'Space Grotesk',Arial,sans-serif">{domain}</div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px"><tr>
+            <td style="vertical-align:bottom">
+              <span class="scorebig" style="color:#ffffff;font-size:64px;font-weight:700;line-height:1;font-family:'Space Grotesk',Arial,sans-serif">{overall}</span>
+              <span style="color:#B3A8F7;font-size:16px;font-family:'JetBrains Mono','Courier New',monospace">/100</span>
+            </td>
+            <td style="padding-left:16px;vertical-align:bottom">
+              <span style="display:inline-block;background:{band_bg};color:{band_color};font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;font-family:'Inter',Arial,sans-serif">{band_lbl}</span>
+            </td>
+          </tr></table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px"><tr>
+            <td style="background:#2B2160;border-radius:999px;height:8px;line-height:8px;font-size:0">
+              <table role="presentation" width="{score_pct}%" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#2DD4DC;border-radius:999px;height:8px;line-height:8px;font-size:0">&nbsp;</td></tr></table>
+            </td>
+          </tr></table>
+        </td></tr>
+
+        <!-- intro -->
+        <tr><td class="px" style="padding:28px 36px 8px">
+          <div class="t-ink h1" style="font-size:22px;font-weight:600;color:#16151E;font-family:'Space Grotesk',Arial,sans-serif">Il tuo report è pronto.</div>
+          <p class="t-2" style="font-size:15px;line-height:1.6;color:#4A4A5A;margin:10px 0 0;font-family:'Inter',Arial,sans-serif">Abbiamo letto le pagine di <b>{domain}</b> come farebbe un assistente AI.</p>
+        </td></tr>
+
+        <!-- CTA -->
+        <tr><td class="px" style="padding:24px 36px 6px" align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" class="btn" style="width:100%"><tr>
+            <td align="center" bgcolor="#5A45D8" style="border-radius:10px">
+              <a href="{link}" target="_blank" style="display:inline-block;padding:15px 30px;font-size:15px;font-weight:700;color:#ffffff;border-radius:10px;font-family:'Inter',Arial,sans-serif">Apri il report completo →</a>
+            </td>
+          </tr></table>
+        </td></tr>
+
+        <!-- teaser analisi completa -->
+        <tr><td class="px" style="padding:18px 36px 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-soft brd" style="background:#F6F6FB;border:1px solid #E6E6EF;border-radius:14px">
+            <tr><td style="padding:18px 20px">
+              <span style="display:inline-block;background:#5A45D8;color:#ffffff;font-size:10px;font-weight:700;letter-spacing:.06em;padding:3px 9px;border-radius:999px;font-family:'JetBrains Mono','Courier New',monospace">ANALISI COMPLETA</span>
+              <div class="t-ink" style="font-size:16px;font-weight:600;color:#16151E;margin-top:10px;font-family:'Space Grotesk',Arial,sans-serif">Vuoi capire come alzare il punteggio?</div>
+              <p class="t-2" style="font-size:13.5px;line-height:1.6;color:#4A4A5A;margin:6px 0 12px;font-family:'Inter',Arial,sans-serif">L'analisi completa include la lista di tutti i problemi ordinata per impatto, il confronto con i concorrenti e le raccomandazioni passo-passo.</p>
+              <a href="{SITE_URL}/contact/{job_id}" target="_blank" style="font-size:14px;font-weight:600;color:#4A37BE;font-family:'Inter',Arial,sans-serif">Richiedi l'analisi completa →</a>
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td class="px" style="padding:22px 36px 30px">
+          <div class="hairline" style="height:1px;background:#E6E6EF;line-height:1px;font-size:0">&nbsp;</div>
+          <p class="t-3" style="font-size:12.5px;line-height:1.6;color:#76768A;margin:16px 0 0;font-family:'Inter',Arial,sans-serif">
+            Il link è personale e ti dà accesso diretto al report.<br>
+            Hai ricevuto questa email perché hai richiesto un'analisi GEO per {domain}.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+    {_email_footer()}
+  </table>
 </td></tr>
 </table>
 </body></html>"""
-    req.post("https://api.resend.com/emails",
-             json={"from": FROM_EMAIL, "to": [to],
-                   "subject": f"GEO Audit per {domain}: punteggio {overall}/100 (grado {grade})",
-                   "html": html},
-             headers={"Authorization": f"Bearer {RESEND_KEY}",
-                      "Content-Type": "application/json"},
-             timeout=10)
+    _resend_post(
+        to=[to],
+        subject=f"GEO Audit per {domain}: punteggio {overall}/100 (grado {grade})",
+        html=html,
+    )
 
 
 # ── HTML helpers ──────────────────────────────────────────────────────────────
@@ -485,61 +666,214 @@ _MIEI_REPORT_SENT = f"""<!doctype html>
 def _send_my_reports_email(to: str, jobs: list):
     if not RESEND_KEY or not FROM_EMAIL:
         return
+    _months = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"]
     if jobs:
         rows = ""
         for j in jobs:
             token = _make_token(j["id"])
             link  = f"{SITE_URL}/r/{j['id']}?token={token}"
-            sc = "#00b894" if (j.get("overall") or 0) >= 75 else ("#fdcb6e" if (j.get("overall") or 0) >= 45 else "#d63031")
+            overall = j.get("overall") or 0
+            band_lbl, band_bg, band_color = _score_band(overall)
             raw_date = j.get("created_at", "")
             try:
-                date_str = raw_date[:10]  # "2026-06-09" from ISO timestamp
-                d, m, y = date_str.split("-")
-                date_fmt = f"{d}/{m}/{y}"
+                y, m, d = raw_date[:10].split("-")
+                date_fmt = f"{d} {_months[int(m)-1]} {y}"
             except Exception:
                 date_fmt = raw_date[:10] if raw_date else "—"
             rows += (
-                f'<tr><td style="padding:12px 0;border-bottom:1px solid #2A2640">'
-                f'<div><b style="color:#F2F1F8">{j.get("domain","?")}</b>'
-                f'<span style="color:{sc};font-weight:700;margin-left:10px">{j.get("overall","?")}/100</span>'
-                f'<span style="color:#9C99B5;margin-left:6px">({j.get("grade","?")})</span></div>'
-                f'<div style="color:#6E6B86;font-size:12px;margin-top:3px">{date_fmt}</div></td>'
-                f'<td style="padding:12px 0 12px 16px;border-bottom:1px solid #2A2640;text-align:right;vertical-align:middle">'
-                f'<a href="{link}" style="color:#9B8CFF;text-decoration:none;font-size:13px">Apri →</a>'
+                f'<tr><td style="padding:14px 0;border-bottom:1px solid #EBEBF5">'
+                f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+                f'<td style="vertical-align:middle">'
+                f'<div style="font-size:15px;font-weight:600;color:#16151E;font-family:\'Space Grotesk\',Arial,sans-serif">{j.get("domain","?")}</div>'
+                f'<div style="font-size:12px;color:#76768A;margin-top:3px;font-family:\'Inter\',Arial,sans-serif">{date_fmt}</div>'
+                f'</td>'
+                f'<td style="text-align:right;vertical-align:middle;white-space:nowrap;padding-left:12px">'
+                f'<span style="display:inline-block;background:{band_bg};color:{band_color};font-size:13px;font-weight:700;padding:4px 10px;border-radius:999px;font-family:\'Inter\',Arial,sans-serif">{overall}/100</span>'
+                f'&nbsp;&nbsp;'
+                f'<a href="{link}" target="_blank" style="font-size:13px;font-weight:600;color:#5A45D8;font-family:\'Inter\',Arial,sans-serif;text-decoration:none">Apri →</a>'
+                f'</td>'
+                f'</tr></table>'
                 f'</td></tr>'
             )
-        body = (
-            f'<h1 style="font-size:22px;font-weight:800;margin:0 0 8px">I tuoi report GEO</h1>'
-            f'<p style="color:#9C99B5;font-size:14px;margin:0 0 20px">Ecco tutti i report associati a {to}.</p>'
-            f'<table width="100%" cellpadding="0" cellspacing="0">{rows}</table>'
-            f'<p style="font-size:12px;color:#6E6B86;margin-top:24px;line-height:1.6">'
-            f'I link sono personali e danno accesso diretto al report completo.</p>'
-        )
         subject = "I tuoi report GEO Audit"
-    else:
-        body = (
-            f'<h1 style="font-size:22px;font-weight:800;margin:0 0 8px">Nessun report trovato</h1>'
-            f'<p style="color:#9C99B5;font-size:14px;margin:0">Non abbiamo trovato report associati a {to}.<br>'
-            f'Prova con un\'altra email o <a href="{SITE_URL}/audit" style="color:#9B8CFF">avvia una nuova analisi</a>.</p>'
+        card_content = (
+            f'<tr><td class="px" style="padding:28px 36px 8px">'
+            f'<div class="t-ink h1" style="font-size:22px;font-weight:600;color:#16151E;font-family:\'Space Grotesk\',Arial,sans-serif">I tuoi report GEO</div>'
+            f'<p class="t-2" style="font-size:15px;color:#4A4A5A;margin:8px 0 20px;font-family:\'Inter\',Arial,sans-serif">Tutti i report associati a <b>{to}</b>.</p>'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{rows}</table>'
+            f'<p class="t-3" style="font-size:12.5px;color:#76768A;margin-top:20px;line-height:1.6;font-family:\'Inter\',Arial,sans-serif">'
+            f'I link sono personali e danno accesso diretto al report completo.</p>'
+            f'</td></tr>'
         )
+    else:
         subject = "GEO Audit — nessun report trovato"
-    html = (
-        '<!doctype html><html><head><meta charset="utf-8"></head>'
-        '<body style="margin:0;padding:0;background:#0B0B16;color:#F2F1F8;font-family:system-ui,sans-serif">'
-        '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:40px auto;padding:0 16px">'
-        '<tr><td>'
-        '<p style="font-size:13px;color:#9C99B5;margin:0 0 24px">'
-        '<b style="color:#9B8CFF">vertical</b><span style="color:#9C99B5">ai</span> · GEO Audit</p>'
-        + body +
-        '</td></tr></table></body></html>'
+        card_content = (
+            f'<tr><td class="px" style="padding:36px 36px 28px;text-align:center">'
+            f'<div class="t-ink h1" style="font-size:22px;font-weight:600;color:#16151E;font-family:\'Space Grotesk\',Arial,sans-serif">Nessun report trovato</div>'
+            f'<p class="t-2" style="font-size:15px;color:#4A4A5A;margin:10px 0 24px;font-family:\'Inter\',Arial,sans-serif">'
+            f'Non abbiamo trovato report associati a <b>{to}</b>.<br>Prova con un\'altra email o avvia una nuova analisi.</p>'
+            f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto"><tr>'
+            f'<td align="center" bgcolor="#5A45D8" style="border-radius:10px">'
+            f'<a href="{SITE_URL}/audit" target="_blank" style="display:inline-block;padding:13px 26px;font-size:14px;font-weight:700;color:#ffffff;border-radius:10px;font-family:\'Inter\',Arial,sans-serif">Avvia un\'analisi →</a>'
+            f'</td></tr></table>'
+            f'</td></tr>'
+        )
+    preheader = "I link ai tuoi report GEO Audit." if jobs else "Nessun report trovato per questa email."
+    html = f"""<!doctype html>
+<html lang="it" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>{_EMAIL_HEAD}<title>{subject}</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F1F1F6">
+  {preheader}&nbsp;&zwnj;&nbsp;&zwnj;
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("GEO Audit")}
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-card brd" style="background:#FFFFFF;border:1px solid #E6E6EF;border-radius:20px;overflow:hidden">
+        {card_content}
+      </table>
+    </td></tr>
+    {_email_footer()}
+  </table>
+</td></tr>
+</table>
+</body></html>"""
+    _resend_post(to=[to], subject=subject, html=html)
+
+
+# TODO: Trigger non implementato — chiamare questa funzione da un follow-up
+#       scheduler (es. N giorni dopo il report) per invitare l'utente che
+#       ha un punteggio basso/medio a richiedere l'analisi completa.
+def _send_analisi_completa(to: str, job_id: str, domain: str, overall: int, grade: str):
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    contact_link = f"{SITE_URL}/contact/{job_id}"
+    band_lbl, band_bg, band_color = _score_band(overall)
+    html = f"""<!doctype html>
+<html lang="it" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>{_EMAIL_HEAD}<title>Approfondisci l'analisi GEO di {domain}</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F1F1F6">
+  Abbiamo individuato i punti chiave da migliorare per {domain}. Scopri di più.&nbsp;&zwnj;&nbsp;&zwnj;
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("GEO Audit")}
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-card brd" style="background:#FFFFFF;border:1px solid #E6E6EF;border-radius:20px;overflow:hidden">
+        <tr><td style="background:#5A45D8;background:linear-gradient(135deg,#5A45D8,#3D2F9B);padding:32px 36px" class="px">
+          <span style="display:inline-block;background:rgba(255,255,255,.18);color:#fff;font-size:10px;font-weight:700;letter-spacing:.08em;padding:4px 11px;border-radius:999px;font-family:'JetBrains Mono','Courier New',monospace">ANALISI COMPLETA</span>
+          <div style="color:#ffffff;font-size:22px;font-weight:600;margin-top:12px;font-family:'Space Grotesk',Arial,sans-serif">Vuoi capire come alzare il punteggio?</div>
+          <div style="color:#B3A8F7;font-size:14px;margin-top:6px;font-family:'Inter',Arial,sans-serif">{domain} · <span style="font-weight:700;color:{band_color}">{overall}/100</span></div>
+        </td></tr>
+        <tr><td class="px" style="padding:28px 36px 8px">
+          <p class="t-2" style="font-size:15px;line-height:1.6;color:#4A4A5A;margin:0 0 18px;font-family:'Inter',Arial,sans-serif">Il report automatico mostra il punteggio e le aree principali. Con l'analisi completa andiamo a fondo:</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="padding:7px 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="vertical-align:top;padding-right:10px;color:#0E9F6E;font-size:18px;line-height:1.2">✓</td><td class="t-ink" style="font-size:14px;color:#16151E;font-family:'Inter',Arial,sans-serif">Lista completa dei problemi ordinata per impatto</td></tr></table></td></tr>
+            <tr><td style="padding:7px 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="vertical-align:top;padding-right:10px;color:#0E9F6E;font-size:18px;line-height:1.2">✓</td><td class="t-ink" style="font-size:14px;color:#16151E;font-family:'Inter',Arial,sans-serif">Confronto con i concorrenti diretti</td></tr></table></td></tr>
+            <tr><td style="padding:7px 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="vertical-align:top;padding-right:10px;color:#0E9F6E;font-size:18px;line-height:1.2">✓</td><td class="t-ink" style="font-size:14px;color:#16151E;font-family:'Inter',Arial,sans-serif">Raccomandazioni passo-passo pronte da implementare</td></tr></table></td></tr>
+            <tr><td style="padding:7px 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="vertical-align:top;padding-right:10px;color:#0E9F6E;font-size:18px;line-height:1.2">✓</td><td class="t-ink" style="font-size:14px;color:#16151E;font-family:'Inter',Arial,sans-serif">Sessione di confronto con il nostro team</td></tr></table></td></tr>
+          </table>
+        </td></tr>
+        <tr><td class="px" style="padding:24px 36px 30px" align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" class="btn" style="width:100%"><tr>
+            <td align="center" bgcolor="#5A45D8" style="border-radius:10px">
+              <a href="{contact_link}" target="_blank" style="display:inline-block;padding:15px 30px;font-size:15px;font-weight:700;color:#ffffff;border-radius:10px;font-family:'Inter',Arial,sans-serif">Richiedi l'analisi completa →</a>
+            </td>
+          </tr></table>
+          <p class="t-3" style="font-size:12px;color:#76768A;margin:12px 0 0;font-family:'Inter',Arial,sans-serif">Nessun acquisto immediato — ti contatteremo per capire le tue esigenze.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+    {_email_footer()}
+  </table>
+</td></tr>
+</table>
+</body></html>"""
+    _resend_post(
+        to=[to],
+        subject=f"Vuoi alzare il punteggio GEO di {domain}?",
+        html=html,
     )
-    r = req.post("https://api.resend.com/emails",
-                 json={"from": FROM_EMAIL, "to": [to],
-                       "subject": subject, "html": html},
-                 headers={"Authorization": f"Bearer {RESEND_KEY}",
-                          "Content-Type": "application/json"},
-                 timeout=10)
-    r.raise_for_status()
+
+
+# TODO: Scheduler non implementato — questa funzione va chiamata da un job
+#       pianificato (es. cron mensile) per inviare il report di monitoraggio
+#       periodico ai siti già analizzati.
+def _send_report_mensile(to: str, job_id: str, domain: str, overall: int, grade: str,
+                          delta: int = 0):
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    link = f"{SITE_URL}/r/{job_id}?token={_make_token(job_id)}"
+    contact_link = f"{SITE_URL}/contact/{job_id}"
+    band_lbl, band_bg, band_color = _score_band(overall)
+    score_pct = min(overall, 100)
+    if delta > 0:
+        delta_str = f"+{delta}"
+        delta_color = "#0E9F6E"
+    elif delta < 0:
+        delta_str = str(delta)
+        delta_color = "#D92D34"
+    else:
+        delta_str = "±0"
+        delta_color = "#76768A"
+    html = f"""<!doctype html>
+<html lang="it" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>{_EMAIL_HEAD}<title>Report mensile GEO — {domain}</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F1F1F6">
+  Il tuo punteggio GEO mensile per {domain}: {overall}/100. {delta_str} rispetto al mese scorso.&nbsp;&zwnj;&nbsp;&zwnj;
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("Report mensile")}
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-card brd" style="background:#FFFFFF;border:1px solid #E6E6EF;border-radius:20px;overflow:hidden">
+        <tr><td style="background:#5A45D8;background:linear-gradient(135deg,#5A45D8,#3D2F9B);padding:32px 36px" class="px">
+          <div style="color:#D0C9FB;font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-family:'JetBrains Mono','Courier New',monospace">Monitoraggio GEO</div>
+          <div style="color:#ffffff;font-size:22px;font-weight:600;margin-top:6px;font-family:'Space Grotesk',Arial,sans-serif">{domain}</div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px"><tr>
+            <td style="vertical-align:bottom">
+              <span class="scorebig" style="color:#ffffff;font-size:64px;font-weight:700;line-height:1;font-family:'Space Grotesk',Arial,sans-serif">{overall}</span>
+              <span style="color:#B3A8F7;font-size:16px;font-family:'JetBrains Mono','Courier New',monospace">/100</span>
+            </td>
+            <td style="padding-left:16px;vertical-align:bottom">
+              <span style="display:inline-block;background:{band_bg};color:{band_color};font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;font-family:'Inter',Arial,sans-serif">{band_lbl}</span><br>
+              <span style="display:inline-block;margin-top:8px;font-size:14px;font-weight:700;color:{delta_color};font-family:'JetBrains Mono','Courier New',monospace">{delta_str} vs mese scorso</span>
+            </td>
+          </tr></table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px"><tr>
+            <td style="background:#2B2160;border-radius:999px;height:8px;line-height:8px;font-size:0">
+              <table role="presentation" width="{score_pct}%" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#2DD4DC;border-radius:999px;height:8px;line-height:8px;font-size:0">&nbsp;</td></tr></table>
+            </td>
+          </tr></table>
+        </td></tr>
+        <tr><td class="px" style="padding:28px 36px 30px" align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" class="btn" style="width:100%"><tr>
+            <td align="center" bgcolor="#5A45D8" style="border-radius:10px">
+              <a href="{link}" target="_blank" style="display:inline-block;padding:15px 30px;font-size:15px;font-weight:700;color:#ffffff;border-radius:10px;font-family:'Inter',Arial,sans-serif">Apri il report completo →</a>
+            </td>
+          </tr></table>
+          <p class="t-3" style="font-size:12px;color:#76768A;margin:16px 0 0;line-height:1.6;font-family:'Inter',Arial,sans-serif">
+            Vuoi un'analisi più approfondita? <a href="{contact_link}" style="color:#5A45D8;font-weight:600;text-decoration:none">Richiedi l'analisi completa →</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+    {_email_footer()}
+  </table>
+</td></tr>
+</table>
+</body></html>"""
+    _resend_post(
+        to=[to],
+        subject=f"Report mensile GEO di {domain}: {overall}/100 ({delta_str})",
+        html=html,
+    )
 
 
 @app.get("/miei-report", response_class=HTMLResponse)
