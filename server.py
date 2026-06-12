@@ -185,33 +185,50 @@ def _send_unlock_email(to: str, job_id: str, domain: str, overall: int, grade: s
 
 # ── HTML helpers ──────────────────────────────────────────────────────────────
 
+_DS_LINK = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link rel="stylesheet" href="/static/css/design-system.css">'
+)
+
+
 def _page(title, body):
     return (
-        f'<!doctype html><html lang="it"><head><meta charset="utf-8">'
+        f'<!doctype html><html lang="it" data-theme="dark"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>{title}</title>"
-        f"<style>body{{font-family:system-ui,sans-serif;background:#0B0B16;color:#F2F1F8;"
-        f"display:flex;min-height:100vh;align-items:center;justify-content:center;"
-        f"margin:0;text-align:center;padding:24px}}a{{color:#9B8CFF}}</style>"
+        f"{_DS_LINK}"
+        f"<style>"
+        f"body{{min-height:100vh;display:flex;align-items:center;justify-content:center;"
+        f"margin:0;text-align:center;padding:24px}}"
+        f"a{{color:var(--brand-text)}}"
+        f"</style>"
         f"</head><body><div>{body}</div></body></html>"
     )
 
 
 def _inject_bar(html: str, job_id: str = "", email: str = "") -> str:
     """Barra azioni per report sbloccato. Sostituisce il placeholder __JOB_ID__ e pre-compila la mail nel form CTA."""
-    hide = "<style>@media print{#geo-bar{display:none}}</style>"
+    bar_css = (
+        "<style>"
+        "@media print{#geo-bar{display:none!important}}"
+        "#geo-bar{position:fixed;top:12px;right:12px;z-index:9999;"
+        "display:flex;gap:8px;font-family:'Inter',system-ui,sans-serif}"
+        "#geo-bar a{text-decoration:none;font-size:13px;font-weight:600;"
+        "padding:9px 14px;border-radius:10px;display:inline-flex;align-items:center;"
+        "gap:6px;transition:opacity .15s}"
+        "#geo-bar a:hover{opacity:.88}"
+        "#geo-bar .bar-primary{background:#5A45D8;color:#fff}"
+        "#geo-bar .bar-secondary{background:#131220;color:#F4F3F8;border:1px solid #272636}"
+        "</style>"
+    )
     bar = (
-        '<div id="geo-bar" style="position:fixed;top:14px;right:14px;z-index:9999;'
-        'display:flex;gap:8px;font-family:system-ui,sans-serif">'
-        '<a href="#" onclick="window.print();return false;" '
-        'style="background:#6C5CE7;color:#fff;text-decoration:none;'
-        'font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px">↓ PDF</a>'
-        '<a href="/miei-report" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
-        'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
-        'I miei report</a>'
-        '<a href="/audit" style="background:#17152A;color:#F2F1F8;border:1px solid #2A2640;'
-        'text-decoration:none;font-size:13px;padding:9px 14px;border-radius:9px">'
-        "Nuova analisi</a></div>"
+        '<div id="geo-bar">'
+        '<a href="#" class="bar-primary" onclick="window.print();return false;"'
+        ' aria-label="Scarica PDF">↓ PDF</a>'
+        '<a href="/miei-report" class="bar-secondary">I miei report</a>'
+        '<a href="/audit" class="bar-secondary">Nuova analisi</a>'
+        '</div>'
     )
     if job_id:
         html = html.replace("__JOB_ID__", job_id)
@@ -221,7 +238,7 @@ def _inject_bar(html: str, job_id: str = "", email: str = "") -> str:
             f'if(_e)_e.value={json.dumps(email)};</script>'
         )
         html = html.replace("</body>", prefill + "</body>", 1)
-    return html.replace('<div class="sheet">', hide + bar + '<div class="sheet">', 1)
+    return html.replace('<div class="sheet">', bar_css + bar + '<div class="sheet">', 1)
 
 
 def _inject_gate(html: str, job_id: str) -> str:
@@ -233,7 +250,7 @@ html,body{{overflow:hidden!important;height:100vh!important}}
 .geo-gate-blur{{
   position:fixed;inset:480px 0 0 0;
   backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-  background:linear-gradient(to bottom,transparent 0,rgba(11,11,22,.98) 140px);
+  background:linear-gradient(to bottom,transparent 0,rgba(11,10,18,.98) 140px);
   z-index:200;pointer-events:none
 }}
 .geo-gate-overlay{{
@@ -241,40 +258,46 @@ html,body{{overflow:hidden!important;height:100vh!important}}
   padding:0 16px 36px;display:flex;justify-content:center
 }}
 .geo-gate-card{{
-  background:#17152A;border:1px solid #2A2640;border-radius:18px;
+  background:#131220;border:1px solid #272636;border-radius:20px;
   padding:28px 28px 24px;width:100%;max-width:460px;text-align:center;
-  font-family:system-ui,sans-serif
+  box-shadow:0 16px 40px -12px rgba(0,0,0,.7);
+  font-family:'Inter',system-ui,sans-serif
 }}
 .geo-gate-card h2{{
-  font-family:Archivo,sans-serif;font-weight:800;font-size:19px;
-  color:#F2F1F8;margin:0 0 7px
+  font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-size:20px;
+  color:#F4F3F8;margin:0 0 8px;letter-spacing:-.01em
 }}
-.geo-gate-card p{{color:#9C99B5;font-size:14px;margin:0 0 18px;line-height:1.5}}
+.geo-gate-card p{{color:#BCBBCB;font-size:14px;margin:0 0 18px;line-height:1.55}}
 .geo-gate-card input{{
-  width:100%;background:#0B0B16;border:1px solid #2A2640;border-radius:10px;
-  color:#F2F1F8;font-size:15px;padding:12px 14px;
-  font-family:inherit;outline:none;box-sizing:border-box
+  width:100%;background:#0B0A12;border:1.5px solid #3A3950;border-radius:10px;
+  color:#F4F3F8;font-size:15px;padding:12px 14px;
+  font-family:inherit;outline:none;box-sizing:border-box;
+  transition:border-color .12s
 }}
-.geo-gate-card input:focus{{border-color:#6C5CE7}}
+.geo-gate-card input:focus{{border-color:#7C6BEC;box-shadow:0 0 0 3px rgba(124,107,236,.2)}}
 .geo-gate-card button{{
-  width:100%;margin-top:10px;background:#6C5CE7;color:#fff;border:none;
-  border-radius:10px;font-family:Archivo,sans-serif;font-weight:700;
-  font-size:15px;padding:13px;cursor:pointer
+  width:100%;margin-top:10px;background:#5A45D8;color:#fff;border:none;
+  border-radius:10px;font-family:'Inter',system-ui,sans-serif;font-weight:600;
+  font-size:15px;padding:13px;cursor:pointer;min-height:44px;
+  transition:background .12s
 }}
-.geo-gate-card button:hover{{background:#5b4bd8}}
-.geo-gate-note{{color:#6E6B86;font-size:12px;margin-top:12px;line-height:1.5}}
-.geo-gate-ok{{display:none;color:#00b894;font-size:14px;margin-top:10px;font-weight:600}}
+.geo-gate-card button:hover{{background:#4A37BE}}
+.geo-gate-card button:focus-visible{{outline:2px solid #9182F0;outline-offset:2px}}
+.geo-gate-note{{color:#8A8A9E;font-size:12px;margin-top:12px;line-height:1.5}}
+.geo-gate-ok{{display:none;color:#3DDC97;font-size:14px;margin-top:10px;font-weight:600}}
 </style>
-<div class="geo-gate-blur"></div>
-<div class="geo-gate-overlay">
+<div class="geo-gate-blur" aria-hidden="true"></div>
+<div class="geo-gate-overlay" role="dialog" aria-modal="true" aria-label="Sblocca report">
   <div class="geo-gate-card">
     <h2>Sblocca il report completo</h2>
     <p>Inserisci la tua email: ti inviamo il link al report completo.</p>
-    <form id="geo-gate-form">
-      <input type="email" id="geo-gate-email" placeholder="nome@esempio.it" required autofocus>
+    <form id="geo-gate-form" novalidate>
+      <input type="email" id="geo-gate-email" placeholder="nome@esempio.it"
+             required autofocus autocomplete="email"
+             aria-label="La tua email">
       <button type="submit" id="geo-gate-btn">Inviami il report →</button>
     </form>
-    <p class="geo-gate-ok" id="geo-gate-ok">✓ Email inviata! Controlla la casella.</p>
+    <p class="geo-gate-ok" id="geo-gate-ok" role="status">✓ Email inviata! Controlla la casella.</p>
     <p class="geo-gate-note">Nessuna password. Riceverai solo il link al tuo report.</p>
   </div>
 </div>
@@ -412,56 +435,76 @@ def unlock(job_id: str, email: str = Form(...)):
 _SHARED_HEAD = (
     '<meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    '<link rel="preconnect" href="https://fonts.googleapis.com">'
-    '<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800'
-    '&family=Hanken+Grotesk:wght@400;500;600;700'
-    '&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">'
+    + _DS_LINK +
     "<style>"
-    ":root{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}"
-    "*{box-sizing:border-box}"
-    "body{margin:0;min-height:100vh;background:radial-gradient(120% 80% at 80% -10%,#1a1633 0%,#0B0B16 55%);"
-    "color:var(--text);font-family:'Hanken Grotesk',system-ui,sans-serif;"
+    "body{min-height:100vh;"
+    "background:radial-gradient(140% 100% at 70% -5%,#1E1A38 0%,#0B0A12 60%);"
     "display:flex;align-items:center;justify-content:center;padding:24px}"
-    ".wrap{width:100%;max-width:560px}"
-    ".logo{display:flex;align-items:center;gap:9px;font-family:'Archivo',sans-serif;font-size:19px;margin-bottom:30px}"
-    ".logo b{font-weight:800}.logo .ai{color:var(--muted)}"
-    ".bars{display:inline-flex;align-items:flex-end;gap:3px;height:22px}"
-    ".bars i{width:5px;border-radius:2px;display:block}"
-    ".b1{height:13px;background:var(--violet)}.b2{height:22px;background:var(--vbright)}.b3{height:9px;background:var(--violet)}"
-    ".eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:3px;color:var(--vbright);text-transform:uppercase;margin-bottom:12px}"
-    "h1{font-family:'Archivo',sans-serif;font-weight:800;font-size:28px;line-height:1.1;margin:0 0 10px}"
-    "p.sub{color:var(--muted);font-size:15px;margin:0 0 26px}"
-    "form{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}"
-    "label{display:block;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}"
-    "input[type=email]{width:100%;background:#0B0B16;border:1px solid var(--line);border-radius:10px;"
-    "color:var(--text);font-size:16px;padding:13px 14px;font-family:inherit;outline:none}"
-    "input[type=email]:focus{border-color:var(--violet)}"
-    "button{width:100%;margin-top:16px;background:var(--violet);color:#fff;border:none;"
-    "border-radius:10px;font-family:'Archivo',sans-serif;font-weight:700;font-size:16px;padding:14px;cursor:pointer}"
-    "button:hover{background:#5b4bd8}"
-    ".foot{margin-top:22px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#6E6B86}"
-    "a.back{display:block;margin-top:4px;font-size:13px;color:var(--muted);text-decoration:none;text-align:center}"
+    ".wrap{width:100%;max-width:540px}"
+    ".logo-row{display:flex;align-items:center;gap:10px;font-family:var(--font-display);"
+    "font-size:18px;font-weight:600;color:var(--text);margin-bottom:32px;text-decoration:none}"
+    ".logo-mark{width:32px;height:32px;background:var(--brand);border-radius:9px;"
+    "display:grid;place-items:center;box-shadow:var(--sh-brand)}"
+    ".logo-mark span{color:#fff;font-family:var(--font-mono);font-weight:600;font-size:16px}"
+    ".logo-ai{color:var(--brand-text)}"
+    ".eyebrow-lbl{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;"
+    "color:var(--brand-text);text-transform:uppercase;margin-bottom:12px}"
+    "h1{font-size:28px;letter-spacing:-.02em;margin:0 0 10px;color:var(--ink)}"
+    "p.sub{color:var(--text-2);font-size:15px;margin:0 0 26px;line-height:1.6}"
+    ".form-card{background:var(--surface);border:1px solid var(--border);"
+    "border-radius:20px;padding:22px;box-shadow:var(--sh-md)}"
+    ".form-card label{display:block;font-family:var(--font-mono);font-size:11px;"
+    "color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;"
+    "font-weight:500;margin-bottom:8px}"
+    "input[type=email]{width:100%;background:var(--canvas);border:1.5px solid var(--border-strong);"
+    "border-radius:10px;color:var(--text);font-size:15px;padding:12px 14px;"
+    "font-family:inherit;outline:none;min-height:46px;box-sizing:border-box;"
+    "transition:border-color .12s,box-shadow .12s}"
+    "input[type=email]:focus{border-color:var(--brand);"
+    "box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 18%,transparent)}"
+    ".submit-btn{display:flex;width:100%;margin-top:16px;background:var(--brand);"
+    "color:#fff;border:none;border-radius:10px;font-family:var(--font-sans);"
+    "font-weight:600;font-size:15px;padding:14px;cursor:pointer;"
+    "align-items:center;justify-content:center;min-height:44px;"
+    "box-shadow:var(--sh-brand);transition:background .12s}"
+    ".submit-btn:hover{background:var(--brand-hover)}"
+    ".submit-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}"
+    ".foot{margin-top:22px;font-family:var(--font-mono);font-size:11px;"
+    "color:var(--text-3);text-align:center}"
+    "a.back{display:block;margin-top:4px;font-size:13px;color:var(--text-2);"
+    "text-decoration:none;text-align:center}"
     "a.back:hover{color:var(--text)}"
+    ".check-icon{font-size:40px;margin-bottom:16px;color:var(--success)}"
     "</style>"
 )
 
 _MIEI_REPORT_PAGE = f"""<!doctype html>
-<html lang="it">
+<html lang="it" data-theme="dark">
 <head>
 {_SHARED_HEAD}
 <title>I miei report · GEO Audit</title>
 </head>
 <body>
 <div class="wrap">
-  <div class="logo"><span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span><span><b>vertical</b><span class="ai">ai</span></span></div>
-  <div class="eyebrow">GEO Audit</div>
+  <a href="/" class="logo-row" aria-label="verticalai — home">
+    <div class="logo-mark" aria-hidden="true"><span>V</span></div>
+    <span><span class="logo-ai">vertical</span>ai</span>
+  </a>
+  <div class="eyebrow-lbl" aria-label="sezione">GEO Audit</div>
   <h1>I miei report</h1>
   <p class="sub">Inserisci l'email con cui hai richiesto i report: ti inviamo tutti i link.</p>
-  <form method="post" action="/miei-report">
-    <label for="email">La tua email</label>
-    <input id="email" name="email" type="email" placeholder="nome@esempio.it" required autofocus>
-    <button type="submit">Inviami i link →</button>
-  </form>
+  <div class="form-card">
+    <form method="post" action="/miei-report">
+      <label for="email">La tua email</label>
+      <input id="email" name="email" type="email" placeholder="nome@esempio.it"
+             required autofocus autocomplete="email"
+             aria-describedby="email-note">
+      <button type="submit" class="submit-btn">Inviami i link →</button>
+    </form>
+  </div>
+  <p id="email-note" style="font-size:12px;color:var(--text-3);margin-top:12px;text-align:center;line-height:1.5">
+    Riceverai un'email con i link diretti a tutti i report.
+  </p>
   <a class="back" href="/audit">← Nuova analisi</a>
   <div class="foot">verticalai.it · GEO Audit</div>
 </div>
@@ -469,16 +512,18 @@ _MIEI_REPORT_PAGE = f"""<!doctype html>
 </html>"""
 
 _MIEI_REPORT_SENT = f"""<!doctype html>
-<html lang="it">
+<html lang="it" data-theme="dark">
 <head>
 {_SHARED_HEAD}
 <title>Email inviata · GEO Audit</title>
-<style>.check{{font-size:40px;margin-bottom:16px}}h2{{text-align:center}}p.sub{{text-align:center}}</style>
 </head>
 <body>
 <div class="wrap" style="text-align:center">
-  <div class="logo" style="justify-content:center"><span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span><span><b>vertical</b><span class="ai">ai</span></span></div>
-  <div class="check">✓</div>
+  <a href="/" class="logo-row" style="justify-content:center" aria-label="verticalai — home">
+    <div class="logo-mark" aria-hidden="true"><span>V</span></div>
+    <span><span class="logo-ai">vertical</span>ai</span>
+  </a>
+  <div class="check-icon" role="img" aria-label="Fatto">✓</div>
   <h1>Email inviata</h1>
   <p class="sub">Controlla la tua casella: troverai i link a tutti i report associati a quell'indirizzo.</p>
   <a class="back" href="/audit">← Nuova analisi</a>
