@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="it" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VerticalAI · Email Kit</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--brand:#5A45D8;--brand-text:#4A37BE;--brand-soft:#F2F0FE;--canvas:#FBFBFD;--surface:#fff;--surface-2:#F6F6FB;--border:#E6E6EF;--ink:#16151E;--text-2:#4A4A5A;--text-3:#76768A;--success:#0E9F6E;--warning:#C77700;--danger:#D92D34;--r-md:10px;--r-lg:14px}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--canvas);color:var(--ink);font-family:'Inter',system-ui,sans-serif;line-height:1.6}
+  .wrap{max-width:1080px;margin:0 auto;padding:48px clamp(16px,4vw,40px) 100px}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;letter-spacing:-.02em;margin:0}
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--brand-text);display:inline-flex;align-items:center;gap:7px}
+  .eyebrow::before{content:"";width:18px;height:1.5px;background:currentColor;opacity:.6}
+  .lead{font-size:18px;color:var(--text-2);max-width:64ch}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .tk{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--text-3);background:var(--surface-2);border:1px solid var(--border);padding:1px 6px;border-radius:5px}
+  .grid{display:grid;gap:18px}.cols-2{grid-template-columns:repeat(2,1fr)}.cols-3{grid-template-columns:repeat(3,1fr)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px}
+  .card h3{font-size:16px;margin-bottom:6px}
+  .card p{font-size:13.5px;color:var(--text-3);margin:0}
+  .sub{font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:600;margin:56px 0 18px;display:flex;align-items:center;gap:10px}
+  .sub::before{content:"";width:8px;height:8px;border-radius:3px;background:var(--brand)}
+  .note{font-size:13.5px;color:var(--text-3);margin-top:12px}
+  ul.chk{list-style:none;padding:0;margin:8px 0 0}
+  ul.chk li{font-size:14px;color:var(--text-2);padding:5px 0 5px 26px;position:relative}
+  ul.chk li::before{content:"✓";position:absolute;left:0;color:var(--success);font-weight:700}
+  .tpl{display:grid;grid-template-columns:300px 1fr;gap:22px;align-items:start;border:1px solid var(--border);border-radius:18px;background:var(--surface);overflow:hidden;margin-bottom:22px}
+  .frame{background:var(--surface-2);padding:16px;border-right:1px solid var(--border)}
+  .frame iframe{width:268px;height:420px;border:1px solid var(--border);border-radius:10px;background:#fff;transform-origin:top left}
+  .tpl-body{padding:24px 26px 24px 4px}
+  .tpl-body h3{font-size:18px;margin-bottom:4px}
+  .file{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--brand-text);background:var(--brand-soft);padding:3px 9px;border-radius:6px;display:inline-block;margin:10px 0}
+  .when{font-size:13.5px;color:var(--text-2);margin:8px 0}
+  .swrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{font-family:'JetBrains Mono',monospace;font-size:11px;color:#fff;padding:4px 10px;border-radius:6px}
+  @media(max-width:860px){.cols-2,.cols-3{grid-template-columns:1fr}.tpl{grid-template-columns:1fr}.frame{border-right:none;border-bottom:1px solid var(--border)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">Design System · Email Kit</div>
+  <h1 style="font-size:clamp(30px,5vw,42px);margin:14px 0 12px;max-width:18ch">Le email di GEO Audit, coerenti col prodotto.</h1>
+  <p class="lead">Quattro template pronti all'uso, costruiti con gli stessi token del design system ma adattati al mondo delle email: layout a tabelle, stili inline, font di sistema come fallback, e nessun effetto che i client non sanno rendere. Si incollano in qualsiasi piattaforma di invio (Brevo, Mailchimp, SendGrid…).</p>
+
+  <div class="sub">Regole specifiche delle email</div>
+  <div class="grid cols-3">
+    <div class="card"><h3>Tabelle, non flex</h3><p>Layout con <span class="tk">&lt;table role="presentation"&gt;</span>, larghezza fissa 600px che diventa fluida sotto i 600px. Niente grid/flex: Outlook non li legge.</p></div>
+    <div class="card"><h3>Stili inline</h3><p>Ogni regola di stile è inline sull'elemento. I blocchi <span class="tk">&lt;style&gt;</span> servono solo per media query e dark mode, che molti client ignorano.</p></div>
+    <div class="card"><h3>Font con fallback</h3><p>Space Grotesk / Inter / JetBrains Mono si caricano su Apple Mail e iOS; altrove degradano su Arial e Courier. Il brand resta riconoscibile comunque.</p></div>
+    <div class="card"><h3>Niente blur</h3><p>Il contenuto riservato non si sfoca (i filtri CSS non esistono in email): diventa un <b>teaser</b> con righe "bloccate" 🔒 e una CTA che invita a richiedere l'analisi completa. Stessa logica del PDF.</p></div>
+    <div class="card"><h3>Immagini opzionali</h3><p>Logo e icone sono testo o forme CSS, non immagini: l'email funziona anche con le immagini disattivate. Eventuali immagini sempre con <span class="tk">alt</span>.</p></div>
+    <div class="card"><h3>Bottone bulletproof</h3><p>CTA come <span class="tk">&lt;a&gt;</span> con padding dentro una cella con <span class="tk">bgcolor</span> + border-radius: cliccabile e colorata anche su Outlook.</p></div>
+  </div>
+
+  <div class="sub">Anatomia &amp; token email</div>
+  <div class="grid cols-2">
+    <div class="card"><h3>Struttura condivisa</h3>
+      <ul class="chk">
+        <li>Preheader nascosto (testo anteprima in posta)</li>
+        <li>Header con logo testuale + etichetta contesto</li>
+        <li>Card bianca 600px, raggio 20px</li>
+        <li>Contenuto: score / sezioni / CTA / teaser analisi completa</li>
+        <li>Footer: mittente, preferenze, disiscrizione</li>
+      </ul>
+    </div>
+    <div class="card"><h3>Palette (inline)</h3>
+      <div class="swrow">
+        <span class="chip" style="background:#5A45D8">brand #5A45D8</span>
+        <span class="chip" style="background:#4A37BE">hover #4A37BE</span>
+        <span class="chip" style="background:#0E9F6E">success</span>
+        <span class="chip" style="background:#C77700">warning</span>
+        <span class="chip" style="background:#D92D34">danger</span>
+        <span class="chip" style="background:#16151E">ink</span>
+        <span class="chip" style="background:#76768A">text-3</span>
+      </div>
+      <p class="note">Canvas esterno <span class="tk">#F1F1F6</span>, card <span class="tk">#FFFFFF</span>, soft <span class="tk">#F6F6FB</span>, bordo <span class="tk">#E6E6EF</span>. Stessi valori del sito.</p>
+    </div>
+  </div>
+
+  <div class="sub">I quattro template</div>
+
+  <div class="tpl">
+    <div class="frame"><iframe src="email-report-pronto.html" title="Report pronto" loading="lazy"></iframe></div>
+    <div class="tpl-body"><h3>Report pronto</h3><span class="file">email-report-pronto.html</span>
+      <p class="when"><b>Quando:</b> l'audit gratuito è completato. È l'email di punta: score, primi pilastri, prime evidenze, CTA al report, teaser analisi completa.</p>
+      <p class="note"><b>Transazionale + conversione.</b> Contiene tutti i mattoni riusabili negli altri template.</p>
+    </div>
+  </div>
+
+  <div class="tpl">
+    <div class="frame"><iframe src="email-conferma-audit.html" title="Conferma audit" loading="lazy"></iframe></div>
+    <div class="tpl-body"><h3>Conferma richiesta audit</h3><span class="file">email-conferma-audit.html</span>
+      <p class="when"><b>Quando:</b> appena l'utente richiede l'audit. Rassicura ("richiesta ricevuta"), spiega i tre passi e imposta l'attesa.</p>
+      <p class="note"><b>Transazionale.</b> Breve, calda, zero CTA commerciali.</p>
+    </div>
+  </div>
+
+  <div class="tpl">
+    <div class="frame"><iframe src="email-report-mensile.html" title="Report mensile" loading="lazy"></iframe></div>
+    <div class="tpl-body"><h3>Aggiornamento mensile (monitoraggio)</h3><span class="file">email-report-mensile.html</span>
+      <p class="when"><b>Quando:</b> ogni mese, per i clienti in monitoraggio. Mostra score attuale, <b>delta</b>, andamento e cosa avete sistemato.</p>
+      <p class="note"><b>Retention.</b> Il trend "+9 in 30 giorni" è la prova del valore.</p>
+    </div>
+  </div>
+
+  <div class="tpl">
+    <div class="frame"><iframe src="email-analisi-completa.html" title="Analisi completa" loading="lazy"></iframe></div>
+    <div class="tpl-body"><h3>Richiesta analisi completa</h3><span class="file">email-analisi-completa.html</span>
+      <p class="when"><b>Quando:</b> follow-up dopo il report gratuito. Elenca cosa contiene l'analisi completa, mostra righe "bloccate" come teaser e invita a richiederla a voi.</p>
+      <p class="note"><b>Conversione.</b> Versione email del pattern teaser del prodotto: porta a una conversazione, non a un checkout.</p>
+    </div>
+  </div>
+
+  <div class="sub">Prima di inviare · checklist</div>
+  <div class="grid cols-2">
+    <div class="card"><h3>Contenuto</h3>
+      <ul class="chk">
+        <li>Sostituisci i segnaposto (nome, URL, score, link)</li>
+        <li>Oggetto + preheader scritti e coerenti</li>
+        <li>Link di disiscrizione reale e funzionante</li>
+        <li>Mittente e ragione sociale corretti nel footer</li>
+      </ul>
+    </div>
+    <div class="card"><h3>Tecnica</h3>
+      <ul class="chk">
+        <li>Test su Gmail, Apple Mail/iOS, Outlook</li>
+        <li>Prova con immagini disattivate</li>
+        <li>Prova in dark mode (Apple Mail)</li>
+        <li>Larghezza ok su telefono (≤600px fluido)</li>
+      </ul>
+    </div>
+  </div>
+  <p class="note">Suggerimento: per i test multi-client usa uno strumento come Litmus o Email on Acid. I template sono già impostati per degradare con grazia dove un client non supporta una feature.</p>
+
+</div>
+</body>
+</html>

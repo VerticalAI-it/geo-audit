@@ -1,0 +1,1190 @@
+<!doctype html>
+<html lang="it" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VerticalAI · GEO Design System</title>
+<meta name="description" content="Design system di VerticalAI GEO Audit — fondamenta, componenti, pattern di prodotto, report PDF, mobile e accessibilità.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* =========================================================================
+   VERTICALAI · GEO — DESIGN TOKENS
+   Tutti i valori del sistema vivono qui come CSS custom properties.
+   ========================================================================= */
+:root{
+  /* ---- Brand viola (evoluto da #6C5CE7) ---- */
+  --violet-50:#F2F0FE;  --violet-100:#E7E3FD; --violet-200:#D0C9FB;
+  --violet-300:#B3A8F7; --violet-400:#9182F0; --violet-500:#6D5AE6;
+  --violet-600:#5A45D8; --violet-700:#4A37BE; --violet-800:#3D2F9B;
+  --violet-900:#342A7C; --violet-950:#201953;
+
+  /* ---- Teal · colore-segnale per i dati ---- */
+  --teal-50:#E6FBFB; --teal-100:#C6F4F5; --teal-300:#5FE0E4;
+  --teal-400:#2DD4DC; --teal-500:#0FB6C2; --teal-600:#0894A0; --teal-700:#0A7680;
+
+  /* ---- Palette dati categorica (grafici) ---- */
+  --data-1:#6D5AE6; --data-2:#0FB6C2; --data-3:#F5A524;
+  --data-4:#F31260; --data-5:#17C964; --data-6:#3B82F6; --data-7:#7A7A93;
+
+  /* ---- Semantici ---- */
+  --success:#0E9F6E; --success-bg:#E7F8F0; --success-border:#A7E8CE;
+  --warning:#C77700; --warning-bg:#FCF3E3; --warning-border:#F3D9A4;
+  --danger:#D92D34;  --danger-bg:#FCEBEC;  --danger-border:#F4C2C5;
+  --info:#2F6FED;    --info-bg:#EAF1FE;     --info-border:#BCD3FB;
+
+  /* ---- Neutri freddi (micro-tinta viola) ---- */
+  --canvas:#FBFBFD; --surface:#FFFFFF; --surface-2:#F6F6FB; --surface-3:#EDEDF4;
+  --border:#E6E6EF; --border-strong:#D5D5E1; --overlay:rgba(22,21,30,.48);
+  --ink:#16151E; --text:#16151E; --text-2:#4A4A5A; --text-3:#76768A; --text-on-brand:#FFFFFF;
+
+  /* ---- Accenti di brand (riferimento UI) ---- */
+  --brand:#5A45D8; --brand-hover:#4A37BE; --brand-soft:#F2F0FE; --brand-text:#4A37BE;
+  --focus:#9182F0;
+
+  /* ---- Spaziatura (base 4px) ---- */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px;
+  --sp-8:32px; --sp-10:40px; --sp-12:48px; --sp-16:64px; --sp-20:80px; --sp-24:96px;
+
+  /* ---- Raggi ---- */
+  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:20px; --r-2xl:28px; --r-pill:999px;
+
+  /* ---- Ombre ---- */
+  --sh-xs:0 1px 2px rgba(22,18,45,.06);
+  --sh-sm:0 1px 3px rgba(22,18,45,.08), 0 1px 2px rgba(22,18,45,.04);
+  --sh-md:0 6px 16px -4px rgba(22,18,45,.10), 0 2px 6px -2px rgba(22,18,45,.06);
+  --sh-lg:0 16px 40px -12px rgba(22,18,45,.18), 0 4px 12px -6px rgba(22,18,45,.10);
+  --sh-brand:0 10px 30px -8px rgba(90,69,216,.42);
+
+  /* ---- Tipografia ---- */
+  --font-display:'Space Grotesk', system-ui, sans-serif;
+  --font-sans:'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-mono:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ---- Motion ---- */
+  --t-fast:120ms; --t-base:200ms; --t-slow:320ms;
+  --ease-out:cubic-bezier(.2,.8,.2,1);
+  --ease-emph:cubic-bezier(.16,1,.3,1);
+
+  /* ---- Layout ---- */
+  --w-app:1200px; --w-marketing:1120px; --w-prose:680px;
+  --nav-w:248px; --topbar-h:60px;
+}
+
+/* ===================== DARK THEME ===================== */
+[data-theme="dark"]{
+  --canvas:#0B0A12; --surface:#131220; --surface-2:#1A1925; --surface-3:#232234;
+  --border:#272636; --border-strong:#3A3950; --overlay:rgba(5,4,10,.62);
+  --ink:#F4F3F8; --text:#F4F3F8; --text-2:#BCBBCB; --text-3:#8A8A9E;
+
+  --brand:#7C6BEC; --brand-hover:#9182F0; --brand-soft:#1E1A38; --brand-text:#B3A8F7;
+  --focus:#9182F0;
+
+  --success:#3DDC97; --success-bg:#0E2A20; --success-border:#1C5A43;
+  --warning:#F5BE57; --warning-bg:#2C2310; --warning-border:#5C4A1B;
+  --danger:#FF6B70;  --danger-bg:#2C1416;  --danger-border:#5C2A2D;
+  --info:#7AA7FF;    --info-bg:#0F1B33;     --info-border:#2A4274;
+
+  --sh-xs:0 1px 2px rgba(0,0,0,.4);
+  --sh-sm:0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4);
+  --sh-md:0 8px 22px -6px rgba(0,0,0,.6), 0 2px 8px -2px rgba(0,0,0,.45);
+  --sh-lg:0 20px 48px -14px rgba(0,0,0,.7), 0 6px 16px -8px rgba(0,0,0,.5);
+  --sh-brand:0 12px 36px -10px rgba(124,107,236,.5);
+}
+
+/* ===================== RESET / BASE ===================== */
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:80px; -webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--canvas); color:var(--text);
+  font-family:var(--font-sans); font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  transition:background var(--t-base) var(--ease-out), color var(--t-base) var(--ease-out);
+}
+h1,h2,h3,h4{font-family:var(--font-display); font-weight:600; line-height:1.2; margin:0; color:var(--ink); letter-spacing:-.01em}
+p{margin:0}
+a{color:var(--brand-text); text-decoration:none}
+a:hover{text-decoration:underline}
+img{max-width:100%; display:block}
+code,kbd{font-family:var(--font-mono); font-size:.875em}
+:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:4px}
+::selection{background:var(--violet-200); color:var(--ink)}
+[data-theme="dark"] ::selection{background:var(--violet-800); color:#fff}
+
+/* ===================== LAYOUT GUSCIO ===================== */
+.shell{display:flex; min-height:100vh}
+.sidebar{
+  width:var(--nav-w); flex:none; position:sticky; top:0; height:100vh; overflow-y:auto;
+  background:var(--surface); border-right:1px solid var(--border); padding:var(--sp-5) var(--sp-4);
+  z-index:40;
+}
+.brand-row{display:flex; align-items:center; gap:10px; margin-bottom:var(--sp-6); padding:0 var(--sp-2)}
+.brand-mark{width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--violet-500),var(--violet-700)); box-shadow:var(--sh-brand); flex:none; display:grid; place-items:center}
+.brand-mark span{font-family:var(--font-mono); font-weight:600; color:#fff; font-size:15px}
+.brand-name{font-family:var(--font-display); font-weight:600; font-size:15px; color:var(--ink); line-height:1.1}
+.brand-name b{color:var(--brand-text)}
+.brand-name small{display:block; font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3); font-weight:500}
+
+.nav-group{margin-bottom:var(--sp-5)}
+.nav-label{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-3); padding:0 var(--sp-2) var(--sp-2); font-weight:500}
+.nav-link{display:flex; align-items:center; gap:8px; padding:7px var(--sp-2); border-radius:8px; font-size:13.5px; color:var(--text-2); font-weight:500; transition:background var(--t-fast),color var(--t-fast)}
+.nav-link:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+.nav-link.active{background:var(--brand-soft); color:var(--brand-text)}
+.nav-dot{width:5px; height:5px; border-radius:50%; background:currentColor; opacity:.5; flex:none}
+
+.main{flex:1 1 auto; min-width:0}
+.topbar{
+  position:sticky; top:0; height:var(--topbar-h); display:flex; align-items:center; gap:var(--sp-3);
+  padding:0 clamp(16px,4vw,40px); background:color-mix(in srgb,var(--canvas) 86%, transparent);
+  backdrop-filter:blur(12px); border-bottom:1px solid var(--border); z-index:30;
+}
+.topbar .crumb{font-family:var(--font-mono); font-size:12px; color:var(--text-3); letter-spacing:.04em; text-transform:uppercase}
+.topbar .spacer{flex:1}
+.menu-btn{display:none}
+.content{max-width:var(--w-app); margin:0 auto; padding:clamp(28px,5vw,64px) clamp(16px,4vw,40px) 120px}
+
+/* ===================== SEZIONI DOC ===================== */
+.section{padding-block:var(--sp-16) 0; scroll-margin-top:80px}
+.section:first-of-type{padding-top:var(--sp-8)}
+.eyebrow{display:inline-flex; align-items:center; gap:7px; font-family:var(--font-mono); font-size:11.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--brand-text); margin-bottom:var(--sp-4)}
+.eyebrow::before{content:""; width:18px; height:1.5px; background:currentColor; opacity:.6}
+.section > h2{font-size:clamp(26px,3.4vw,34px); margin-bottom:var(--sp-3); letter-spacing:-.02em}
+.section > .lead{font-size:18px; color:var(--text-2); max-width:62ch; margin-bottom:var(--sp-8)}
+.sub{font-family:var(--font-display); font-size:19px; font-weight:600; margin:var(--sp-10) 0 var(--sp-4); padding-top:var(--sp-2); display:flex; align-items:center; gap:10px}
+.sub::before{content:""; width:8px; height:8px; border-radius:3px; background:var(--brand); flex:none}
+.note{font-size:14px; color:var(--text-3); margin-top:var(--sp-3)}
+
+/* ===================== UTILITY ===================== */
+.grid{display:grid; gap:var(--sp-4)}
+.cols-2{grid-template-columns:repeat(2,1fr)} .cols-3{grid-template-columns:repeat(3,1fr)} .cols-4{grid-template-columns:repeat(4,1fr)}
+.mono{font-family:var(--font-mono)}
+.tag-token{font-family:var(--font-mono); font-size:11.5px; color:var(--text-3); background:var(--surface-2); border:1px solid var(--border); padding:1px 6px; border-radius:5px}
+
+/* card demo wrapper */
+.demo{border:1px solid var(--border); border-radius:var(--r-lg); background:var(--surface); overflow:hidden}
+.demo-stage{padding:var(--sp-6); display:flex; flex-wrap:wrap; gap:var(--sp-4); align-items:center; background:
+  radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0) 0 0/22px 22px;
+}
+[data-theme="dark"] .demo-stage{background:radial-gradient(circle at 1px 1px, rgba(255,255,255,.05) 1px, transparent 0) 0 0/22px 22px}
+.demo-stage.col{flex-direction:column; align-items:stretch}
+.demo-cap{padding:10px var(--sp-4); border-top:1px solid var(--border); background:var(--surface-2); font-family:var(--font-mono); font-size:11.5px; color:var(--text-3); display:flex; gap:14px; flex-wrap:wrap}
+
+/* ===================== BUTTONS ===================== */
+.btn{
+  --bg:var(--brand); --fg:var(--text-on-brand); --bd:transparent;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  font-family:var(--font-sans); font-weight:600; font-size:14px; line-height:1;
+  padding:11px 18px; min-height:44px; border-radius:var(--r-md); border:1px solid var(--bd);
+  background:var(--bg); color:var(--fg); cursor:pointer; white-space:nowrap;
+  transition:transform var(--t-fast) var(--ease-out), box-shadow var(--t-base), background var(--t-fast), border-color var(--t-fast), opacity var(--t-fast);
+}
+.btn:hover{background:var(--brand-hover)} .btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+.btn--primary{box-shadow:var(--sh-brand)}
+.btn--secondary{--bg:var(--surface); --fg:var(--text); --bd:var(--border-strong)}
+.btn--secondary:hover{background:var(--surface-2)}
+.btn--ghost{--bg:transparent; --fg:var(--text-2); --bd:transparent}
+.btn--ghost:hover{background:var(--surface-2)}
+.btn--soft{--bg:var(--brand-soft); --fg:var(--brand-text); --bd:transparent}
+.btn--soft:hover{background:var(--violet-100)}
+[data-theme="dark"] .btn--soft:hover{background:#241f44}
+.btn--danger{--bg:var(--danger); --fg:#fff}
+.btn--danger:hover{filter:brightness(.93); background:var(--danger)}
+.btn--sm{min-height:36px; padding:8px 13px; font-size:13px; border-radius:var(--r-sm)}
+.btn--lg{min-height:52px; padding:15px 26px; font-size:16px}
+.btn[disabled]{opacity:.5; cursor:not-allowed; transform:none}
+.btn--icon{padding:0; width:44px; min-height:44px}
+.btn--block{display:flex; width:100%}
+
+/* ===================== INPUT ===================== */
+.field{display:flex; flex-direction:column; gap:7px; width:100%}
+.field label{font-size:13px; font-weight:600; color:var(--text-2)}
+.input{
+  font-family:var(--font-sans); font-size:15px; color:var(--text); background:var(--surface);
+  border:1.5px solid var(--border-strong); border-radius:var(--r-md); padding:12px 14px; min-height:46px;
+  transition:border-color var(--t-fast), box-shadow var(--t-fast); width:100%;
+}
+.input::placeholder{color:var(--text-3)}
+.input:hover{border-color:var(--text-3)}
+.input:focus{outline:none; border-color:var(--brand); box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 18%, transparent)}
+.input--err{border-color:var(--danger)} .input--err:focus{box-shadow:0 0 0 4px color-mix(in srgb,var(--danger) 16%, transparent)}
+.hint{font-size:12.5px; color:var(--text-3)} .hint--err{color:var(--danger)}
+.input-group{display:flex; gap:10px} .input-group .input{flex:1}
+
+/* ===================== BADGE / PILL ===================== */
+.badge{display:inline-flex; align-items:center; gap:5px; font-family:var(--font-mono); font-size:11.5px; font-weight:600; letter-spacing:.02em; padding:3px 9px; border-radius:var(--r-pill); border:1px solid transparent; line-height:1.4}
+.badge--neutral{background:var(--surface-2); color:var(--text-2); border-color:var(--border)}
+.badge--brand{background:var(--brand-soft); color:var(--brand-text)}
+.badge--success{background:var(--success-bg); color:var(--success); border-color:var(--success-border)}
+.badge--warning{background:var(--warning-bg); color:var(--warning); border-color:var(--warning-border)}
+.badge--danger{background:var(--danger-bg); color:var(--danger); border-color:var(--danger-border)}
+.badge--pro{background:linear-gradient(135deg,var(--violet-600),var(--violet-800)); color:#fff; box-shadow:var(--sh-xs)}
+.badge .dot{width:6px; height:6px; border-radius:50%; background:currentColor}
+
+/* ===================== CARD ===================== */
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:var(--sh-sm); padding:var(--sp-5)}
+.card--flat{box-shadow:none}
+.card--pad-lg{padding:var(--sp-6)}
+.card-title{font-family:var(--font-display); font-size:16px; font-weight:600; margin-bottom:6px}
+.card-sub{font-size:13.5px; color:var(--text-3)}
+
+/* ===================== TABS ===================== */
+.tabs{display:flex; gap:2px; border-bottom:1px solid var(--border); overflow-x:auto}
+.tab{font-size:14px; font-weight:600; color:var(--text-3); padding:11px 14px; border:none; background:none; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; min-height:44px}
+.tab:hover{color:var(--text)} .tab.active{color:var(--brand-text); border-bottom-color:var(--brand)}
+
+/* ===================== TABLE ===================== */
+.tbl-wrap{border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; background:var(--surface)}
+table.tbl{width:100%; border-collapse:collapse; font-size:13.5px}
+.tbl th{text-align:left; font-family:var(--font-mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-3); font-weight:500; padding:11px 16px; background:var(--surface-2); border-bottom:1px solid var(--border)}
+.tbl td{padding:12px 16px; border-bottom:1px solid var(--border); color:var(--text-2)}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover{background:var(--surface-2)}
+.tbl td b{color:var(--text); font-weight:600}
+
+/* ===================== ALERT / TOAST ===================== */
+.alert{display:flex; gap:12px; padding:14px 16px; border-radius:var(--r-md); border:1px solid var(--border); background:var(--surface-2); font-size:14px}
+.alert .ic{flex:none; width:20px; height:20px; border-radius:6px; display:grid; place-items:center; font-family:var(--font-mono); font-weight:700; font-size:12px; color:#fff}
+.alert--info{background:var(--info-bg); border-color:var(--info-border)} .alert--info .ic{background:var(--info)}
+.alert--success{background:var(--success-bg); border-color:var(--success-border)} .alert--success .ic{background:var(--success)}
+.alert--warning{background:var(--warning-bg); border-color:var(--warning-border)} .alert--warning .ic{background:var(--warning)}
+.alert--danger{background:var(--danger-bg); border-color:var(--danger-border)} .alert--danger .ic{background:var(--danger)}
+.alert b{color:var(--text)}
+.toast{display:inline-flex; align-items:center; gap:12px; padding:12px 16px; border-radius:var(--r-md); background:var(--ink); color:var(--canvas); box-shadow:var(--sh-lg); font-size:14px; font-weight:500}
+[data-theme="dark"] .toast{background:var(--surface-3); color:var(--text); border:1px solid var(--border-strong)}
+
+/* ===================== TOOLTIP / MODAL (statici demo) ===================== */
+.tip{position:relative; display:inline-block}
+.tip-bubble{background:var(--ink); color:var(--canvas); font-size:12.5px; padding:7px 11px; border-radius:8px; box-shadow:var(--sh-md); max-width:220px}
+[data-theme="dark"] .tip-bubble{background:var(--surface-3); color:var(--text); border:1px solid var(--border-strong)}
+.dialog{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-xl); box-shadow:var(--sh-lg); width:100%; max-width:420px; overflow:hidden}
+.dialog-body{padding:var(--sp-6)}
+.dialog h3{font-size:19px; margin-bottom:8px}
+.dialog-foot{display:flex; gap:10px; justify-content:flex-end; padding:var(--sp-4) var(--sp-6); border-top:1px solid var(--border); background:var(--surface-2)}
+
+/* ===================== SWATCHES ===================== */
+.swatches{display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px}
+.sw{border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; background:var(--surface)}
+.sw-chip{height:60px}
+.sw-meta{padding:8px 10px}
+.sw-meta .n{font-size:12px; font-weight:600}
+.sw-meta .h{font-family:var(--font-mono); font-size:11px; color:var(--text-3); text-transform:uppercase}
+
+/* ===================== TYPE SPECIMEN ===================== */
+.type-row{display:flex; align-items:baseline; gap:var(--sp-5); padding:var(--sp-4) 0; border-bottom:1px solid var(--border); flex-wrap:wrap}
+.type-row:last-child{border:none}
+.type-meta{flex:none; width:150px; font-family:var(--font-mono); font-size:11.5px; color:var(--text-3)}
+.type-meta b{display:block; color:var(--text); font-size:12.5px}
+
+/* ===================== SCALE VIS ===================== */
+.scale-row{display:flex; align-items:center; gap:16px; padding:7px 0}
+.scale-bar{height:18px; background:var(--brand-soft); border:1px solid var(--violet-200); border-radius:5px}
+[data-theme="dark"] .scale-bar{border-color:var(--violet-800)}
+.scale-lbl{font-family:var(--font-mono); font-size:12px; color:var(--text-3); width:150px; flex:none}
+
+/* ===================== TOKEN CODE BLOCK ===================== */
+.code{position:relative; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden}
+.code pre{margin:0; padding:var(--sp-5); overflow-x:auto; font-family:var(--font-mono); font-size:12.5px; line-height:1.7; color:var(--text-2)}
+.code .copy{position:absolute; top:10px; right:10px}
+.code .tk{color:var(--brand-text)} .code .vl{color:var(--teal-600)} [data-theme="dark"] .code .vl{color:var(--teal-400)}
+
+/* ===================== SCORE GAUGE (signature) ===================== */
+.gauge{display:flex; align-items:center; gap:var(--sp-5)}
+.gauge svg{flex:none}
+.gauge-num{font-family:var(--font-display); font-weight:600; font-size:40px; line-height:1; letter-spacing:-.02em}
+.gauge-den{font-family:var(--font-mono); font-size:13px; color:var(--text-3)}
+.score-pillars{display:grid; gap:10px; flex:1; min-width:180px}
+.pillar{display:grid; grid-template-columns:1fr auto; gap:4px 10px; align-items:center}
+.pillar .pl-name{font-size:13px; font-weight:600}
+.pillar .pl-val{font-family:var(--font-mono); font-size:12px; color:var(--text-3)}
+.pillar .pl-track{grid-column:1/-1; height:6px; border-radius:4px; background:var(--surface-3); overflow:hidden}
+.pillar .pl-fill{height:100%; border-radius:4px}
+
+/* ===================== BLUR / TEASER ===================== */
+.locked{position:relative; border-radius:var(--r-lg); overflow:hidden}
+.locked .blurred{filter:blur(7px); pointer-events:none; user-select:none; opacity:.85}
+.lock-veil{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; padding:var(--sp-5);
+  background:linear-gradient(to bottom, color-mix(in srgb,var(--surface) 30%,transparent), color-mix(in srgb,var(--surface) 78%,transparent));
+}
+.lock-badge{width:42px; height:42px; border-radius:12px; background:var(--surface); border:1px solid var(--border-strong); box-shadow:var(--sh-md); display:grid; place-items:center}
+.lock-ttl{font-family:var(--font-display); font-weight:600; font-size:16px}
+.lock-sub{font-size:13px; color:var(--text-2); max-width:34ch}
+
+/* ===================== REPORT MOCK ===================== */
+.rep{border:1px solid var(--border); border-radius:var(--r-xl); overflow:hidden; background:var(--surface); box-shadow:var(--sh-md)}
+.rep-head{padding:var(--sp-6); background:linear-gradient(135deg,var(--violet-600),var(--violet-800)); color:#fff; position:relative; overflow:hidden}
+.rep-head::after{content:""; position:absolute; inset:0; background:repeating-linear-gradient(90deg,rgba(255,255,255,.06) 0 1px,transparent 1px 5px); opacity:.5}
+.rep-head .eb{font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; opacity:.85; position:relative}
+.rep-head h3{color:#fff; font-size:22px; margin:6px 0 2px; position:relative}
+.rep-head .url{font-family:var(--font-mono); font-size:13px; opacity:.9; position:relative}
+.rep-body{padding:var(--sp-6)}
+.metric{display:flex; flex-direction:column; gap:3px}
+.metric .v{font-family:var(--font-mono); font-weight:600; font-size:24px; color:var(--text)}
+.metric .k{font-size:12px; color:var(--text-3)}
+.metric .d{font-family:var(--font-mono); font-size:11px; font-weight:600}
+.up{color:var(--success)} .down{color:var(--danger)}
+
+/* ===================== DASHBOARD MOCK ===================== */
+.dash{border:1px solid var(--border); border-radius:var(--r-xl); overflow:hidden; background:var(--canvas); display:grid; grid-template-columns:200px 1fr}
+.dash-side{background:var(--surface); border-right:1px solid var(--border); padding:var(--sp-4)}
+.dash-side .di{display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:8px; font-size:13px; color:var(--text-2); font-weight:500}
+.dash-side .di.on{background:var(--brand-soft); color:var(--brand-text)}
+.dash-side .di .gl{width:7px; height:7px; border-radius:2px; background:currentColor; opacity:.6}
+.dash-main{padding:var(--sp-5)}
+.hist{display:flex; flex-direction:column; gap:8px}
+.hist-row{display:grid; grid-template-columns:auto 1fr auto auto; gap:14px; align-items:center; padding:12px 14px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface); transition:border-color var(--t-fast),box-shadow var(--t-fast)}
+.hist-row:hover{border-color:var(--border-strong); box-shadow:var(--sh-sm)}
+.hist-score{font-family:var(--font-display); font-weight:600; font-size:18px; width:34px; text-align:center}
+.hist-url{font-size:13.5px; font-weight:600; color:var(--text)}
+.hist-date{font-family:var(--font-mono); font-size:11.5px; color:var(--text-3)}
+
+/* ===================== BEFORE / AFTER ===================== */
+.ba{display:grid; grid-template-columns:1fr auto 1fr; gap:var(--sp-4); align-items:stretch}
+.ba-card{border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--sp-5); background:var(--surface)}
+.ba-card.before{background:var(--surface-2)}
+.ba-card.after{border-color:var(--violet-300); box-shadow:var(--sh-brand)}
+[data-theme="dark"] .ba-card.after{border-color:var(--violet-700)}
+.ba-tag{font-family:var(--font-mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:600; margin-bottom:10px; display:inline-block}
+.ba-arrow{display:grid; place-items:center; font-size:22px; color:var(--brand)}
+
+/* ===================== PDF SPEC ===================== */
+.page-spec{display:flex; gap:var(--sp-5); flex-wrap:wrap; align-items:flex-start}
+.page-mini{width:150px; flex:none; aspect-ratio:1/1.414; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); box-shadow:var(--sh-md); padding:12px; display:flex; flex-direction:column; gap:6px; font-size:8px}
+.pm-band{height:22px; border-radius:4px; background:linear-gradient(135deg,var(--violet-600),var(--violet-800))}
+.pm-line{height:5px; border-radius:3px; background:var(--surface-3)}
+.pm-line.w70{width:70%} .pm-line.w40{width:40%}
+.pm-block{flex:1; border:1px dashed var(--border-strong); border-radius:4px}
+.pm-foot{height:8px; border-radius:3px; background:var(--surface-2); border:1px solid var(--border)}
+
+/* ===================== PRINCIPLES ===================== */
+.princ{display:grid; gap:var(--sp-4)}
+.princ .card{display:flex; gap:16px; align-items:flex-start}
+.princ .pn{font-family:var(--font-mono); font-size:13px; font-weight:600; color:var(--brand-text); flex:none; width:30px; padding-top:2px}
+
+/* ===================== THEME TOGGLE ===================== */
+.tgl{display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-pill); padding:3px; gap:2px}
+.tgl button{border:none; background:none; cursor:pointer; padding:6px 12px; border-radius:var(--r-pill); font-family:var(--font-mono); font-size:11.5px; font-weight:600; color:var(--text-3); min-height:34px; display:flex; align-items:center; gap:6px}
+.tgl button.on{background:var(--surface); color:var(--text); box-shadow:var(--sh-xs)}
+
+/* ===================== RESPONSIVE ===================== */
+@media (max-width:1024px){
+  .sidebar{position:fixed; left:0; top:0; transform:translateX(-100%); transition:transform var(--t-slow) var(--ease-emph); box-shadow:var(--sh-lg)}
+  body.nav-open .sidebar{transform:translateX(0)}
+  .menu-btn{display:inline-flex}
+  .scrim{position:fixed; inset:0; background:var(--overlay); z-index:35; opacity:0; pointer-events:none; transition:opacity var(--t-base)}
+  body.nav-open .scrim{opacity:1; pointer-events:auto}
+  .dash{grid-template-columns:1fr} .dash-side{display:none}
+}
+@media (max-width:760px){
+  .cols-2,.cols-3,.cols-4{grid-template-columns:1fr}
+  .ba{grid-template-columns:1fr} .ba-arrow{transform:rotate(90deg)}
+  .hist-row{grid-template-columns:auto 1fr auto}
+  .hist-row .hist-date{display:none}
+  .type-meta{width:100%}
+  .gauge{flex-direction:column; align-items:flex-start}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important; transition-duration:.001ms!important; scroll-behavior:auto!important}
+}
+.scanline{animation:scan 2.4s linear infinite}
+@keyframes scan{0%{transform:translateY(0)}100%{transform:translateY(120px)}}
+</style>
+</head>
+<body>
+<div class="scrim" onclick="closeNav()"></div>
+<div class="shell">
+
+<!-- ============ SIDEBAR ============ -->
+<aside class="sidebar" id="sidebar">
+  <div class="brand-row">
+    <div class="brand-mark"><span>V</span></div>
+    <div class="brand-name"><b>vertical</b>ai<small>GEO Design System</small></div>
+  </div>
+
+  <nav>
+    <div class="nav-group">
+      <div class="nav-label">Avvio</div>
+      <a class="nav-link" href="#intro"><span class="nav-dot"></span>Introduzione</a>
+      <a class="nav-link" href="#principi"><span class="nav-dot"></span>Principi</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Fondamenta</div>
+      <a class="nav-link" href="#colore"><span class="nav-dot"></span>Colore</a>
+      <a class="nav-link" href="#tipografia"><span class="nav-dot"></span>Tipografia</a>
+      <a class="nav-link" href="#spazio"><span class="nav-dot"></span>Spazio &amp; griglia</a>
+      <a class="nav-link" href="#forma"><span class="nav-dot"></span>Raggi · ombre · motion</a>
+      <a class="nav-link" href="#icone"><span class="nav-dot"></span>Iconografia</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Componenti</div>
+      <a class="nav-link" href="#bottoni"><span class="nav-dot"></span>Bottoni</a>
+      <a class="nav-link" href="#form"><span class="nav-dot"></span>Form &amp; input</a>
+      <a class="nav-link" href="#badge"><span class="nav-dot"></span>Badge &amp; tag</a>
+      <a class="nav-link" href="#contenitori"><span class="nav-dot"></span>Card · tab · tabelle</a>
+      <a class="nav-link" href="#feedback"><span class="nav-dot"></span>Alert · toast · modali</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Pattern di prodotto</div>
+      <a class="nav-link" href="#audit"><span class="nav-dot"></span>Input &amp; scansione</a>
+      <a class="nav-link" href="#scorecard"><span class="nav-dot"></span>Scorecard &amp; gauge</a>
+      <a class="nav-link" href="#report"><span class="nav-dot"></span>Layout report</a>
+      <a class="nav-link" href="#paywall"><span class="nav-dot"></span>Blur &amp; teaser</a>
+      <a class="nav-link" href="#dashboard"><span class="nav-dot"></span>Dashboard &amp; storico</a>
+      <a class="nav-link" href="#editorial"><span class="nav-dot"></span>Editorial prima/dopo</a>
+      <a class="nav-link" href="#pdf"><span class="nav-dot"></span>Report PDF</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Qualità</div>
+      <a class="nav-link" href="#mobile"><span class="nav-dot"></span>Mobile-first</a>
+      <a class="nav-link" href="#a11y"><span class="nav-dot"></span>Accessibilità</a>
+      <a class="nav-link" href="#voce"><span class="nav-dot"></span>Voce &amp; tono</a>
+      <a class="nav-link" href="#token"><span class="nav-dot"></span>Design token</a>
+    </div>
+  </nav>
+</aside>
+
+<!-- ============ MAIN ============ -->
+<div class="main">
+  <header class="topbar">
+    <button class="btn btn--secondary btn--icon menu-btn" onclick="openNav()" aria-label="Apri menu">☰</button>
+    <span class="crumb" id="crumb">Introduzione</span>
+    <span class="spacer"></span>
+    <div class="tgl" role="group" aria-label="Tema">
+      <button id="t-light" class="on" onclick="setTheme('light')">☀︎ Light</button>
+      <button id="t-dark" onclick="setTheme('dark')">☾ Dark</button>
+    </div>
+  </header>
+
+  <main class="content">
+
+  <!-- ===== INTRO ===== -->
+  <section class="section" id="intro">
+    <div class="eyebrow">Design System · v1.0</div>
+    <h2 style="font-size:clamp(32px,5vw,46px); max-width:18ch">Il design system di GEO Audit, da macchina a cliente.</h2>
+    <p class="lead">Una sola fonte di verità per il tool di audit, il report (HTML e PDF), la dashboard e la landing istituzionale di VerticalAI. Token, componenti e pattern pensati perché ogni nuovo sviluppo sia coerente, accessibile e mobile-first — senza ridiscutere le basi ogni volta.</p>
+    <div class="grid cols-3">
+      <div class="card"><div class="card-title">A cosa serve</div><p class="card-sub">Guidare sviluppatori e designer: copia i token, usa i componenti, segui i pattern. Tutto qui dentro è pronto per la produzione.</p></div>
+      <div class="card"><div class="card-title">Come è organizzato</div><p class="card-sub">Fondamenta → componenti → pattern di prodotto → qualità (mobile, accessibilità, voce, token). Si legge dall'alto verso il basso.</p></div>
+      <div class="card"><div class="card-title">Due registri, un sistema</div><p class="card-sub">La landing parla semplice e caldo alle PMI; il prodotto è denso e professionale. Stessi token, stesso brand: cambia solo la densità.</p></div>
+    </div>
+    <div class="sub">Il concept</div>
+    <p class="lead" style="margin-bottom:var(--sp-4)">Il prodotto racconta <b>come una macchina legge il tuo sito</b>. Questo principio guida l'estetica: una faccia <span class="mono" style="color:var(--brand-text)">monospaziata</span> rappresenta «lo sguardo dell'AI» e marca metriche, score e label; il resto resta pulito e affidabile. Il viola del brand resta riconoscibile, evoluto in una scala più profonda e professionale, in light e dark.</p>
+    <div class="alert alert--info"><div class="ic">i</div><div><b>Assunzioni dichiarate.</b> Tipografia open-license (Space Grotesk + Inter + JetBrains Mono) e una logica di valore a due livelli, in stile SimilarWeb: <b>automatico e gratuito</b> = score sintetico, prime evidenze, 1–2 sezioni complete; <b>analisi completa</b> = lista completa problemi, competitor, storico esteso, raccomandazioni prioritizzate — che VerticalAI svolge insieme al cliente, su richiesta, e che nel report appare come teaser. Modificabili in un attimo.</div></div>
+  </section>
+
+  <!-- ===== PRINCIPI ===== -->
+  <section class="section" id="principi">
+    <div class="eyebrow">Fondamenta</div>
+    <h2>Principi di design</h2>
+    <p class="lead">Cinque regole che vincono quando i token non bastano a decidere.</p>
+    <div class="princ">
+      <div class="card"><div class="pn">01</div><div><div class="card-title">Chiarezza prima di tutto</div><p class="card-sub">Un report dice a un imprenditore se l'AI lo consiglia. Ogni numero ha un'etichetta in parole sue, ogni problema una conseguenza concreta. Se una schermata richiede una legenda per essere capita, va semplificata.</p></div></div>
+      <div class="card"><div class="pn">02</div><div><div class="card-title">Il dato è il protagonista</div><p class="card-sub">Score, gauge e metriche sono l'eroe della pagina, in mono e tabulari. Decorazione e gradienti restano di contorno: spendiamo l'audacia su un solo elemento (lo scorecard), tutto il resto è disciplinato.</p></div></div>
+      <div class="card"><div class="pn">03</div><div><div class="card-title">Il valore si mostra, poi si approfondisce</div><p class="card-sub">La versione automatica deve già dare una vittoria reale. Il teaser non nasconde per frustrare: fa intravedere (blur) un beneficio specifico e nominato, mai un muro generico, e invita al passo successivo <b>insieme a voi</b>. «Vediamo insieme i 14 problemi che frenano la tua visibilità», non un generico «Richiedi info».</p></div></div>
+      <div class="card"><div class="pn">04</div><div><div class="card-title">Mobile è la prima classe</div><p class="card-sub">Si progetta a 360px e si espande. Touch target ≥44px, niente hover indispensabili, tabelle che diventano liste. Un report deve essere perfetto sul telefono di chi lo riceve via messaggio.</p></div></div>
+      <div class="card"><div class="pn">05</div><div><div class="card-title">Coerenza che si nota</div><p class="card-sub">Un'azione si chiama allo stesso modo dall'inizio alla fine: il bottone «Analizza» porta a uno stato «Analisi in corso» e a un report «Analizzato il…». Stessa parola, stesso colore, stesso peso, ovunque.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ===== COLORE ===== -->
+  <section class="section" id="colore">
+    <div class="eyebrow">Fondamenta</div>
+    <h2>Colore</h2>
+    <p class="lead">Viola di brand evoluto da <span class="tag-token">#6C5CE7</span> verso una scala più profonda e affidabile. Teal come colore-segnale dei dati, una palette categorica per i grafici, semantici inequivocabili e neutri freddi con micro-tinta viola. Ogni valore esiste in light e dark via token.</p>
+
+    <div class="sub">Brand · viola</div>
+    <div class="swatches" id="sw-violet"></div>
+    <p class="note">Uso: <span class="tag-token">--brand</span> = 600 (azioni primarie) · hover = 700 · <span class="tag-token">--brand-soft</span> per sfondi tenui e stati attivi · 500 come riferimento di brand. In dark il brand si schiarisce a 400/500 per restare leggibile.</p>
+
+    <div class="sub">Teal · segnale dati</div>
+    <div class="swatches" id="sw-teal"></div>
+
+    <div class="sub">Palette dati (grafici)</div>
+    <div class="swatches" id="sw-data"></div>
+    <p class="note">Sequenza fissa e ordinata: assegna i colori nell'ordine 1→7. Pensata per restare distinguibile anche in dark e per affiancarsi al viola senza competere.</p>
+
+    <div class="sub">Semantici</div>
+    <div class="grid cols-4" id="sw-sem"></div>
+
+    <div class="sub">Neutri &amp; superfici</div>
+    <div class="swatches" id="sw-neutral"></div>
+    <p class="note">Gerarchia superfici: <span class="tag-token">--canvas</span> (sfondo app) → <span class="tag-token">--surface</span> (card) → <span class="tag-token">--surface-2</span> (zone tenui) → <span class="tag-token">--surface-3</span>. Testo: <span class="tag-token">--text</span> / <span class="tag-token">--text-2</span> / <span class="tag-token">--text-3</span>.</p>
+
+    <div class="alert alert--success" style="margin-top:var(--sp-6)"><div class="ic">✓</div><div><b>Contrasto garantito.</b> Testo primario su canvas e bianco su <span class="tag-token">--brand</span> superano AA (≥4.5:1). I semantici sono testati su sfondo tenue dedicato. Vedi sezione Accessibilità.</div></div>
+  </section>
+  <!-- ===== TIPOGRAFIA ===== -->
+  <section class="section" id="tipografia">
+    <div class="eyebrow">Fondamenta</div>
+    <h2>Tipografia</h2>
+    <p class="lead">Tre ruoli, tre famiglie. <b>Space Grotesk</b> per i display (carattere tech, usato con misura), <b>Inter</b> per UI e testo, <b>JetBrains Mono</b> per dati, score, label ed eyebrow — la voce della macchina.</p>
+
+    <div class="grid cols-3">
+      <div class="card"><div class="mono" style="font-size:11px;color:var(--text-3);letter-spacing:.1em">DISPLAY</div><div style="font-family:var(--font-display);font-size:30px;font-weight:600;margin:6px 0">Space Grotesk</div><p class="card-sub">Titoli, hero, numeri-eroe dello score. Pesi 500–700.</p></div>
+      <div class="card"><div class="mono" style="font-size:11px;color:var(--text-3);letter-spacing:.1em">TESTO / UI</div><div style="font-family:var(--font-sans);font-size:30px;font-weight:600;margin:6px 0">Inter</div><p class="card-sub">Corpo, bottoni, form, tabelle. Pesi 400–700.</p></div>
+      <div class="card"><div class="mono" style="font-size:11px;color:var(--text-3);letter-spacing:.1em">DATI / MONO</div><div style="font-family:var(--font-mono);font-size:28px;font-weight:600;margin:6px 0">JetBrains Mono</div><p class="card-sub">Metriche, %, eyebrow, token, URL. Pesi 400–600.</p></div>
+    </div>
+
+    <div class="sub">Scala tipografica</div>
+    <div class="demo"><div style="padding:var(--sp-6)">
+      <div class="type-row"><div class="type-meta"><b>Display XL</b>56 / 60 · 600 · -2%<br>Space Grotesk</div><div style="font-family:var(--font-display);font-size:clamp(34px,6vw,56px);font-weight:600;letter-spacing:-.02em;line-height:1.05">Visibile dalle AI</div></div>
+      <div class="type-row"><div class="type-meta"><b>H1</b>34 / 40 · 600<br>Space Grotesk</div><div style="font-family:var(--font-display);font-size:34px;font-weight:600;letter-spacing:-.02em">Il tuo report di leggibilità</div></div>
+      <div class="type-row"><div class="type-meta"><b>H2</b>26 / 32 · 600</div><div style="font-family:var(--font-display);font-size:26px;font-weight:600;letter-spacing:-.015em">Cosa controlliamo</div></div>
+      <div class="type-row"><div class="type-meta"><b>H3</b>20 / 28 · 600</div><div style="font-family:var(--font-display);font-size:20px;font-weight:600">Visibilità nelle risposte</div></div>
+      <div class="type-row"><div class="type-meta"><b>Body L</b>18 / 28 · 400<br>Inter</div><div style="font-size:18px">Spieghiamo in parole semplici cosa va già bene e cosa conviene sistemare.</div></div>
+      <div class="type-row"><div class="type-meta"><b>Body</b>16 / 26 · 400<br>base</div><div style="font-size:16px">Il testo standard dell'interfaccia e dei paragrafi del report.</div></div>
+      <div class="type-row"><div class="type-meta"><b>Body S</b>14 / 22 · 400</div><div style="font-size:14px">Note, descrizioni secondarie, celle di tabella.</div></div>
+      <div class="type-row"><div class="type-meta"><b>Caption</b>13 / 18 · 400</div><div style="font-size:13px;color:var(--text-3)">Didascalie, fonti dei dati, timestamp.</div></div>
+      <div class="type-row"><div class="type-meta"><b>Eyebrow</b>11.5 · 600 · +14%<br>Mono · UPPERCASE</div><div class="mono" style="font-size:11.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--brand-text)">01 · Visibilità AI</div></div>
+      <div class="type-row"><div class="type-meta"><b>Metric</b>24–40 · 600<br>Mono tabular</div><div class="mono" style="font-size:32px;font-weight:600;font-variant-numeric:tabular-nums">72<span style="font-size:16px;color:var(--text-3)">/100</span></div></div>
+    </div></div>
+    <p class="note">Regole: titoli sempre in <span class="tag-token">--font-display</span> con letter-spacing negativo; numeri e dati sempre <span class="tag-token">font-variant-numeric:tabular-nums</span> per allineamento; lunghezza di lettura ideale 60–75 caratteri (<span class="tag-token">--w-prose</span> = 680px). Mai usare il mono per blocchi di testo lunghi.</p>
+  </section>
+
+  <!-- ===== SPAZIO & GRIGLIA ===== -->
+  <section class="section" id="spazio">
+    <div class="eyebrow">Fondamenta</div>
+    <h2>Spazio &amp; griglia</h2>
+    <p class="lead">Scala su base 4px: ritmo prevedibile e componibile. Una griglia a 12 colonne fluida, con larghezze massime distinte per app e marketing.</p>
+
+    <div class="sub">Scala di spaziatura</div>
+    <div class="demo"><div style="padding:var(--sp-6)" id="scale-sp"></div></div>
+    <p class="note">Default pratici: gap interni card <span class="tag-token">16–24px</span>, gap tra sezioni <span class="tag-token">48–80px</span>, padding bottone <span class="tag-token">11×18</span>. Usa sempre i token, mai valori arbitrari.</p>
+
+    <div class="sub">Griglia &amp; breakpoint</div>
+    <div class="grid cols-2">
+      <div class="card"><div class="card-title">Contenitori</div>
+        <table class="tbl" style="border:none;margin-top:10px"><tbody>
+        <tr><td><span class="tag-token">--w-app</span></td><td><b>1200px</b></td><td>Dashboard, report</td></tr>
+        <tr><td><span class="tag-token">--w-marketing</span></td><td><b>1120px</b></td><td>Landing</td></tr>
+        <tr><td><span class="tag-token">--w-prose</span></td><td><b>680px</b></td><td>Testo lungo, editorial</td></tr>
+        </tbody></table>
+      </div>
+      <div class="card"><div class="card-title">Breakpoint</div>
+        <table class="tbl" style="border:none;margin-top:10px"><tbody>
+        <tr><td class="mono">sm</td><td><b>480</b></td><td>telefono grande</td></tr>
+        <tr><td class="mono">md</td><td><b>768</b></td><td>tablet · 2 col</td></tr>
+        <tr><td class="mono">lg</td><td><b>1024</b></td><td>nav fissa, dashboard</td></tr>
+        <tr><td class="mono">xl</td><td><b>1280</b></td><td>layout pieno</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+    <p class="note">Griglia 12 colonne, gutter 24px (16px sotto md). Sotto 760px tutto collassa a singola colonna; le tabelle dati diventano liste (vedi Mobile-first).</p>
+  </section>
+
+  <!-- ===== FORMA: RAGGI / OMBRE / MOTION ===== -->
+  <section class="section" id="forma">
+    <div class="eyebrow">Fondamenta</div>
+    <h2>Raggi · ombre · motion</h2>
+
+    <div class="sub">Raggi</div>
+    <div class="demo"><div class="demo-stage" id="radius-stage"></div></div>
+    <p class="note">Bottoni e input <span class="tag-token">--r-md</span> (10px) · card <span class="tag-token">--r-lg</span> (14px) · modali e report <span class="tag-token">--r-xl</span> (20px) · badge e gauge <span class="tag-token">--r-pill</span>. Coerenza: elementi annidati usano un raggio minore del contenitore.</p>
+
+    <div class="sub">Elevazione (ombre)</div>
+    <div class="demo"><div class="demo-stage" id="shadow-stage"></div></div>
+    <p class="note">L'elevazione comunica gerarchia, non decora. <span class="tag-token">xs</span> bordi/chip · <span class="tag-token">sm</span> card a riposo · <span class="tag-token">md</span> card interattive/dropdown · <span class="tag-token">lg</span> modali/popover · <span class="tag-token">brand</span> solo per l'azione primaria e lo scorecard.</p>
+
+    <div class="sub">Motion</div>
+    <div class="grid cols-2">
+      <div class="card"><div class="card-title">Durate &amp; easing</div>
+      <table class="tbl" style="border:none;margin-top:8px"><tbody>
+      <tr><td class="mono">--t-fast</td><td><b>120ms</b></td><td>hover, press, focus</td></tr>
+      <tr><td class="mono">--t-base</td><td><b>200ms</b></td><td>toggle, fade, tab</td></tr>
+      <tr><td class="mono">--t-slow</td><td><b>320ms</b></td><td>pannelli, modali, nav</td></tr>
+      <tr><td class="mono">--ease-out</td><td colspan="2">.2,.8,.2,1 — uso generale</td></tr>
+      <tr><td class="mono">--ease-emph</td><td colspan="2">.16,1,.3,1 — entrate sceniche</td></tr>
+      </tbody></table></div>
+      <div class="card"><div class="card-title">Principi di motion</div>
+      <p class="card-sub" style="margin-bottom:8px">Il movimento conferma un'azione o orienta nello spazio, mai per spettacolo. Un solo momento orchestrato (es. la rivelazione dello score) batte dieci micro-animazioni sparse.</p>
+      <p class="card-sub"><b>Reduced motion</b>: con <span class="tag-token">prefers-reduced-motion</span> tutte le transizioni si azzerano. È già nel CSS base — non rimuoverlo.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== ICONE ===== -->
+  <section class="section" id="icone">
+    <div class="eyebrow">Fondamenta</div>
+    <h2>Iconografia</h2>
+    <p class="lead">Stile lineare coerente, tratto <b>1.75px</b>, terminazioni arrotondate. Consigliata una libreria open come <span class="tag-token">Lucide</span>. Le icone accompagnano il testo, non lo sostituiscono.</p>
+    <div class="demo"><div class="demo-stage" id="icon-stage"></div>
+      <div class="demo-cap"><span>Dimensioni: <b>16</b> inline · <b>20</b> standard · <b>24</b> azioni · <b>32+</b> stati vuoti</span><span>colore: <span class="tag-token">currentColor</span></span></div>
+    </div>
+    <p class="note">Regole: icone decorative <span class="tag-token">aria-hidden="true"</span>; icone-azione senza testo richiedono <span class="tag-token">aria-label</span>; allineamento ottico, non solo geometrico. Touch target minimo 44px anche per icone da 20px (padding incluso).</p>
+  </section>
+  <!-- ===== BOTTONI ===== -->
+  <section class="section" id="bottoni">
+    <div class="eyebrow">Componenti</div>
+    <h2>Bottoni</h2>
+    <p class="lead">Una sola azione primaria per vista. Le varianti comunicano gerarchia, non gusto.</p>
+
+    <div class="demo"><div class="demo-stage">
+      <button class="btn btn--primary">Analizza il sito →</button>
+      <button class="btn btn--secondary">Scarica PDF</button>
+      <button class="btn btn--soft">Confronta</button>
+      <button class="btn btn--ghost">Annulla</button>
+      <button class="btn btn--danger">Elimina report</button>
+    </div><div class="demo-cap"><span>primary</span><span>secondary</span><span>soft</span><span>ghost</span><span>danger</span></div></div>
+
+    <div class="sub">Dimensioni &amp; stati</div>
+    <div class="demo"><div class="demo-stage">
+      <button class="btn btn--primary btn--lg">Large</button>
+      <button class="btn btn--primary">Default</button>
+      <button class="btn btn--primary btn--sm">Small</button>
+      <button class="btn btn--primary" disabled>Disabled</button>
+      <button class="btn btn--secondary btn--icon" aria-label="Altre azioni">⋯</button>
+    </div><div class="demo-cap"><span>min-height 44px (default) · 52 (lg) · 36 (sm)</span><span>icon-only: aria-label obbligatoria</span></div></div>
+
+    <div class="grid cols-2" style="margin-top:var(--sp-5)">
+      <div class="card"><div class="card-title">Anatomia &amp; regole</div><p class="card-sub">Label in <b>sentence case</b> con verbo d'azione («Scarica PDF», non «PDF»). L'azione mantiene lo stesso nome lungo tutto il flusso. Icona a destra per «avanzamento» (→), a sinistra per «oggetto» (↓ download).</p></div>
+      <div class="card"><div class="card-title">Stati coperti</div><p class="card-sub">default · hover (−10% lum / surface-2) · active (translateY 1px) · focus-visible (ring viola 2px) · disabled (opacity .5) · loading (spinner + testo «Analisi…», bottone non cliccabile).</p></div>
+    </div>
+  </section>
+
+  <!-- ===== FORM ===== -->
+  <section class="section" id="form">
+    <div class="eyebrow">Componenti</div>
+    <h2>Form &amp; input</h2>
+    <p class="lead">L'input è il primo gesto del prodotto: inserire un URL. Deve essere grande, sicuro e perdonare gli errori.</p>
+
+    <div class="demo"><div class="demo-stage col" style="max-width:520px">
+      <div class="field"><label for="d1">Indirizzo del sito</label>
+        <div class="input-group">
+          <input class="input" id="d1" placeholder="esempio.it" value="verticalai.it">
+          <button class="btn btn--primary">Analizza →</button>
+        </div>
+        <span class="hint">Inserisci dominio o URL completo. Bastano pochi secondi.</span>
+      </div>
+      <div class="field"><label for="d2">Email per ricevere il report</label>
+        <input class="input input--err" id="d2" value="mario@">
+        <span class="hint hint--err">Inserisci un'email valida per ricevere il PDF.</span>
+      </div>
+    </div><div class="demo-cap"><span>default · hover · focus (ring) · error</span><span>min-height 46px</span><span>label sempre visibile</span></div></div>
+    <p class="note">Regole: label sopra il campo, mai solo placeholder. Errori sotto al campo, in linguaggio d'aiuto («Inserisci…») mai di colpa. Validazione al blur, non a ogni tasto. Su mobile usa <span class="tag-token">inputmode="url"</span> e <span class="tag-token">type="email"</span> per la tastiera giusta.</p>
+  </section>
+
+  <!-- ===== BADGE ===== -->
+  <section class="section" id="badge">
+    <div class="eyebrow">Componenti</div>
+    <h2>Badge &amp; tag</h2>
+    <p class="lead">Stato in un colpo d'occhio. In mono per coerenza con il linguaggio-dati.</p>
+    <div class="demo"><div class="demo-stage">
+      <span class="badge badge--success"><span class="dot"></span>Ottimo</span>
+      <span class="badge badge--warning"><span class="dot"></span>Da migliorare</span>
+      <span class="badge badge--danger"><span class="dot"></span>Critico</span>
+      <span class="badge badge--brand">Visibilità</span>
+      <span class="badge badge--neutral">Bozza</span>
+      <span class="badge badge--pro">★ Su richiesta</span>
+      <span class="badge badge--neutral mono">Automatico</span>
+    </div><div class="demo-cap"><span>severità: success/warning/danger</span><span>categoria: brand/neutral</span><span>livello: su richiesta / automatico</span></div></div>
+    <p class="note">Uso semantico fisso: verde = ottimo, ambra = da migliorare, rosso = critico. Il badge <span class="tag-token">Su richiesta</span> (gradiente viola) marca i contenuti dell'analisi completa — quella che gestite uno-a-uno con il cliente — ed è il gemello visivo del teaser.</p>
+  </section>
+
+  <!-- ===== CONTENITORI ===== -->
+  <section class="section" id="contenitori">
+    <div class="eyebrow">Componenti</div>
+    <h2>Card · tab · tabelle</h2>
+
+    <div class="sub">Card</div>
+    <div class="grid cols-3">
+      <div class="card"><span class="badge badge--brand" style="margin-bottom:10px">Visibilità</span><div class="card-title">Ti trovano?</div><p class="card-sub">Gli assistenti AI leggono e capiscono le pagine chiave del sito.</p></div>
+      <div class="card"><span class="badge badge--success" style="margin-bottom:10px"><span class="dot"></span>Ottimo</span><div class="card-title">Dati di contatto</div><p class="card-sub">Indirizzo, orari e telefono risultano chiari e aggiornati.</p></div>
+      <div class="card"><span class="badge badge--warning" style="margin-bottom:10px"><span class="dot"></span>Da migliorare</span><div class="card-title">Descrizione attività</div><p class="card-sub">Non è del tutto chiaro cosa offri: l'AI rischia di fraintendere.</p></div>
+    </div>
+
+    <div class="sub">Tab</div>
+    <div class="demo"><div style="padding:var(--sp-5)">
+      <div class="tabs"><button class="tab active">Panoramica</button><button class="tab">Problemi</button><button class="tab">Competitor</button><button class="tab">Storico</button></div>
+      <p class="card-sub" style="padding-top:16px">Contenuto della tab attiva. Le tab scrollano in orizzontale su mobile, l'attiva resta sempre visibile.</p>
+    </div></div>
+
+    <div class="sub">Tabella dati</div>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Pagina</th><th>Leggibilità</th><th>Problemi</th><th>Priorità</th></tr></thead>
+      <tbody>
+        <tr><td><b>/</b> Home</td><td><span class="badge badge--success"><span class="dot"></span>88</span></td><td>2</td><td><span class="badge badge--neutral">Bassa</span></td></tr>
+        <tr><td><b>/servizi</b></td><td><span class="badge badge--warning"><span class="dot"></span>61</span></td><td>5</td><td><span class="badge badge--warning"><span class="dot"></span>Media</span></td></tr>
+        <tr><td><b>/contatti</b></td><td><span class="badge badge--danger"><span class="dot"></span>34</span></td><td>9</td><td><span class="badge badge--danger"><span class="dot"></span>Alta</span></td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Numeri in mono tabulare e allineati. Header in mono uppercase tenue. Riga con hover. Sotto 760px la tabella diventa una lista di card (un blocco per riga) — vedi Mobile-first.</p>
+  </section>
+
+  <!-- ===== FEEDBACK ===== -->
+  <section class="section" id="feedback">
+    <div class="eyebrow">Componenti</div>
+    <h2>Alert · toast · modali</h2>
+
+    <div class="sub">Alert in linea</div>
+    <div class="demo"><div class="demo-stage col">
+      <div class="alert alert--info"><div class="ic">i</div><div><b>Analisi pianificata.</b> Riceverai il report via email tra pochi minuti.</div></div>
+      <div class="alert alert--success"><div class="ic">✓</div><div><b>Report pronto.</b> La leggibilità AI del tuo sito è 72/100.</div></div>
+      <div class="alert alert--warning"><div class="ic">!</div><div><b>Alcune pagine non sono raggiungibili.</b> Il punteggio considera solo quelle lette.</div></div>
+      <div class="alert alert--danger"><div class="ic">×</div><div><b>Sito non raggiungibile.</b> Controlla l'indirizzo e riprova.</div></div>
+    </div></div>
+
+    <div class="sub">Toast</div>
+    <div class="demo"><div class="demo-stage">
+      <span class="toast">✓ &nbsp;PDF scaricato</span>
+      <span class="toast">⎘ &nbsp;Link copiato</span>
+    </div><div class="demo-cap"><span>conferma effimera, in basso · auto-dismiss 4s · una sola azione</span></div></div>
+
+    <div class="sub">Modale &amp; tooltip</div>
+    <div class="demo"><div class="demo-stage" style="gap:var(--sp-6)">
+      <div class="dialog" style="box-shadow:var(--sh-md)"><div class="dialog-body"><h3>Eliminare il report?</h3><p class="card-sub">L'audit di <b>verticalai.it</b> del 3 giugno verrà rimosso dallo storico. L'azione non è reversibile.</p></div><div class="dialog-foot"><button class="btn btn--ghost btn--sm">Annulla</button><button class="btn btn--danger btn--sm">Elimina</button></div></div>
+      <div class="tip"><div class="tip-bubble">«Leggibilità AI»: quanto un assistente capisce e cita questa pagina.</div></div>
+    </div></div>
+    <p class="note">Le modali hanno un'unica decisione chiara, azione distruttiva a destra in <span class="tag-token">danger</span>. Si chiudono con Esc, click sullo scrim e focus-trap interno. I tooltip spiegano un termine, non contengono azioni.</p>
+  </section>
+  <!-- ===== AUDIT INPUT & SCANSIONE ===== -->
+  <section class="section" id="audit">
+    <div class="eyebrow">Pattern di prodotto</div>
+    <h2>Input &amp; scansione</h2>
+    <p class="lead">Il momento d'ingresso del tool. Una promessa chiara, un solo campo, e uno stato di attesa che racconta cosa sta succedendo invece di far aspettare al buio.</p>
+
+    <div class="sub">Hero del tool</div>
+    <div class="demo"><div style="padding:clamp(24px,5vw,48px); text-align:center; background:radial-gradient(120% 100% at 50% 0%, var(--brand-soft), transparent 60%)">
+      <div class="eyebrow" style="justify-content:center">GEO Audit</div>
+      <h3 style="font-size:clamp(24px,4vw,34px); max-width:16ch; margin:0 auto 12px">Il tuo sito è leggibile dalle AI?</h3>
+      <p class="card-sub" style="max-width:46ch; margin:0 auto 22px; font-size:15px">Analizziamo quanto sei visibile e citabile da ChatGPT, Gemini, Perplexity e dai principali LLM.</p>
+      <div class="input-group" style="max-width:440px; margin:0 auto"><input class="input" placeholder="esempio.it" inputmode="url"><button class="btn btn--primary">Analizza →</button></div>
+      <p class="note" style="margin-top:12px">Gratis · richiede meno di un minuto</p>
+    </div></div>
+
+    <div class="sub">Stato di scansione</div>
+    <div class="demo"><div style="padding:var(--sp-8); display:flex; flex-direction:column; align-items:center; gap:18px">
+      <div style="position:relative; width:130px; height:130px; border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; background:var(--surface-2)">
+        <div class="scanline" style="position:absolute; left:0; right:0; top:0; height:2px; background:linear-gradient(90deg,transparent,var(--brand),transparent); box-shadow:0 0 12px var(--brand)"></div>
+        <div style="padding:14px; display:flex; flex-direction:column; gap:6px">
+          <div class="pm-line w70"></div><div class="pm-line w40"></div><div class="pm-line"></div><div class="pm-line w70"></div><div class="pm-line w40"></div>
+        </div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-family:var(--font-display); font-weight:600; font-size:18px">Stiamo leggendo il sito come un'AI…</div>
+        <p class="card-sub mono" style="margin-top:6px; font-size:12.5px">↳ scansione pagine · 8/14 · estrazione contenuti</p>
+      </div>
+    </div><div class="demo-cap"><span>progress reale quando disponibile, non finto</span><span>microcopy che spiega il passo corrente</span></div></div>
+    <p class="note">La «scanline» visualizza letteralmente la macchina che legge il sito: è il signature motion del prodotto, usato <b>solo</b> qui. Mostra avanzamento concreto («8/14 pagine») e rassicura («non chiudere la pagina»). Per attese lunghe, offri l'invio del report via email così l'utente può andarsene.</p>
+  </section>
+
+  <!-- ===== SCORECARD & GAUGE ===== -->
+  <section class="section" id="scorecard">
+    <div class="eyebrow">Pattern di prodotto · Signature</div>
+    <h2>Scorecard &amp; gauge</h2>
+    <p class="lead">L'elemento più riconoscibile del sistema. Un punteggio sintetico di leggibilità AI (0–100) e i pilastri che lo compongono. È il primo respiro del report: un numero grande, onesto, con il colore della sua severità.</p>
+
+    <div class="demo"><div style="padding:clamp(20px,4vw,36px)">
+      <div class="card card--pad-lg" style="box-shadow:var(--sh-brand)">
+        <div class="gauge">
+          <svg width="132" height="132" viewBox="0 0 132 132" role="img" aria-label="Punteggio 72 su 100">
+            <defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--violet-500)"/><stop offset="1" stop-color="var(--teal-500)"/></linearGradient></defs>
+            <circle cx="66" cy="66" r="56" fill="none" stroke="var(--surface-3)" stroke-width="12"/>
+            <circle cx="66" cy="66" r="56" fill="none" stroke="url(#gg)" stroke-width="12" stroke-linecap="round" stroke-dasharray="351.8" stroke-dashoffset="98.5" transform="rotate(-90 66 66)"/>
+            <text x="66" y="64" text-anchor="middle" style="font-family:var(--font-display); font-weight:600; font-size:34px; fill:var(--ink)">72</text>
+            <text x="66" y="84" text-anchor="middle" class="mono" style="font-size:11px; fill:var(--text-3)">/ 100</text>
+          </svg>
+          <div class="score-pillars">
+            <div style="font-family:var(--font-display);font-weight:600;font-size:15px;margin-bottom:2px">Leggibilità AI · <span style="color:var(--warning)">Buona, migliorabile</span></div>
+            <div class="pillar"><span class="pl-name">Visibilità</span><span class="pl-val">81</span><div class="pl-track"><div class="pl-fill" style="width:81%;background:var(--success)"></div></div></div>
+            <div class="pillar"><span class="pl-name">Comprensione</span><span class="pl-val">64</span><div class="pl-track"><div class="pl-fill" style="width:64%;background:var(--warning)"></div></div></div>
+            <div class="pillar"><span class="pl-name">Affidabilità dati</span><span class="pl-val">77</span><div class="pl-track"><div class="pl-fill" style="width:77%;background:var(--success)"></div></div></div>
+            <div class="pillar"><span class="pl-name">Reputazione</span><span class="pl-val">58</span><div class="pl-track"><div class="pl-fill" style="width:58%;background:var(--danger)"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div><div class="demo-cap"><span>gauge: gradiente viola→teal, traccia neutra</span><span>numero in display, pilastri in mono</span><span>colore = severità</span></div></div>
+
+    <div class="grid cols-3" style="margin-top:var(--sp-5)">
+      <div class="card"><div class="card-title">Soglie colore</div><p class="card-sub"><span class="badge badge--danger">0–49 Critico</span> <span class="badge badge--warning" style="margin-top:6px">50–74 Migliorabile</span> <span class="badge badge--success" style="margin-top:6px">75–100 Ottimo</span><br><span style="display:inline-block;margin-top:8px">Stesse soglie ovunque: gauge, badge, tabelle.</span></p></div>
+      <div class="card"><div class="card-title">Onestà del numero</div><p class="card-sub">Lo score non è mai gonfiato per piacere. Un 34 si mostra in rosso, con accanto «ecco perché» e «ecco come salire». La credibilità è il prodotto.</p></div>
+      <div class="card"><div class="card-title">Metriche di supporto</div><p class="card-sub">Sotto il gauge: delta vs. media di settore, n° problemi per severità, n° pagine lette. Sempre con etichetta in parole semplici.</p></div>
+    </div>
+  </section>
+  <!-- ===== LAYOUT REPORT ===== -->
+  <section class="section" id="report">
+    <div class="eyebrow">Pattern di prodotto</div>
+    <h2>Layout report</h2>
+    <p class="lead">La pagina che l'utente riceve. Stessa struttura in HTML e PDF: testata d'identità, scorecard, sezioni a pilastri, ognuna con verdetto, evidenze e azioni. Si legge dall'alto come una storia: <i>quanto vai → perché → cosa fare</i>.</p>
+
+    <div class="demo"><div style="padding:clamp(16px,3vw,28px)">
+      <div class="rep">
+        <div class="rep-head">
+          <div class="eb">Report leggibilità AI · 3 giugno 2025</div>
+          <h3>verticalai.it</h3>
+          <div class="url">14 pagine analizzate · ChatGPT · Gemini · Perplexity</div>
+        </div>
+        <div class="rep-body">
+          <div class="grid cols-4" style="margin-bottom:var(--sp-6)">
+            <div class="metric"><span class="v" style="color:var(--warning)">72</span><span class="k">Score globale</span><span class="d up">▲ +6 vs media settore</span></div>
+            <div class="metric"><span class="v">14</span><span class="k">Pagine lette</span></div>
+            <div class="metric"><span class="v" style="color:var(--danger)">9</span><span class="k">Problemi critici</span><span class="d down">richiede azione</span></div>
+            <div class="metric"><span class="v">#3</span><span class="k">Posizione vs 5 competitor</span></div>
+          </div>
+          <div class="sub" style="margin-top:0">Sezione · Comprensione <span class="badge badge--warning" style="margin-left:auto"><span class="dot"></span>64 / 100</span></div>
+          <p class="card-sub" style="margin-bottom:14px">Le AI faticano a capire <b>cosa offri</b> in 3 pagine su 14. Ecco le evidenze principali:</p>
+          <div class="grid cols-2">
+            <div class="alert alert--warning"><div class="ic">!</div><div><b>Servizi poco espliciti.</b> La pagina /servizi descrive il «come» ma non il «cosa» in modo estraibile.</div></div>
+            <div class="alert alert--danger"><div class="ic">×</div><div><b>Manca un riepilogo leggibile.</b> Nessun blocco sintetico che un'AI possa citare.</div></div>
+          </div>
+        </div>
+      </div>
+    </div><div class="demo-cap"><span>testata = identità + scope</span><span>metriche → sezioni a pilastro</span><span>ogni sezione: verdetto, evidenze, azioni</span></div></div>
+
+    <div class="grid cols-2" style="margin-top:var(--sp-5)">
+      <div class="card"><div class="card-title">Anatomia di una sezione</div><p class="card-sub">1) Titolo + badge punteggio · 2) verdetto in una frase · 3) evidenze (alert tipizzati) · 4) raccomandazioni prioritizzate (analisi completa) · 5) «cosa cambia se sistemi». Ordine fisso: l'utente impara a leggerlo.</p></div>
+      <div class="card"><div class="card-title">Automatico vs analisi completa</div><p class="card-sub"><b>Automatico</b>: scorecard, 1ª evidenza per pilastro, 1 sezione completa. <b>Analisi completa</b>: tutte le evidenze, lista completa problemi, competitor, raccomandazioni ordinate, storico — la costruite voi insieme al cliente. Le parti riservate appaiono come teaser (<i>blurred</i>) e nominate (vedi sotto).</p></div>
+    </div>
+  </section>
+
+  <!-- ===== BLUR & TEASER ===== -->
+  <section class="section" id="paywall">
+    <div class="eyebrow">Pattern di prodotto · Signature</div>
+    <h2>Blur &amp; teaser</h2>
+    <p class="lead">Ispirato ai migliori tool di reporting (SimilarWeb &amp; co.): il valore non si nasconde dietro un muro, si <b>fa intravedere</b>. L'utente vede che il dato esiste, percepisce che è prezioso, e capisce esattamente cosa otterrà parlandone con voi. Mai un muro generico.</p>
+
+    <div class="grid cols-2">
+      <!-- locked card -->
+      <div class="demo"><div style="padding:var(--sp-5)">
+        <div class="locked">
+          <div class="blurred">
+            <div class="sub" style="margin-top:0">Tutti i problemi · 14 trovati</div>
+            <div class="grid" style="gap:8px">
+              <div class="alert alert--danger"><div class="ic">×</div><div><b>Schema markup assente</b> su 9 pagine chiave.</div></div>
+              <div class="alert alert--warning"><div class="ic">!</div><div><b>Titoli ambigui</b> su /servizi e /chi-siamo.</div></div>
+              <div class="alert alert--danger"><div class="ic">×</div><div><b>Dati di contatto non strutturati.</b></div></div>
+            </div>
+          </div>
+          <div class="lock-veil">
+            <div class="lock-badge">🔒</div>
+            <div class="lock-ttl">Ci sono altri 14 problemi che frenano la tua visibilità</div>
+            <div class="lock-sub">Lista completa, ordinata per impatto, con come risolverli. La vediamo insieme.</div>
+            <button class="btn btn--primary btn--sm">Richiedi l'analisi completa →</button>
+          </div>
+        </div>
+      </div><div class="demo-cap"><span>contenuto reale, sfocato (blur 7px)</span><span>veil con titolo specifico + CTA</span></div></div>
+
+      <!-- teaser row -->
+      <div class="demo"><div style="padding:var(--sp-5)">
+        <div class="sub" style="margin-top:0">Confronto competitor <span class="badge badge--pro" style="margin-left:auto">★ Su richiesta</span></div>
+        <div class="hist" style="gap:8px">
+          <div class="hist-row" style="grid-template-columns:1fr auto"><span class="hist-url">il-tuo-sito.it</span><span class="badge badge--warning"><span class="dot"></span>72</span></div>
+          <div class="hist-row blurred" style="grid-template-columns:1fr auto; filter:blur(5px)"><span class="hist-url">concorrente-a.it</span><span class="badge badge--success">8X</span></div>
+          <div class="hist-row blurred" style="grid-template-columns:1fr auto; filter:blur(5px)"><span class="hist-url">concorrente-b.it</span><span class="badge badge--success">8X</span></div>
+        </div>
+        <button class="btn btn--soft btn--block btn--sm" style="margin-top:12px">Vedi dove sei rispetto ai concorrenti →</button>
+      </div><div class="demo-cap"><span>il primo dato (il tuo) è libero</span><span>i confronti sono il gancio</span></div></div>
+    </div>
+
+    <div class="grid cols-3" style="margin-top:var(--sp-5)">
+      <div class="card"><div class="card-title">Regole del blur</div><p class="card-sub">Blur 5–7px su contenuto <b>vero</b> (mai placeholder finto). <span class="tag-token">user-select:none</span> e <span class="tag-token">pointer-events:none</span> sotto il veil. Mai sfocare anche il titolo della sezione: deve restare leggibile.</p></div>
+      <div class="card"><div class="card-title">Il teaser che invita</div><p class="card-sub">Titolo <b>specifico e quantificato</b> («i 14 problemi»), una riga di beneficio, una sola CTA. Niente prezzi qui: il passo successivo è una conversazione con voi, non un checkout.</p></div>
+      <div class="card"><div class="card-title">Onestà</div><p class="card-sub">La versione automatica deve già valere il tempo speso. Il blur amplifica un valore reale che c'è — non finge contenuti per gonfiare la percezione. È la differenza tra desiderio e inganno.</p></div>
+    </div>
+  </section>
+  <!-- ===== DASHBOARD & STORICO ===== -->
+  <section class="section" id="dashboard">
+    <div class="eyebrow">Pattern di prodotto</div>
+    <h2>Dashboard &amp; storico</h2>
+    <p class="lead">La casa dell'utente che torna. Navigazione laterale, l'ultimo report in evidenza e lo <b>storico</b> di tutte le analisi — per vedere i progressi nel tempo, il vero motivo per restare.</p>
+
+    <div class="demo"><div style="padding:clamp(12px,2.5vw,20px)">
+      <div class="dash">
+        <div class="dash-side">
+          <div class="brand-row" style="margin-bottom:18px"><div class="brand-mark" style="width:26px;height:26px"><span style="font-size:13px">V</span></div><div class="brand-name" style="font-size:13px"><b>vertical</b>ai</div></div>
+          <div class="di on"><span class="gl"></span>Panoramica</div>
+          <div class="di"><span class="gl"></span>I miei report</div>
+          <div class="di"><span class="gl"></span>Nuovo audit</div>
+          <div class="di"><span class="gl"></span>Competitor</div>
+          <div class="di"><span class="gl"></span>Impostazioni</div>
+        </div>
+        <div class="dash-main">
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px">
+            <div><div style="font-family:var(--font-display);font-weight:600;font-size:18px">Ciao Mario 👋</div><p class="card-sub">L'ultimo audit di <b>verticalai.it</b> è di 3 giorni fa.</p></div>
+            <button class="btn btn--primary btn--sm" style="margin-left:auto">Nuovo audit →</button>
+          </div>
+          <div class="card" style="margin-bottom:18px; display:flex; align-items:center; gap:18px; flex-wrap:wrap">
+            <svg width="64" height="64" viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="56" fill="none" stroke="var(--surface-3)" stroke-width="14"/><circle cx="66" cy="66" r="56" fill="none" stroke="var(--warning)" stroke-width="14" stroke-linecap="round" stroke-dasharray="351.8" stroke-dashoffset="98.5" transform="rotate(-90 66 66)"/></svg>
+            <div><div class="mono" style="font-size:11px;color:var(--text-3)">SCORE ATTUALE</div><div style="font-family:var(--font-display);font-weight:600;font-size:26px">72<span style="font-size:14px;color:var(--text-3)">/100</span> <span class="badge badge--success" style="font-size:10px">▲ +9 in 30gg</span></div></div>
+            <button class="btn btn--secondary btn--sm" style="margin-left:auto">Apri report</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><div class="mono" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3)">Storico report</div><div style="flex:1;height:1px;background:var(--border)"></div></div>
+          <div class="hist">
+            <div class="hist-row"><span class="hist-score" style="color:var(--warning)">72</span><div><div class="hist-url">verticalai.it</div><div class="hist-date">3 giu 2025 · 14 pagine</div></div><span class="badge badge--success">▲ +9</span><button class="btn btn--ghost btn--sm">Apri</button></div>
+            <div class="hist-row"><span class="hist-score" style="color:var(--warning)">63</span><div><div class="hist-url">verticalai.it</div><div class="hist-date">4 mag 2025 · 14 pagine</div></div><span class="badge badge--success">▲ +5</span><button class="btn btn--ghost btn--sm">Apri</button></div>
+            <div class="hist-row"><span class="hist-score" style="color:var(--danger)">58</span><div><div class="hist-url">verticalai.it</div><div class="hist-date">2 apr 2025 · 12 pagine</div></div><span class="badge badge--neutral">—</span><button class="btn btn--ghost btn--sm">Apri</button></div>
+          </div>
+        </div>
+      </div>
+    </div><div class="demo-cap"><span>nav laterale (collassa su mobile)</span><span>ultimo score + trend</span><span>storico = progresso nel tempo</span></div></div>
+
+    <div class="grid cols-3" style="margin-top:var(--sp-5)">
+      <div class="card"><div class="card-title">Lo storico è il gancio di retention</div><p class="card-sub">Ogni riga mostra score, data, n° pagine e <b>delta</b> rispetto alla volta prima. Il trend «+9 in 30 giorni» è la prova che il lavoro funziona — e il motivo per rifare l'audit.</p></div>
+      <div class="card"><div class="card-title">Azioni per riga</div><p class="card-sub">Apri · Scarica PDF · Confronta con un altro audit · Elimina. Su riga compatta restano «Apri» e un menu ⋯ con il resto.</p></div>
+      <div class="card"><div class="card-title">Stato vuoto</div><p class="card-sub">Nessun report ancora? Una sola call-to-action grande («Fai il tuo primo audit») e una riga che spiega cosa otterrà. Lo schermo vuoto è un invito, non un vicolo cieco.</p></div>
+    </div>
+  </section>
+
+  <!-- ===== EDITORIAL PRIMA/DOPO ===== -->
+  <section class="section" id="editorial">
+    <div class="eyebrow">Pattern di prodotto · Landing</div>
+    <h2>Editorial prima / dopo</h2>
+    <p class="lead">La pagina che costruisce fiducia: chi siamo e cosa otteniamo. Il dispositivo narrativo del brand — <i>insegna spenta → insegna accesa</i> — diventa un confronto «prima/dopo» che mostra il valore con un caso concreto.</p>
+
+    <div class="demo"><div style="padding:clamp(20px,4vw,40px)">
+      <div class="ba">
+        <div class="ba-card before">
+          <span class="ba-tag" style="color:var(--text-3)">▒ Prima</span>
+          <div class="gauge" style="gap:14px"><svg width="74" height="74" viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="56" fill="none" stroke="var(--surface-3)" stroke-width="14"/><circle cx="66" cy="66" r="56" fill="none" stroke="var(--danger)" stroke-width="14" stroke-linecap="round" stroke-dasharray="351.8" stroke-dashoffset="232" transform="rotate(-90 66 66)"/></svg><div><div style="font-family:var(--font-display);font-weight:600;font-size:24px">34<span style="font-size:13px;color:var(--text-3)">/100</span></div><p class="card-sub" style="font-size:12.5px">Quasi invisibile agli assistenti AI</p></div></div>
+          <ul style="margin:14px 0 0; padding-left:18px; font-size:13px; color:var(--text-2); line-height:1.9"><li>Non compariva nelle risposte AI</li><li>Servizi non comprensibili</li><li>Dati di contatto non strutturati</li></ul>
+        </div>
+        <div class="ba-arrow">→</div>
+        <div class="ba-card after">
+          <span class="ba-tag" style="color:var(--brand-text)">● Dopo</span>
+          <div class="gauge" style="gap:14px"><svg width="74" height="74" viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="56" fill="none" stroke="var(--surface-3)" stroke-width="14"/><circle cx="66" cy="66" r="56" fill="none" stroke="var(--success)" stroke-width="14" stroke-linecap="round" stroke-dasharray="351.8" stroke-dashoffset="49" transform="rotate(-90 66 66)"/></svg><div><div style="font-family:var(--font-display);font-weight:600;font-size:24px">86<span style="font-size:13px;color:var(--text-3)">/100</span></div><p class="card-sub" style="font-size:12.5px">Consigliato dagli assistenti AI</p></div></div>
+          <ul style="margin:14px 0 0; padding-left:18px; font-size:13px; color:var(--text-2); line-height:1.9"><li>Citato da ChatGPT e Gemini</li><li>Offerta chiara ed estraibile</li><li>Contatti strutturati e aggiornati</li></ul>
+        </div>
+      </div>
+      <p class="note" style="text-align:center">Scenario rappresentativo basato su casi reali. I risultati variano per settore e punto di partenza.</p>
+    </div></div>
+
+    <div class="grid cols-3" style="margin-top:var(--sp-5)">
+      <div class="card"><div class="card-title">Credenziali sobrie</div><p class="card-sub">Logo cliente (se autorizzato), settore, intervento, e <b>il numero che è cambiato</b>. Niente superlativi: il delta parla da solo. Disclaimer sempre presente.</p></div>
+      <div class="card"><div class="card-title">Riuso dei componenti</div><p class="card-sub">Il «prima/dopo» riusa gauge, badge e card del prodotto: la landing e il tool si assomigliano, così la promessa è credibile già dal design.</p></div>
+      <div class="card"><div class="card-title">Tono caldo, dato preciso</div><p class="card-sub">Qui il copy è per le PMI (semplice, rassicurante), ma i numeri restano in mono e rigorosi. È il punto di sutura tra i due registri del brand.</p></div>
+    </div>
+  </section>
+
+  <!-- ===== PDF ===== -->
+  <section class="section" id="pdf">
+    <div class="eyebrow">Pattern di prodotto</div>
+    <h2>Report PDF</h2>
+    <p class="lead">Lo stesso report, pensato per la stampa e l'invio. Gemello dell'HTML nei contenuti e nel brand, ma adattato al foglio: A4, margini sicuri, header/footer ripetuti, e il contenuto riservato che diventa <b>teaser</b> invece di blur.</p>
+
+    <div class="page-spec">
+      <div class="page-mini">
+        <div class="pm-band"></div>
+        <div class="pm-line w40"></div>
+        <div style="display:flex;gap:6px;align-items:center;margin:2px 0"><div style="width:26px;height:26px;border-radius:50%;border:3px solid var(--warning)"></div><div style="flex:1"><div class="pm-line w70"></div><div class="pm-line w40" style="margin-top:3px"></div></div></div>
+        <div class="pm-block"></div>
+        <div class="pm-foot"></div>
+      </div>
+      <div style="flex:1; min-width:260px">
+        <div class="card"><div class="card-title">Specifiche di stampa</div>
+        <table class="tbl" style="border:none;margin-top:8px"><tbody>
+          <tr><td><b>Formato</b></td><td>A4 verticale (210×297mm)</td></tr>
+          <tr><td><b>Margini</b></td><td>18mm · zona sicura per header/footer 14mm</td></tr>
+          <tr><td><b>Griglia</b></td><td>colonna singola, max 174mm di contenuto</td></tr>
+          <tr><td><b>Copertina</b></td><td>banda viola, logo, URL, score grande, data</td></tr>
+          <tr><td><b>Header ripetuto</b></td><td>logo + «Report leggibilità AI» + dominio</td></tr>
+          <tr><td><b>Footer ripetuto</b></td><td>verticalai.it · pagina X/Y · data</td></tr>
+          <tr><td><b>Colore</b></td><td>stessi token; ombre→bordi 1px per la stampa</td></tr>
+          <tr><td><b>Font</b></td><td>embeddati (Space Grotesk, Inter, JetBrains Mono)</td></tr>
+        </tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid cols-3" style="margin-top:var(--sp-5)">
+      <div class="card"><div class="card-title">Teaser stampabile</div><p class="card-sub">In PDF non si sfoca: le sezioni dell'analisi completa diventano una pagina-invito con l'elenco di <b>cosa contiene</b> e un contatto/QR per richiederla a voi. Onesto e stampabile.</p></div>
+      <div class="card"><div class="card-title">Implementazione</div><p class="card-sub">Generare il PDF dallo <b>stesso HTML</b> con un foglio di stile <span class="tag-token">@media print</span> + motore headless (es. Puppeteer/WeasyPrint). Una fonte, due output: zero divergenze di brand.</p></div>
+      <div class="card"><div class="card-title">Accessibilità del PDF</div><p class="card-sub">PDF taggato (struttura titoli), testo selezionabile (mai immagini di testo), contrasto verificato anche in scala di grigi per chi stampa in B/N.</p></div>
+    </div>
+    <div class="alert alert--info" style="margin-top:var(--sp-5)"><div class="ic">i</div><div><b>Regola d'oro.</b> HTML e PDF condividono token, componenti e gerarchia. Se diverge il brand tra i due, è un bug del design system, non una scelta.</div></div>
+  </section>
+  <!-- ===== MOBILE ===== -->
+  <section class="section" id="mobile">
+    <div class="eyebrow">Qualità</div>
+    <h2>Mobile-first</h2>
+    <p class="lead">Non «adattato» al telefono: progettato lì prima. Un report arriva spesso via messaggio e si apre sul cellulare di un imprenditore tra una cosa e l'altra. Deve essere perfetto a 360px.</p>
+    <div class="grid cols-2">
+      <div class="card"><div class="card-title">Regole non negoziabili</div>
+        <ul style="margin:8px 0 0;padding-left:18px;font-size:14px;color:var(--text-2);line-height:1.95">
+          <li>Touch target <b>≥44×44px</b>, spaziati ≥8px</li>
+          <li>Niente funzione raggiungibile <b>solo</b> con hover</li>
+          <li>Testo base 16px (evita lo zoom-on-focus iOS)</li>
+          <li>CTA primaria sempre <b>raggiungibile col pollice</b></li>
+          <li>Tastiera giusta: <span class="tag-token">inputmode</span>, <span class="tag-token">type</span></li>
+        </ul>
+      </div>
+      <div class="card"><div class="card-title">Trasformazioni responsive</div>
+        <ul style="margin:8px 0 0;padding-left:18px;font-size:14px;color:var(--text-2);line-height:1.95">
+          <li>Nav laterale → drawer con scrim (sotto 1024px)</li>
+          <li>Tabelle → <b>liste di card</b> (un blocco per riga)</li>
+          <li>Gauge + pilastri → impilati verticali</li>
+          <li>Griglie multi-colonna → singola colonna (≤760px)</li>
+          <li>Teaser: CTA a tutta larghezza, sticky se serve</li>
+        </ul>
+      </div>
+    </div>
+    <div class="demo" style="margin-top:var(--sp-5)"><div class="demo-stage col" style="max-width:380px;margin:0 auto">
+      <div class="mono" style="font-size:11px;color:var(--text-3);text-align:center">↓ tabella → lista su mobile</div>
+      <div class="card" style="display:flex;align-items:center;gap:12px"><span class="hist-score" style="color:var(--warning)">61</span><div style="flex:1"><div class="hist-url">/servizi</div><div class="mono" style="font-size:11px;color:var(--text-3)">5 problemi · priorità media</div></div><span class="badge badge--warning"><span class="dot"></span>!</span></div>
+      <div class="card" style="display:flex;align-items:center;gap:12px"><span class="hist-score" style="color:var(--danger)">34</span><div style="flex:1"><div class="hist-url">/contatti</div><div class="mono" style="font-size:11px;color:var(--text-3)">9 problemi · priorità alta</div></div><span class="badge badge--danger"><span class="dot"></span>×</span></div>
+    </div><div class="demo-cap"><span>la stessa tabella della sezione Componenti, ripensata per il pollice</span></div></div>
+  </section>
+
+  <!-- ===== A11Y ===== -->
+  <section class="section" id="a11y">
+    <div class="eyebrow">Qualità</div>
+    <h2>Accessibilità</h2>
+    <p class="lead">Il pavimento di qualità, non un extra. Miriamo a <b>WCAG 2.1 AA</b>. Un report che non si legge per tutti non fa il suo lavoro.</p>
+    <div class="grid cols-2">
+      <div class="card"><div class="card-title">Contrasto &amp; colore</div><p class="card-sub">Testo ≥4.5:1 (≥3:1 per il grande). Il colore non è mai l'unico canale: severità = colore <b>+</b> icona <b>+</b> etichetta. Lo score «34» è rosso, ha la ⓧ e dice «Critico».</p></div>
+      <div class="card"><div class="card-title">Tastiera &amp; focus</div><p class="card-sub">Tutto raggiungibile da tastiera, ordine logico, <span class="tag-token">:focus-visible</span> sempre visibile (ring viola 2px). Modali con focus-trap e chiusura con Esc. Skip-link all'inizio.</p></div>
+      <div class="card"><div class="card-title">Semantica &amp; screen reader</div><p class="card-sub">HTML semantico, gerarchia titoli corretta, <span class="tag-token">aria-label</span> sulle icone-azione, gauge con <span class="tag-token">role="img"</span> e testo alternativo («Punteggio 72 su 100»).</p></div>
+      <div class="card"><div class="card-title">Movimento &amp; preferenze</div><p class="card-sub"><span class="tag-token">prefers-reduced-motion</span> azzera le animazioni (scanline inclusa). Niente lampeggi &gt;3Hz. Rispettiamo anche <span class="tag-token">prefers-color-scheme</span> come default del tema.</p></div>
+    </div>
+  </section>
+
+  <!-- ===== VOCE ===== -->
+  <section class="section" id="voce">
+    <div class="eyebrow">Qualità</div>
+    <h2>Voce &amp; tono</h2>
+    <p class="lead">Le parole sono materiale di design. Due registri, una personalità: <b>esperti che spiegano semplice</b>. Mai gergo per sembrare bravi, mai colpevolizzare chi legge.</p>
+    <div class="grid cols-2">
+      <div class="card"><div class="card-title">Landing · caldo &amp; chiaro</div><p class="card-sub">Per le PMI. Frasi brevi, «tu», esempi concreti («è come un'insegna spenta»). Rassicura: «il difficile lo facciamo noi». Zero tecnicismi non spiegati.</p></div>
+      <div class="card"><div class="card-title">Prodotto · preciso &amp; pro</div><p class="card-sub">Per chi legge il report. Diretto, quantificato, azionabile. «9 pagine senza dati strutturati» batte «alcune aree migliorabili». Ogni problema ha un «come si risolve».</p></div>
+    </div>
+    <div class="sub">Sì / No</div>
+    <div class="grid cols-2">
+      <div class="card" style="border-color:var(--success-border)"><div class="mono" style="font-size:11px;color:var(--success);letter-spacing:.1em">✓ COSÌ</div>
+        <p style="font-size:14px;margin-top:8px">«Analizza il sito» · «Vediamo insieme i 14 problemi» · «Report pronto: 72/100» · «Sito non raggiungibile. Controlla l'indirizzo e riprova.»</p></div>
+      <div class="card" style="border-color:var(--danger-border)"><div class="mono" style="font-size:11px;color:var(--danger);letter-spacing:.1em">✕ NON COSÌ</div>
+        <p style="font-size:14px;margin-top:8px">«Submit» · «Richiedi info» (generico) · «Operazione completata» · «Errore 502. Ops, qualcosa è andato storto!»</p></div>
+    </div>
+    <p class="note">Microcopy: un'azione si chiama uguale ovunque («Scarica PDF» → toast «PDF scaricato»). Gli errori non si scusano e non sono vaghi: dicono cosa è successo e come rimediare. Lo schermo vuoto è un invito ad agire.</p>
+  </section>
+
+  <!-- ===== TOKEN ===== -->
+  <section class="section" id="token">
+    <div class="eyebrow">Qualità · Handoff</div>
+    <h2>Design token</h2>
+    <p class="lead">Il sistema in forma copiabile. Incolla le CSS variables e parti: ogni colore, spazio e raggio di questo documento viene da qui.</p>
+
+    <div class="sub">CSS · custom properties</div>
+    <div class="code"><button class="btn btn--secondary btn--sm copy" onclick="copyCode('css-tokens',this)">Copia</button><pre id="css-tokens"><code>:root{
+  <span class="tk">--brand</span>:<span class="vl">#5A45D8</span>; <span class="tk">--brand-hover</span>:<span class="vl">#4A37BE</span>; <span class="tk">--brand-soft</span>:<span class="vl">#F2F0FE</span>;
+  <span class="tk">--violet-500</span>:<span class="vl">#6D5AE6</span>; <span class="tk">--violet-700</span>:<span class="vl">#4A37BE</span>; <span class="tk">--violet-950</span>:<span class="vl">#201953</span>;
+  <span class="tk">--teal-500</span>:<span class="vl">#0FB6C2</span>; <span class="tk">--teal-400</span>:<span class="vl">#2DD4DC</span>;
+  <span class="tk">--success</span>:<span class="vl">#0E9F6E</span>; <span class="tk">--warning</span>:<span class="vl">#C77700</span>; <span class="tk">--danger</span>:<span class="vl">#D92D34</span>; <span class="tk">--info</span>:<span class="vl">#2F6FED</span>;
+  <span class="tk">--canvas</span>:<span class="vl">#FBFBFD</span>; <span class="tk">--surface</span>:<span class="vl">#FFFFFF</span>; <span class="tk">--surface-2</span>:<span class="vl">#F6F6FB</span>;
+  <span class="tk">--text</span>:<span class="vl">#16151E</span>; <span class="tk">--text-2</span>:<span class="vl">#4A4A5A</span>; <span class="tk">--text-3</span>:<span class="vl">#76768A</span>; <span class="tk">--border</span>:<span class="vl">#E6E6EF</span>;
+  <span class="tk">--font-display</span>:<span class="vl">'Space Grotesk'</span>; <span class="tk">--font-sans</span>:<span class="vl">'Inter'</span>; <span class="tk">--font-mono</span>:<span class="vl">'JetBrains Mono'</span>;
+  <span class="tk">--sp-1</span>:<span class="vl">4px</span>; <span class="tk">--sp-4</span>:<span class="vl">16px</span>; <span class="tk">--sp-6</span>:<span class="vl">24px</span>; <span class="tk">--sp-12</span>:<span class="vl">48px</span>; <span class="tk">--sp-20</span>:<span class="vl">80px</span>;
+  <span class="tk">--r-md</span>:<span class="vl">10px</span>; <span class="tk">--r-lg</span>:<span class="vl">14px</span>; <span class="tk">--r-xl</span>:<span class="vl">20px</span>; <span class="tk">--r-pill</span>:<span class="vl">999px</span>;
+  <span class="tk">--t-fast</span>:<span class="vl">120ms</span>; <span class="tk">--t-base</span>:<span class="vl">200ms</span>; <span class="tk">--ease-out</span>:<span class="vl">cubic-bezier(.2,.8,.2,1)</span>;
+}
+<span class="tk">[data-theme="dark"]</span>{
+  <span class="tk">--brand</span>:<span class="vl">#7C6BEC</span>; <span class="tk">--canvas</span>:<span class="vl">#0B0A12</span>; <span class="tk">--surface</span>:<span class="vl">#131220</span>;
+  <span class="tk">--text</span>:<span class="vl">#F4F3F8</span>; <span class="tk">--text-2</span>:<span class="vl">#BCBBCB</span>; <span class="tk">--border</span>:<span class="vl">#272636</span>;
+}</code></pre></div>
+
+    <div class="sub">JSON · per tooling / Figma / Tailwind</div>
+    <div class="code"><button class="btn btn--secondary btn--sm copy" onclick="copyCode('json-tokens',this)">Copia</button><pre id="json-tokens"><code>{
+  "color": {
+    "brand":   { "default":"#5A45D8", "hover":"#4A37BE", "soft":"#F2F0FE",
+                 "scale": { "500":"#6D5AE6","600":"#5A45D8","700":"#4A37BE","950":"#201953" } },
+    "teal":    { "400":"#2DD4DC", "500":"#0FB6C2", "600":"#0894A0" },
+    "data":    ["#6D5AE6","#0FB6C2","#F5A524","#F31260","#17C964","#3B82F6","#7A7A93"],
+    "semantic":{ "success":"#0E9F6E","warning":"#C77700","danger":"#D92D34","info":"#2F6FED" },
+    "neutral": { "canvas":"#FBFBFD","surface":"#FFFFFF","surface2":"#F6F6FB",
+                 "text":"#16151E","text2":"#4A4A5A","text3":"#76768A","border":"#E6E6EF" }
+  },
+  "font":   { "display":"Space Grotesk","sans":"Inter","mono":"JetBrains Mono" },
+  "space":  { "1":4,"2":8,"3":12,"4":16,"5":20,"6":24,"8":32,"10":40,"12":48,"16":64,"20":80,"24":96 },
+  "radius": { "sm":6,"md":10,"lg":14,"xl":20,"2xl":28,"pill":999 },
+  "score":  { "critico":"0-49","migliorabile":"50-74","ottimo":"75-100" },
+  "motion": { "fast":"120ms","base":"200ms","slow":"320ms",
+              "easeOut":"cubic-bezier(.2,.8,.2,1)","easeEmph":"cubic-bezier(.16,1,.3,1)" }
+}</code></pre></div>
+    <div class="alert alert--success" style="margin-top:var(--sp-5)"><div class="ic">✓</div><div><b>Handoff completo.</b> Token (CSS + JSON), componenti con stati, pattern di prodotto e regole di qualità. Da qui un team può sviluppare tool, report, dashboard e landing restando coerente.</div></div>
+  </section>
+
+  </main>
+
+  <footer style="border-top:1px solid var(--border); padding:var(--sp-10) clamp(16px,4vw,40px); max-width:var(--w-app); margin:0 auto; display:flex; gap:16px; flex-wrap:wrap; align-items:center">
+    <div class="brand-mark"><span>V</span></div>
+    <div><div class="brand-name"><b>vertical</b>ai · GEO Design System</div><p class="note" style="margin:2px 0 0">v1.0 · documento vivo. Aggiorna i token qui e si propagano ovunque.</p></div>
+    <span class="badge badge--neutral mono" style="margin-left:auto">© Vertical AI</span>
+  </footer>
+</div><!-- /main -->
+</div><!-- /shell -->
+<script>
+/* ---- THEME ---- */
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  document.getElementById('t-light').classList.toggle('on',t==='light');
+  document.getElementById('t-dark').classList.toggle('on',t==='dark');
+}
+try{ if(matchMedia('(prefers-color-scheme: dark)').matches) setTheme('dark'); }catch(e){}
+
+/* ---- MOBILE NAV ---- */
+function openNav(){document.body.classList.add('nav-open')}
+function closeNav(){document.body.classList.remove('nav-open')}
+document.querySelectorAll('.nav-link').forEach(a=>a.addEventListener('click',closeNav));
+
+/* ---- SCROLL SPY ---- */
+const links=[...document.querySelectorAll('.nav-link')];
+const map={}; links.forEach(a=>map[a.getAttribute('href').slice(1)]=a);
+const crumb=document.getElementById('crumb');
+const io=new IntersectionObserver((es)=>{
+  es.forEach(e=>{ if(e.isIntersecting){
+    links.forEach(l=>l.classList.remove('active'));
+    const a=map[e.target.id]; if(a){a.classList.add('active'); crumb.textContent=a.textContent.trim();}
+  }});
+},{rootMargin:'-45% 0px -50% 0px'});
+document.querySelectorAll('.section').forEach(s=>io.observe(s));
+
+/* ---- COPY ---- */
+function copyCode(id,btn){
+  const t=document.getElementById(id).innerText;
+  navigator.clipboard.writeText(t).then(()=>{const o=btn.textContent;btn.textContent='Copiato ✓';setTimeout(()=>btn.textContent=o,1600);});
+}
+
+/* ---- SWATCHES ---- */
+function chip(name,token,val,big){
+  return `<div class="sw"><div class="sw-chip" style="background:${val}"></div><div class="sw-meta"><div class="n">${name}</div><div class="h">${big?val:token}</div></div></div>`;
+}
+const violet=[['50','#F2F0FE'],['100','#E7E3FD'],['200','#D0C9FB'],['300','#B3A8F7'],['400','#9182F0'],['500','#6D5AE6'],['600','#5A45D8'],['700','#4A37BE'],['800','#3D2F9B'],['900','#342A7C'],['950','#201953']];
+document.getElementById('sw-violet').innerHTML=violet.map(c=>chip('violet-'+c[0],c[1],c[1],true)).join('');
+const teal=[['100','#C6F4F5'],['300','#5FE0E4'],['400','#2DD4DC'],['500','#0FB6C2'],['600','#0894A0'],['700','#0A7680']];
+document.getElementById('sw-teal').innerHTML=teal.map(c=>chip('teal-'+c[0],c[1],c[1],true)).join('');
+const data=[['data-1','#6D5AE6'],['data-2','#0FB6C2'],['data-3','#F5A524'],['data-4','#F31260'],['data-5','#17C964'],['data-6','#3B82F6'],['data-7','#7A7A93']];
+document.getElementById('sw-data').innerHTML=data.map(c=>chip(c[0],c[1],c[1],true)).join('');
+const neutral=[['canvas','#FBFBFD'],['surface','#FFFFFF'],['surface-2','#F6F6FB'],['surface-3','#EDEDF4'],['border','#E6E6EF'],['text-3','#76768A'],['text-2','#4A4A5A'],['text/ink','#16151E']];
+document.getElementById('sw-neutral').innerHTML=neutral.map(c=>chip(c[0],c[1],c[1],true)).join('');
+const sem=[['Success','--success','#0E9F6E'],['Warning','--warning','#C77700'],['Danger','--danger','#D92D34'],['Info','--info','#2F6FED']];
+document.getElementById('sw-sem').innerHTML=sem.map(c=>`<div class="card" style="padding:0;overflow:hidden"><div style="height:46px;background:${c[2]}"></div><div style="padding:10px 12px"><div class="card-title" style="font-size:14px;margin:0">${c[0]}</div><div class="h mono" style="font-size:11px;color:var(--text-3)">${c[2]}</div></div></div>`).join('');
+
+/* ---- SPACING SCALE ---- */
+const sp=[['--sp-1',4],['--sp-2',8],['--sp-3',12],['--sp-4',16],['--sp-5',20],['--sp-6',24],['--sp-8',32],['--sp-10',40],['--sp-12',48],['--sp-16',64],['--sp-20',80],['--sp-24',96]];
+document.getElementById('scale-sp').innerHTML=sp.map(s=>`<div class="scale-row"><span class="scale-lbl">${s[0]} · ${s[1]}px</span><div class="scale-bar" style="width:${s[1]*2}px"></div></div>`).join('');
+
+/* ---- RADIUS ---- */
+const rad=[['sm',6],['md',10],['lg',14],['xl',20],['2xl',28]];
+document.getElementById('radius-stage').innerHTML=rad.map(r=>`<div style="text-align:center"><div style="width:84px;height:64px;background:var(--brand-soft);border:1.5px solid var(--violet-300);border-radius:${r[1]}px"></div><div class="mono" style="font-size:11px;color:var(--text-3);margin-top:8px">--r-${r[0]}<br>${r[1]}px</div></div>`).join('')+`<div style="text-align:center"><div style="width:84px;height:64px;background:var(--brand-soft);border:1.5px solid var(--violet-300);border-radius:999px"></div><div class="mono" style="font-size:11px;color:var(--text-3);margin-top:8px">--r-pill</div></div>`;
+
+/* ---- SHADOWS ---- */
+const sh=[['xs','--sh-xs'],['sm','--sh-sm'],['md','--sh-md'],['lg','--sh-lg'],['brand','--sh-brand']];
+document.getElementById('shadow-stage').innerHTML=sh.map(s=>`<div style="text-align:center"><div style="width:96px;height:64px;background:var(--surface);border-radius:12px;box-shadow:var(${s[1]})"></div><div class="mono" style="font-size:11px;color:var(--text-3);margin-top:10px">${s[1]}</div></div>`).join('');
+
+/* ---- ICON GRID (placeholder set) ---- */
+const ic=['search','file-text','bar-chart','lock','check-circle','alert-triangle','download','eye','globe','sparkles','arrow-right','settings'];
+const svgFor={
+  'search':'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  'file-text':'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h6"/>',
+  'bar-chart':'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  'lock':'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  'check-circle':'<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+  'alert-triangle':'<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 18h.01"/>',
+  'download':'<path d="M12 3v12M7 11l5 5 5-5M5 21h14"/>',
+  'eye':'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  'globe':'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 3 2.5 15 0 18M12 3c-2.5 3-2.5 15 0 18"/>',
+  'sparkles':'<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"/><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
+  'arrow-right':'<path d="M5 12h14M13 6l6 6-6 6"/>',
+  'settings':'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>'
+};
+document.getElementById('icon-stage').innerHTML=ic.map(n=>`<div style="text-align:center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${svgFor[n]}</svg><div class="mono" style="font-size:10px;color:var(--text-3);margin-top:6px">${n}</div></div>`).join('');
+</script>
+</body>
+</html>
