@@ -7,10 +7,15 @@ import requests as req
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
+from fastapi.staticfiles import StaticFiles
 
 import geo_audit
 
 app = FastAPI(title="GEO Audit · verticalai")
+
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if os.path.isdir(_STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 # ── Config ──────────────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ["SUPABASE_URL"]
