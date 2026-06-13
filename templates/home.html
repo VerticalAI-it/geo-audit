@@ -6,6 +6,7 @@
 
 <!-- ============ SEO ON-PAGE (seo.md §4 / §6) ============ -->
 <title>Farsi trovare su ChatGPT e AI | Audit gratuito</title>
+<link rel="icon" href="https://verticalai.it/wp-content/uploads/2024/10/Logo.svg" type="image/svg+xml">
 <meta name="description" content="I clienti chiedono consigli all'AI prima di scegliere. Scopri se ChatGPT e Gemini consigliano la tua azienda: richiedi l'audit gratuito, senza impegno.">
 <link rel="canonical" href="https://verticalai.it/">
 <meta name="theme-color" content="#5A45D8">
@@ -98,7 +99,7 @@ ul{list-style:none}
 
 /* ---------- 3. TIPOGRAFIA ---------- */
 h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:800}
-.h1{font-size:clamp(2.6rem,6vw,4.5rem);line-height:1.04;letter-spacing:-.02em;font-weight:800}
+.h1{font-size:clamp(2rem,4vw,3.2rem);line-height:1.06;letter-spacing:-.02em;font-weight:800}
 .h2{font-size:clamp(2rem,4vw,3.1rem);line-height:1.08;letter-spacing:-.018em;font-weight:800}
 .h3{font-size:clamp(1.35rem,2.4vw,1.9rem);line-height:1.15;letter-spacing:-.01em;font-weight:700}
 .h4{font-size:clamp(1.1rem,1.6vw,1.3rem);line-height:1.2;letter-spacing:-.005em;font-weight:700}
@@ -210,8 +211,8 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 .logo.on-dark{color:#fff}
 .logo.on-dark .ai{color:var(--primary-light)}
 
-.nav-links{display:flex;align-items:center;gap:2rem}
-.nav-links a{font-weight:500;color:var(--ink-soft);font-size:.975rem;transition:color .18s var(--ease)}
+.nav-links{display:flex;align-items:center;gap:1.25rem;white-space:nowrap}
+.nav-links a{font-weight:500;color:var(--ink-soft);font-size:.9rem;transition:color .18s var(--ease);white-space:nowrap}
 .nav-links a:hover{color:var(--primary)}
 .nav-cta{display:flex;align-items:center;gap:1.1rem}
 .nav-microlabel{font-family:"JetBrains Mono",monospace;font-size:.7rem;letter-spacing:.1em;
@@ -257,6 +258,8 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
   box-shadow:var(--shadow-md);padding:1.9rem;transition:transform .22s var(--ease),
   box-shadow .22s var(--ease),border-color .22s var(--ease);height:100%}
+#cosa-controlliamo .card{padding:.95rem}
+#cosa-controlliamo .card .h4{font-size:1rem;white-space:nowrap}
 .card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg);border-color:rgba(108,92,231,.3)}
 .card .h4{margin:1.1rem 0 .55rem}
 .card p{color:var(--muted);font-size:1rem}
@@ -329,8 +332,8 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
   font-family:"JetBrains Mono",monospace;font-weight:600;font-size:1.2rem;margin-bottom:1.1rem;
   border:2px solid #fff;box-shadow:var(--shadow-sm);position:relative;z-index:2}
 /* connettore tratteggiato tra gli step (desktop) */
-.step:not(:last-child) .step-circle::after{content:"";position:absolute;top:50%;left:calc(100% + 12px);
-  width:calc(100% + 28px - 52px);height:0;border-top:2px dashed var(--border-strong);z-index:1}
+.step:not(:last-child)::after{content:"";position:absolute;top:26px;left:52px;right:-28px;
+  height:0;border-top:2px dashed var(--border-strong);z-index:1;pointer-events:none}
 .step .h4{margin-bottom:.45rem}
 .step p{font-size:.975rem;color:var(--muted)}
 .step .tag-free{display:inline-block;margin-top:.6rem;font-family:"JetBrains Mono",monospace;
@@ -371,7 +374,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 .chart-disclaimer svg{width:16px;height:16px;flex:none;color:var(--soft);margin-top:2px}
 
 /* ---------- 13. BOX PAROLE SEMPLICI (dark) ---------- */
-.dark-split{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(32px,5vw,64px);align-items:center}
+.dark-split{display:grid;grid-template-columns:2fr 1fr;gap:clamp(32px,5vw,64px);align-items:center}
 .simple-box{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
   border-radius:var(--r-lg);padding:1.6rem 1.75rem;backdrop-filter:blur(8px)}
 .simple-box .mlabel{font-family:"JetBrains Mono",monospace;font-size:.7rem;letter-spacing:.14em;
@@ -561,8 +564,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
     </nav>
 
     <div class="nav-cta">
-      <span class="nav-microlabel">Audit gratuito, senza impegno</span>
-      <a href="#audit-gratuito" class="btn btn-primary btn-sm">Richiedi l'audit<span class="long">&nbsp;gratuito</span></a>
+      <a href="#audit-gratuito" class="btn btn-primary btn-sm">Richiedi l'audit gratuito</a>
       <button class="hamburger" id="hamburger" aria-label="Apri il menu" aria-expanded="false" aria-controls="mobileMenu">
         <span></span><span></span><span></span>
       </button>
@@ -593,7 +595,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
         <div class="cta-row">
           <a href="#audit-gratuito" class="btn btn-primary btn-lg btn-pill">Richiedi l'audit gratuito
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-          <a href="#come-funziona" class="btn btn-ghost btn-lg btn-pill">Scopri come funziona</a>
+          <a href="#cambiamento" class="btn btn-ghost btn-lg btn-pill">Scopri di più</a>
         </div>
         <p class="reassure">Gratis e senza impegno. Te lo spieghiamo in parole semplici.</p>
       </div>
@@ -638,9 +640,9 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 <!-- ===================== 2 · IL CAMBIAMENTO + DATI (copy §2) · LAVANDA-1 ===================== -->
 <section class="section section--lav1" id="cambiamento" aria-labelledby="cambiamento-title">
   <div class="container">
-    <div class="section-head reveal">
+    <div class="reveal" style="margin-bottom:48px">
       <span class="eyebrow">Cosa è cambiato</span>
-      <h2 class="h2" id="cambiamento-title">È cambiato il modo in cui le persone cercano (e scelgono)</h2>
+      <h2 class="h2" id="cambiamento-title" style="margin:16px 0 20px;max-width:75%">È cambiato il modo in cui le persone cercano (e scelgono)</h2>
       <p class="body-narrow">Fino a poco tempo fa il tuo sito ti portava clienti e contatti perché eri ben posizionato su Google. Ha funzionato per anni. Ma negli ultimi mesi qualcosa si è mosso: sempre più persone, prima di comprare o di contattare un'attività, lo chiedono a un assistente AI. È lui che le guida e suggerisce dove andare. Se questo ti suona come il motivo per cui il tuo sito riceve meno visite, non è una tua colpa: è semplicemente cambiato il gioco.</p>
     </div>
 
@@ -732,9 +734,9 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 <!-- ===================== 4 · "MA IO NON VENDO ONLINE" (copy §4) · LAVANDA-2 ===================== -->
 <section class="section section--lav2" id="non-vendo-online" aria-labelledby="nvo-title">
   <div class="container">
-    <div class="section-head center reveal">
+    <div class="section-head center reveal" style="max-width:none">
       <span class="eyebrow">Vale anche per te</span>
-      <h2 class="h2" id="nvo-title">«Ma io non vendo online…»: conta lo stesso</h2>
+      <h2 class="h2" id="nvo-title" style="white-space:nowrap">«Ma io non vendo online…»: conta lo stesso</h2>
       <p>Anche se non vendi nulla dal sito, le persone ti cercano e ti controllano prima di chiamarti, prenotare o venire da te. Se l'assistente AI non ti conosce, perdi clienti senza accorgertene. Ecco perché riguarda anche la tua attività:</p>
     </div>
 
@@ -827,10 +829,10 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 <!-- ===================== 6 · COSA CONTROLLIAMO (copy §6) · WHITE ===================== -->
 <section class="section section--white" id="cosa-controlliamo" aria-labelledby="cc-title">
   <div class="container">
-    <div class="section-head reveal">
+    <div class="reveal" style="margin-bottom:48px">
       <span class="eyebrow">L'audit, in parole semplici</span>
-      <h2 class="h2" id="cc-title">Cosa controlliamo sul tuo sito</h2>
-      <p>Quattro domande semplici. Le risposte ci dicono se oggi l'AI ti vede, ti capisce e ti consiglia.</p>
+      <h2 class="h2" id="cc-title" style="white-space:nowrap;margin:16px 0 20px">Cosa controlliamo sul tuo sito</h2>
+      <p style="max-width:62ch">Quattro domande semplici. Le risposte ci dicono se oggi l'AI riesce a trovarti, capirti e consigliarti ogni volta che qualcuno cerca nel tuo settore.</p>
     </div>
 
     <div class="grid grid-4 stagger">
@@ -861,10 +863,10 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 <!-- ===================== 7 · COME FUNZIONA (copy §7) · LAVANDA-1 ===================== -->
 <section class="section section--lav1" id="come-funziona" aria-labelledby="cf-title">
   <div class="container">
-    <div class="section-head reveal">
+    <div class="reveal" style="margin-bottom:48px">
       <span class="eyebrow">Semplice e senza pensieri</span>
-      <h2 class="h2" id="cf-title">Come funziona, passo dopo passo</h2>
-      <p>Quattro passaggi. Il difficile lo facciamo noi: tu devi solo dire di sì.</p>
+      <h2 class="h2" id="cf-title" style="white-space:nowrap;margin:16px 0 20px">Come funziona, passo dopo passo</h2>
+      <p style="max-width:62ch">Quattro passaggi. Il difficile lo facciamo noi: tu devi solo dire di sì.</p>
     </div>
 
     <ol class="stepper stagger">
@@ -902,10 +904,10 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 <!-- ===================== 8 · GRAFICO CRESCITA (copy §8) · WHITE · ⭐ CLIMAX ===================== -->
 <section class="section section--white" id="risultato" aria-labelledby="ris-title">
   <div class="container">
-    <div class="section-head reveal">
+    <div class="reveal" style="margin-bottom:48px">
       <span class="eyebrow">Un esempio concreto</span>
-      <h2 class="h2" id="ris-title">Cosa cambia: meno visite da Google, più clienti dall'AI</h2>
-      <h3 class="h3" style="margin:10px 0 14px;color:var(--ink-soft)">Le visite dagli assistenti AI crescono. Quelle che perdevi, le recuperi.</h3>
+      <h2 class="h2" id="ris-title" style="margin:16px 0 14px;max-width:80%">Cosa cambia: meno visite da Google, più clienti dall'AI</h2>
+      <h3 class="h3" style="margin:10px 0 14px;color:var(--ink-soft)">Le visite dagli assistenti AI crescono.<br>Quelle che perdevi, le recuperi.</h3>
       <p>Ecco come va, di solito, quando si interviene in tempo:</p>
     </div>
 
@@ -1019,17 +1021,17 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
       <article class="card">
         <span class="icon-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
         <h3 class="h4">Non perdi clienti dai concorrenti</h3>
-        <p>Chi è leggibile per l'AI viene consigliato. Da oggi quel qualcuno sarai tu.</p>
+        <p>Chi è leggibile per l'AI viene consigliato prima degli altri. Da oggi, quel qualcuno sarai tu.</p>
       </article>
       <article class="card">
         <span class="icon-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11V8a7 7 0 0 1 14 0v3"/><rect x="3" y="11" width="18" height="9" rx="3"/><path d="M9 15.5h6"/></svg></span>
         <h3 class="h4">Zero pensieri tecnici</h3>
-        <p>Facciamo tutto noi. Tu continui a pensare alla tua attività.</p>
+        <p>Facciamo tutto noi, dall'audit all'ottimizzazione. Tu continui a pensare alla tua attività, senza pensieri tecnici.</p>
       </article>
       <article class="card">
         <span class="icon-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></span>
         <h3 class="h4">Resti aggiornato nel tempo</h3>
-        <p>L'AI cambia spesso: ti teniamo al passo, così non resti indietro di nuovo.</p>
+        <p>L'AI cambia spesso: ti teniamo al passo con gli aggiornamenti, così non resti indietro di nuovo.</p>
       </article>
     </div>
   </div>
@@ -1040,7 +1042,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
   <div class="container">
     <div class="section-head center reveal">
       <span class="eyebrow">Da dove si parte</span>
-      <h2 class="h2" id="pri-title">Da dove si parte: l'audit gratuito</h2>
+      <h2 class="h2" id="pri-title">Da dove si parte:<br>l'audit gratuito</h2>
       <p>Un servizio pensato per tutte le tasche, su misura per le piccole e medie imprese. Si comincia sempre dall'audit gratuito: prima capiamo la tua situazione, poi decidi tu se e come proseguire.</p>
     </div>
 
@@ -1060,7 +1062,6 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 
       <!-- Card 2 — Ottimizzazione one-shot (FEATURED) -->
       <article class="price-card featured">
-        <span class="top-strip" aria-hidden="true"></span>
         <span class="badge-top">Più scelto</span>
         <h3>Ottimizzazione one-shot</h3>
         <div class="price-label"><span class="price-quote">Su preventivo<span class="sub">una tantum, nessun abbonamento</span></span></div>
@@ -1098,7 +1099,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
   <div class="container">
     <div class="cta-final reveal">
       <span class="eyebrow on-dark">Partiamo</span>
-      <h2 class="h2" id="cf2-title">Partiamo da un controllo gratuito</h2>
+      <h2 class="h2" id="cf2-title">Partiamo da un<br>controllo gratuito</h2>
       <p class="lead">Vediamo insieme come gli assistenti AI vedono oggi la tua attività, senza impegno. Poi decidi tu.</p>
       <div class="cta-row">
         <a href="#cta-finale" class="btn btn-primary btn-lg btn-pill" id="openFormBtn">Richiedi l'audit gratuito
@@ -1180,8 +1181,16 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
   <div class="container">
     <div class="footer-top">
       <div class="footer-brand">
-        <a href="#top" class="logo" aria-label="Vertical AI, torna su">vertical<span class="ai">ai</span><span class="dot" aria-hidden="true"></span></a>
+        <a href="#top" aria-label="Vertical AI, torna su" style="display:inline-block;margin-bottom:.9rem">
+          <img src="https://verticalai.it/wp-content/uploads/2024/10/Logo.svg" alt="Vertical AI" height="36" style="height:36px;width:auto;display:block">
+        </a>
         <p class="footer-claim">Rendiamo la tua attività consigliabile dagli assistenti AI.</p>
+        <div style="margin-top:1rem;font-size:.82rem;color:var(--soft);line-height:1.6">
+          <strong style="color:var(--ink-soft);display:block;margin-bottom:.3rem">Vertical AI srl — Società Benefit &amp; Startup Innovativa</strong>
+          <span>Sede legale: Via Monte Napoleone, 8 – 20121 Milano, Italia</span><br>
+          <span>Sede secondaria: Piazza G. Matteotti, 21 – 06019 Umbertide (PG), Italia</span><br>
+          <span>P.IVA 13764720960</span>
+        </div>
       </div>
       <a href="#audit-gratuito" class="btn btn-primary btn-pill">Richiedi l'audit gratuito
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
@@ -1189,12 +1198,11 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
     <div class="footer-bottom">
       <div class="footer-legal">
         <span class="dom">verticalai.it</span>
-        <span class="law">© Vertical AI · Tutti i diritti riservati · <span class="placeholder">P.IVA da definire</span></span>
+        <span class="law">© 2025 Vertical AI srl · Tutti i diritti riservati · P.IVA 13764720960</span>
       </div>
       <div class="footer-links">
-        <a href="#" class="placeholder">Email da definire</a>
-        <a href="#" class="placeholder">Privacy</a>
-        <a href="#" class="placeholder">Cookie</a>
+        <a href="#">Privacy</a>
+        <a href="#">Cookie</a>
       </div>
     </div>
   </div>
@@ -1213,9 +1221,14 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
     {
       "@type": "Organization",
       "@id": "https://verticalai.it/#organization",
-      "name": "Vertical AI",
+      "name": "Vertical AI srl",
       "url": "https://verticalai.it/",
-      "description": "Vertical AI rende i siti web delle PMI leggibili e consigliabili dagli assistenti AI come ChatGPT, Gemini e Claude (GEO — Generative Engine Optimization)."
+      "vatID": "13764720960",
+      "address": [
+        {"@type": "PostalAddress", "streetAddress": "Via Monte Napoleone, 8", "addressLocality": "Milano", "postalCode": "20121", "addressCountry": "IT"},
+        {"@type": "PostalAddress", "streetAddress": "Piazza G. Matteotti, 21", "addressLocality": "Umbertide", "postalCode": "06019", "addressCountry": "IT"}
+      ],
+      "description": "Vertical AI srl rende i siti web delle PMI leggibili e consigliabili dagli assistenti AI come ChatGPT, Gemini e Claude (GEO — Generative Engine Optimization)."
     },
     {
       "@type": "Service",
