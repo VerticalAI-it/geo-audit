@@ -1,78 +1,196 @@
 <!doctype html>
-<html lang="it">
+<html lang="it" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GEO Audit in corso · verticalai</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GEO Audit in coda · verticalai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/static/css/design-system.css">
 <style>
-  :root{--bg:#0B0B16;--card:#17152A;--line:#2A2640;--violet:#6C5CE7;--vbright:#9B8CFF;--text:#F2F1F8;--muted:#9C99B5}
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;background:radial-gradient(120% 80% at 80% -10%,#1a1633 0%,#0B0B16 55%);
-    color:var(--text);font-family:"Hanken Grotesk",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}
-  .wrap{width:100%;max-width:560px}
-  .logo{display:flex;align-items:center;gap:9px;font-family:"Archivo",sans-serif;font-size:19px;margin-bottom:30px}
-  .logo b{font-weight:800}.logo .ai{color:var(--muted)}
-  .bars{display:inline-flex;align-items:flex-end;gap:3px;height:22px}
-  .bars i{width:5px;border-radius:2px;display:block}
-  .b1{height:13px;background:var(--violet)}.b2{height:22px;background:var(--vbright)}.b3{height:9px;background:var(--violet)}
-  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:3px;color:var(--vbright);text-transform:uppercase;margin-bottom:12px}
-  h1{font-family:"Archivo",sans-serif;font-weight:800;font-size:28px;line-height:1.1;margin:0 0 8px}
-  .domain{font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--vbright);margin:0 0 10px;word-break:break-all}
-  p.sub{color:var(--muted);font-size:15px;margin:0 0 26px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px}
-  .card-title{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:0 0 16px}
-  label{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}
-  input[type=email]{width:100%;background:#0B0B16;border:1px solid var(--line);border-radius:10px;color:var(--text);
-    font-size:16px;padding:13px 14px;font-family:inherit;outline:none}
-  input[type=email]:focus{border-color:var(--violet)}
-  button{width:100%;margin-top:12px;background:var(--violet);color:#fff;border:none;border-radius:10px;
-    font-family:"Archivo",sans-serif;font-weight:700;font-size:16px;padding:14px;cursor:pointer}
-  button:hover{background:#5b4bd8}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  .note{color:var(--muted);font-size:12.5px;margin-top:14px;line-height:1.6}
-  .status-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);margin-bottom:20px}
-  .pulse{width:10px;height:10px;border-radius:50%;background:var(--vbright);flex-shrink:0;
-    animation:pulse 1.5s ease-in-out infinite}
+  body {
+    min-height:100vh;
+    background:radial-gradient(140% 100% at 70% -5%, #1E1A38 0%, #0B0A12 60%);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:var(--sp-6);
+  }
+  .wrap { width:100%; max-width:540px }
+  .logo-row {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:var(--font-display);
+    font-size:18px;
+    font-weight:600;
+    color:var(--text);
+    margin-bottom:var(--sp-8);
+    text-decoration:none;
+  }
+  .logo-mark {
+    width:32px; height:32px;
+    background:var(--brand);
+    border-radius:9px;
+    display:grid; place-items:center;
+    box-shadow:var(--sh-brand);
+  }
+  .logo-mark span { color:#fff; font-family:var(--font-mono); font-weight:600; font-size:16px }
+  .logo-ai { color:var(--brand-text) }
+  .eyebrow {
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    color:var(--brand-text);
+    text-transform:uppercase;
+    margin-bottom:var(--sp-3);
+  }
+  h1 {
+    font-size:clamp(22px, 4vw, 28px);
+    letter-spacing:-.02em;
+    margin:0 0 var(--sp-2);
+    color:var(--ink);
+  }
+  .domain {
+    font-family:var(--font-mono);
+    font-size:14px;
+    color:var(--brand-text);
+    margin:0 0 var(--sp-3);
+    word-break:break-all;
+  }
+  .sub { color:var(--text-2); font-size:15px; margin:0 0 var(--sp-6); line-height:1.6 }
+  .status-row {
+    display:flex;
+    align-items:center;
+    gap:var(--sp-3);
+    padding:var(--sp-3) 0;
+    border-bottom:1px solid var(--border);
+    margin-bottom:var(--sp-5);
+  }
+  .pulse {
+    width:10px; height:10px;
+    border-radius:50%;
+    background:var(--brand-text);
+    flex-shrink:0;
+    animation:pulse 1.5s ease-in-out infinite;
+  }
   @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
-  .status-text{font-size:14px;color:var(--muted)}
-  .foot{margin-top:22px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:#6E6B86}
-  .success-msg{display:none;background:#0d2218;border:1px solid #00b894;border-radius:10px;padding:14px 16px;
-    font-size:14px;color:#00b894;margin-top:12px}
+  .status-text { font-size:14px; color:var(--text-2) }
+  .form-card {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--r-xl);
+    padding:var(--sp-6);
+    box-shadow:var(--sh-md);
+  }
+  .card-title {
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-3);
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    margin:0 0 var(--sp-4);
+  }
+  .form-card label {
+    display:block;
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-3);
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    font-weight:500;
+    margin-bottom:var(--sp-2);
+  }
+  .form-card input[type=email] {
+    width:100%;
+    background:var(--canvas);
+    border:1.5px solid var(--border-strong);
+    border-radius:var(--r-md);
+    color:var(--text);
+    font-size:16px;
+    padding:13px 14px;
+    font-family:var(--font-sans);
+    outline:none;
+    transition:border-color var(--t-fast), box-shadow var(--t-fast);
+    box-sizing:border-box;
+  }
+  .form-card input[type=email]::placeholder { color:var(--text-3) }
+  .form-card input[type=email]:focus {
+    border-color:var(--brand);
+    box-shadow:0 0 0 4px color-mix(in srgb, var(--brand) 18%, transparent);
+  }
+  .submit-btn {
+    display:flex;
+    width:100%;
+    margin-top:var(--sp-4);
+    background:var(--brand);
+    color:#fff;
+    border:none;
+    border-radius:var(--r-md);
+    font-family:var(--font-sans);
+    font-weight:600;
+    font-size:16px;
+    padding:14px;
+    cursor:pointer;
+    align-items:center;
+    justify-content:center;
+    min-height:52px;
+    box-shadow:var(--sh-brand);
+    transition:background var(--t-fast);
+  }
+  .submit-btn:hover { background:var(--brand-hover) }
+  .submit-btn:disabled { opacity:.5; cursor:not-allowed }
+  .submit-btn:focus-visible { outline:2px solid var(--focus); outline-offset:2px }
+  .note { color:var(--text-3); font-size:12.5px; margin-top:var(--sp-4); line-height:1.5 }
+  .success-msg {
+    display:none;
+    background:var(--success-bg);
+    border:1px solid var(--success-border);
+    border-radius:var(--r-md);
+    padding:var(--sp-3) var(--sp-4);
+    font-size:14px;
+    color:var(--success);
+    margin-top:var(--sp-3);
+  }
+  .foot {
+    margin-top:var(--sp-6);
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-3);
+    text-align:center;
+  }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="logo">
-      <span class="bars"><i class="b1"></i><i class="b2"></i><i class="b3"></i></span>
-      <span><b>vertical</b><span class="ai">ai</span></span>
-    </div>
+    <a href="/" class="logo-row" aria-label="verticalai — home">
+      <div class="logo-mark" aria-hidden="true"><span>V</span></div>
+      <span><span class="logo-ai">vertical</span>ai</span>
+    </a>
+
     <div class="eyebrow">GEO Audit</div>
     <h1>Analisi in coda</h1>
     <p class="domain">{{DOMAIN}}</p>
     <p class="sub">Il report sarà pronto in circa 2–3 minuti. Inserisci la tua email per riceverlo appena è disponibile.</p>
 
-    <div class="card">
+    <div class="form-card">
       <div class="status-row">
-        <div class="pulse"></div>
+        <div class="pulse" aria-hidden="true"></div>
         <span class="status-text">Analisi in elaborazione…</span>
       </div>
       <p class="card-title">Ricevi il report via email</p>
       <form id="gate-form" method="post" action="/job/{{JOB_ID}}/request-access">
         <label for="email">La tua email</label>
         <input id="email" name="email" type="email" placeholder="nome@esempio.it" required autofocus>
-        <button type="submit" id="btn">Inviami il report →</button>
+        <button type="submit" class="submit-btn" id="btn">Inviami il report →</button>
         <div class="success-msg" id="ok-msg">
           ✓ Email inviata! Controlla la casella e clicca il link per accedere al report.
         </div>
-        <div class="note">
-          Riceverai un link sicuro (nessuna password). Potrai accedere a tutti i tuoi report futuri da un'unica area personale.
-        </div>
+        <p class="note">Riceverai un link sicuro (nessuna password). Potrai accedere a tutti i tuoi report futuri da un'unica area personale.</p>
       </form>
     </div>
 
-    <div class="foot">verticalai.it · GEO Audit</div>
+    <p class="foot">verticalai.it · GEO Audit</p>
   </div>
 
   <script>
