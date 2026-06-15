@@ -1095,6 +1095,8 @@ async def richiedi_audit(
     nome  = (nome  or "").strip()
     email = (email or "").strip().lower()
     sito  = (sito  or "").strip()
+    if sito and not sito.startswith(("http://", "https://")):
+        sito = "https://" + sito
     if not nome or not email:
         return Response(status_code=400)
     try:
