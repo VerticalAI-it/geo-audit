@@ -26,8 +26,10 @@ SITE_URL     = os.environ.get("SITE_URL", "").rstrip("/")
 _SECRET      = os.environ.get("CRON_SECRET", "fallback-secret").encode()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-FORM_HTML = open(os.path.join(_HERE, "templates", "form.html"), encoding="utf-8").read()
-HOME_HTML = open(os.path.join(_HERE, "templates", "home.html"), encoding="utf-8").read()
+FORM_HTML    = open(os.path.join(_HERE, "templates", "form.html"),    encoding="utf-8").read()
+HOME_HTML    = open(os.path.join(_HERE, "templates", "home.html"),    encoding="utf-8").read()
+PRIVACY_HTML = open(os.path.join(_HERE, "templates", "privacy.html"), encoding="utf-8").read()
+COOKIE_HTML  = open(os.path.join(_HERE, "templates", "cookie.html"),  encoding="utf-8").read()
 
 # Supabase REST headers (service role bypassa RLS)
 _SB_H = {
@@ -512,6 +514,16 @@ def index():
 @app.get("/audit", response_class=HTMLResponse)
 def audit_form():
     return FORM_HTML
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy():
+    return PRIVACY_HTML
+
+
+@app.get("/cookie-policy", response_class=HTMLResponse)
+def cookie_policy():
+    return COOKIE_HTML
 
 
 @app.get("/health")

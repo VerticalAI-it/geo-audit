@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <!-- ============ SEO ON-PAGE (seo.md §4 / §6) ============ -->
-<title>Farsi trovare su ChatGPT e AI | Audit gratuito</title>
+<title>Farsi trovare su ChatGPT e AI | Report gratuito</title>
 <link rel="icon" href="https://verticalai.it/wp-content/uploads/2024/10/Logo.svg" type="image/svg+xml">
-<meta name="description" content="I clienti chiedono consigli all'AI prima di scegliere. Scopri se ChatGPT e Gemini consigliano la tua azienda: richiedi l'audit gratuito, senza impegno.">
+<meta name="description" content="I clienti chiedono consigli all'AI prima di scegliere. Scopri se ChatGPT e Gemini consigliano la tua azienda: richiedi il report gratuito, senza impegno.">
 <link rel="canonical" href="https://verticalai.it/">
 <meta name="theme-color" content="#5A45D8">
 
@@ -16,11 +16,11 @@
 <meta property="og:locale" content="it_IT">
 <meta property="og:site_name" content="Vertical AI">
 <meta property="og:url" content="https://verticalai.it/">
-<meta property="og:title" content="La tua azienda è consigliata dall'AI? Audit gratuito">
-<meta property="og:description" content="Oggi i clienti chiedono consigli a ChatGPT e Gemini prima di scegliere. Rendiamo la tua attività consigliabile dagli assistenti AI. Audit gratuito senza impegno.">
+<meta property="og:title" content="La tua azienda è consigliata dall'AI? Report gratuito">
+<meta property="og:description" content="Oggi i clienti chiedono consigli a ChatGPT e Gemini prima di scegliere. Rendiamo la tua attività consigliabile dagli assistenti AI. Report gratuito senza impegno.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="La tua azienda è consigliata dall'AI? Audit gratuito">
-<meta name="twitter:description" content="Oggi i clienti chiedono consigli all'AI prima di scegliere. Rendiamo la tua attività consigliabile da ChatGPT e Gemini. Audit gratuito senza impegno.">
+<meta name="twitter:title" content="La tua azienda è consigliata dall'AI? Report gratuito">
+<meta name="twitter:description" content="Oggi i clienti chiedono consigli all'AI prima di scegliere. Rendiamo la tua attività consigliabile da ChatGPT e Gemini. Report gratuito senza impegno.">
 
 <!-- ============ Google Fonts (Space Grotesk · Inter · JetBrains Mono) ============ -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -211,7 +211,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 .logo.on-dark{color:#fff}
 .logo.on-dark .ai{color:var(--primary-light)}
 
-.nav-links{display:flex;align-items:center;gap:1.25rem;white-space:nowrap}
+.nav-links{display:flex;align-items:center;gap:2.2rem;white-space:nowrap}
 .nav-links a{font-weight:500;color:var(--ink-soft);font-size:.9rem;transition:color .18s var(--ease);white-space:nowrap}
 .nav-links a:hover{color:var(--primary)}
 .nav-cta{display:flex;align-items:center;gap:1.1rem}
@@ -258,8 +258,8 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
   box-shadow:var(--shadow-md);padding:1.9rem;transition:transform .22s var(--ease),
   box-shadow .22s var(--ease),border-color .22s var(--ease);height:100%}
-#cosa-controlliamo .card{padding:.95rem}
-#cosa-controlliamo .card .h4{font-size:1rem;white-space:nowrap}
+#cosa-controlliamo .card{padding:1.9rem}
+#cosa-controlliamo .card .h4{font-size:1.1875rem;white-space:nowrap}
 .card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg);border-color:rgba(108,92,231,.3)}
 .card .h4{margin:1.1rem 0 .55rem}
 .card p{color:var(--muted);font-size:1rem}
@@ -325,7 +325,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 @keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
 
 /* ---------- 11. STEPPER (come funziona) ---------- */
-.stepper{display:grid;grid-template-columns:repeat(4,1fr);gap:28px;position:relative}
+.stepper{display:grid;grid-template-columns:repeat(4,1fr);gap:28px;position:relative;list-style:none}
 .step{position:relative}
 .step-circle{width:52px;height:52px;border-radius:var(--r-pill);background:var(--primary-100);
   color:var(--primary);display:flex;align-items:center;justify-content:center;
@@ -551,10 +551,34 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 
 <body id="top">
 
+<!-- Cookie Banner -->
+<div id="cookieBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;
+  background:rgba(21,19,31,.97);backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,.1);
+  padding:1.1rem clamp(20px,5vw,48px);font-family:'Inter',sans-serif">
+  <div style="max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:1.5rem;flex-wrap:wrap">
+    <p style="color:rgba(255,255,255,.75);font-size:.875rem;margin:0;max-width:640px;line-height:1.55">
+      Usiamo cookie tecnici necessari al funzionamento del sito e, con il tuo consenso, cookie analitici per migliorare l'esperienza.
+      <a href="/cookie-policy" style="color:#9182F0;text-decoration:underline">Cookie Policy</a> ·
+      <a href="/privacy" style="color:#9182F0;text-decoration:underline">Privacy Policy</a>
+    </p>
+    <div style="display:flex;gap:.75rem;flex-shrink:0">
+      <button id="cookieReject" style="padding:.55rem 1.1rem;border-radius:10px;border:1.5px solid rgba(255,255,255,.2);
+        background:transparent;color:rgba(255,255,255,.7);font-size:.875rem;font-weight:600;cursor:pointer;font-family:inherit">
+        Solo necessari
+      </button>
+      <button id="cookieAccept" style="padding:.55rem 1.4rem;border-radius:10px;border:none;
+        background:linear-gradient(135deg,#7C6BEC,#5A45D8);color:#fff;font-size:.875rem;font-weight:600;
+        cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(90,69,216,.4)">
+        Accetta tutti
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== NAV STICKY (copy §0) ===================== -->
 <header class="nav" id="nav">
   <div class="container nav-inner">
-    <a href="#top" class="logo" aria-label="Vertical AI, torna su">vertical<span class="ai">ai</span><span class="dot" aria-hidden="true"></span></a>
+    <a href="#top" aria-label="Vertical AI, torna su" style="display:inline-flex;align-items:center"><img src="https://verticalai.it/wp-content/uploads/2024/10/Logo.svg" alt="Vertical AI" height="32" style="height:32px;width:auto;display:block"></a>
 
     <nav class="nav-links" aria-label="Navigazione principale">
       <a href="#problema">Il problema</a>
@@ -564,7 +588,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
     </nav>
 
     <div class="nav-cta">
-      <a href="#audit-gratuito" class="btn btn-primary btn-sm">Richiedi l'audit gratuito</a>
+      <a href="#audit-gratuito" class="btn btn-primary btn-sm btn-pill">Richiedi il report gratuito</a>
       <button class="hamburger" id="hamburger" aria-label="Apri il menu" aria-expanded="false" aria-controls="mobileMenu">
         <span></span><span></span><span></span>
       </button>
@@ -593,7 +617,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
         <h1 class="h1" id="hero-title">Oggi i tuoi clienti chiedono consigli all'AI. La tua azienda viene <span class="hl">consigliata?</span></h1>
         <p class="lead hero-lead">ChatGPT, Gemini e gli altri assistenti AI stanno diventando il posto dove le persone cercano prodotti, servizi e attività prima di scegliere. Vediamo insieme se la tua attività compare quando lo chiedono — e come farti trovare.</p>
         <div class="cta-row">
-          <a href="#audit-gratuito" class="btn btn-primary btn-lg btn-pill">Richiedi l'audit gratuito
+          <a href="#audit-gratuito" class="btn btn-primary btn-lg btn-pill">Richiedi il report gratuito
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
           <a href="#cambiamento" class="btn btn-ghost btn-lg btn-pill">Scopri di più</a>
         </div>
@@ -815,11 +839,11 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 </section>
 
 <!-- ===================== 5b · CTA-PONTE · LAVANDA-1 (compatta) ===================== -->
-<section class="section section--compact section--lav1" id="cta-ponte" aria-label="Richiedi l'audit gratuito">
+<section class="section section--compact section--lav1" id="cta-ponte" aria-label="Richiedi il report gratuito">
   <div class="container">
     <div class="cta-bridge reveal">
       <h3 class="h3">La buona notizia: si rimedia, e si parte da un controllo gratuito.</h3>
-      <a href="#audit-gratuito" class="btn btn-primary btn-lg btn-pill">Richiedi l'audit gratuito
+      <a href="#audit-gratuito" class="btn btn-primary btn-lg btn-pill">Richiedi il report gratuito
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
       <p class="reassure">Gratis e senza impegno.</p>
     </div>
@@ -830,7 +854,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
 <section class="section section--white" id="cosa-controlliamo" aria-labelledby="cc-title">
   <div class="container">
     <div class="reveal" style="margin-bottom:48px">
-      <span class="eyebrow">L'audit, in parole semplici</span>
+      <span class="eyebrow">Il report, in parole semplici</span>
       <h2 class="h2" id="cc-title" style="white-space:nowrap;margin:16px 0 20px">Cosa controlliamo sul tuo sito</h2>
       <p style="max-width:62ch">Quattro domande semplici. Le risposte ci dicono se oggi l'AI riesce a trovarti, capirti e consigliarti ogni volta che qualcuno cerca nel tuo settore.</p>
     </div>
@@ -1026,7 +1050,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
       <article class="card">
         <span class="icon-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11V8a7 7 0 0 1 14 0v3"/><rect x="3" y="11" width="18" height="9" rx="3"/><path d="M9 15.5h6"/></svg></span>
         <h3 class="h4">Zero pensieri tecnici</h3>
-        <p>Facciamo tutto noi, dall'audit all'ottimizzazione. Tu continui a pensare alla tua attività, senza pensieri tecnici.</p>
+        <p>Facciamo tutto noi, dal report all'ottimizzazione. Tu continui a pensare alla tua attività, senza pensieri tecnici.</p>
       </article>
       <article class="card">
         <span class="icon-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></span>
@@ -1042,27 +1066,27 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
   <div class="container">
     <div class="section-head center reveal">
       <span class="eyebrow">Da dove si parte</span>
-      <h2 class="h2" id="pri-title">Da dove si parte:<br>l'audit gratuito</h2>
-      <p>Un servizio pensato per tutte le tasche, su misura per le piccole e medie imprese. Si comincia sempre dall'audit gratuito: prima capiamo la tua situazione, poi decidi tu se e come proseguire.</p>
+      <h2 class="h2" id="pri-title">Da dove si parte:<br>il report gratuito</h2>
+      <p>Un servizio pensato per tutte le tasche, su misura per le piccole e medie imprese. Si comincia sempre dal report gratuito: prima capiamo la tua situazione, poi decidi tu se e come proseguire.</p>
     </div>
 
     <div class="pricing stagger">
       <!-- Card 1 — Audit AI (Gratuito) -->
-      <article class="price-card">
+      <article class="price-card" style="padding-top:2.5rem">
+        <span class="badge-top" style="background:linear-gradient(135deg,#16A34A,#0d8a3c)">Gratuito</span>
         <h3>Audit AI</h3>
-        <div class="price-label"><span class="chip-free">Gratuito</span></div>
         <p class="price-desc">Uno screening dettagliato della tua situazione attuale e di quanto potresti crescere con le ottimizzazioni.</p>
         <ul class="price-features">
           <li><span class="check-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span>Controlliamo come ti vede oggi l'AI</li>
           <li><span class="check-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span>Ti diciamo cosa va bene e cosa no, in parole semplici</li>
           <li><span class="check-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span>Senza impegno: decidi tu se andare avanti</li>
         </ul>
-        <a href="#cta-finale" class="btn btn-primary btn-block">Richiedi l'audit gratuito</a>
+        <a href="#cta-finale" class="btn btn-primary btn-pill btn-block">Richiedi il report gratuito</a>
       </article>
 
       <!-- Card 2 — Ottimizzazione one-shot (FEATURED) -->
       <article class="price-card featured">
-        <span class="badge-top">Più scelto</span>
+        <span class="badge-top">Il più scelto</span>
         <h3>Ottimizzazione one-shot</h3>
         <div class="price-label"><span class="price-quote">Su preventivo<span class="sub">una tantum, nessun abbonamento</span></span></div>
         <p class="price-desc">Un intervento una tantum direttamente sul tuo sito — parte tecnica e contenuti — per non restare indietro, senza legarti a costi continuativi.</p>
@@ -1071,11 +1095,12 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
           <li><span class="check-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span>Miglioriamo testi e informazioni così l'AI ti capisce e ti consiglia</li>
           <li><span class="check-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span>Un lavoro solo, fatto bene, senza abbonamenti</li>
         </ul>
-        <a href="#cta-finale" class="btn btn-primary btn-block">Richiedi un preventivo</a>
+        <a href="#cta-finale" class="btn btn-primary btn-pill btn-block">Richiedi un preventivo</a>
       </article>
 
       <!-- Card 3 — Monitoraggio continuo -->
-      <article class="price-card">
+      <article class="price-card" style="padding-top:2.5rem">
+        <span class="badge-top">Il più completo</span>
         <h3>Monitoraggio continuo</h3>
         <div class="price-label"><span class="price-quote">Su preventivo<span class="sub">monitoraggio mensile</span></span></div>
         <p class="price-desc">Audit, ottimizzazione del sito e monitoraggio mensile costante, per restare in linea con tutti gli aggiornamenti futuri delle AI.</p>
@@ -1084,11 +1109,11 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
           <li><span class="check-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span>Controlli e aggiornamenti continui ogni mese</li>
           <li><span class="check-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span>Restiamo al passo coi cambiamenti dell'AI al posto tuo</li>
         </ul>
-        <a href="#cta-finale" class="btn btn-ghost btn-block">Richiedi un preventivo</a>
+        <a href="#cta-finale" class="btn btn-primary btn-pill btn-block">Richiedi un preventivo</a>
       </article>
     </div>
 
-    <p class="pricing-note caption reveal">Nessun prezzo a sorpresa: dopo l'audit gratuito ti proponiamo solo ciò che serve davvero alla tua attività.</p>
+    <p class="pricing-note caption reveal">Nessun prezzo a sorpresa: dopo il report gratuito ti proponiamo solo ciò che serve davvero alla tua attività.</p>
   </div>
 </section>
 
@@ -1102,7 +1127,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
       <h2 class="h2" id="cf2-title">Partiamo da un<br>controllo gratuito</h2>
       <p class="lead">Vediamo insieme come gli assistenti AI vedono oggi la tua attività, senza impegno. Poi decidi tu.</p>
       <div class="cta-row">
-        <a href="#cta-finale" class="btn btn-primary btn-lg btn-pill" id="openFormBtn">Richiedi l'audit gratuito
+        <a href="#cta-finale" class="btn btn-primary btn-lg btn-pill" id="openFormBtn">Richiedi il report gratuito
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
         <a href="https://vertical-ai.dayschedule.com/videocall-conoscitiva" target="_blank" rel="noopener" class="btn btn-ghost on-dark btn-lg btn-pill">Prenota una chiamata</a>
       </div>
@@ -1129,7 +1154,11 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
           <label for="f-email">Email</label>
           <input type="email" id="f-email" name="email" placeholder="nome@email.it" autocomplete="email">
         </div>
-        <button type="submit" class="btn btn-primary btn-lg btn-block">Richiedi l'audit gratuito</button>
+        <div class="field" style="display:flex;align-items:flex-start;gap:.6rem">
+          <input type="checkbox" id="f-privacy" name="privacy" required style="width:18px;height:18px;margin-top:2px;flex:none;accent-color:#5A45D8">
+          <label for="f-privacy" style="font-size:.82rem;font-weight:400;color:rgba(255,255,255,.7);margin-bottom:0">Ho letto e accetto la <a href="/privacy" target="_blank" style="color:#c4b8ff;text-decoration:underline">Privacy Policy</a>. Acconsento al trattamento dei miei dati personali per rispondere alla mia richiesta.</label>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-block">Richiedi il report gratuito</button>
         <p class="reassure" style="text-align:center">Gratis e senza impegno. Ti rispondiamo in parole semplici.</p>
       </form>
     </div>
@@ -1155,20 +1184,20 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
       </details>
       <details class="faq-item reveal">
         <summary class="faq-q">Quanto dura l'intervento?<span class="faq-icon" aria-hidden="true"></span></summary>
-        <div class="faq-a">L'audit è veloce. L'ottimizzazione del sito si fa in genere in poche settimane, e i primi miglioramenti si iniziano a vedere poco dopo. Te lo diciamo con precisione dopo il controllo gratuito.</div>
+        <div class="faq-a">Il report è veloce. L'ottimizzazione del sito si fa in genere in poche settimane, e i primi miglioramenti si iniziano a vedere poco dopo. Te lo diciamo con precisione dopo il controllo gratuito.</div>
       </details>
       <details class="faq-item reveal">
         <summary class="faq-q">Funziona anche se non vendo online?<span class="faq-icon" aria-hidden="true"></span></summary>
         <div class="faq-a">Sì. Anche se non vendi dal sito, le persone ti cercano e ti controllano prima di chiamarti, prenotare o venire da te. Farti trovare e raccontare bene dall'AI conta esattamente come per chi vende online.</div>
       </details>
       <details class="faq-item reveal">
-        <summary class="faq-q">L'audit è davvero gratis?<span class="faq-icon" aria-hidden="true"></span></summary>
+        <summary class="faq-q">Il report è davvero gratis?<span class="faq-icon" aria-hidden="true"></span></summary>
         <div class="faq-a">Sì, è gratuito e senza impegno. Controlliamo come l'AI vede la tua attività e te lo spieghiamo in parole semplici. Solo se vorrai proseguire ti proporremo un preventivo su misura.</div>
       </details>
     </div>
 
     <div class="faq-cta reveal">
-      <a href="#audit-gratuito" class="btn-link">Hai un'altra domanda? Richiedi l'audit gratuito
+      <a href="#audit-gratuito" class="btn-link">Hai un'altra domanda? Richiedi il report gratuito
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </div>
   </div>
@@ -1184,25 +1213,24 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
         <a href="#top" aria-label="Vertical AI, torna su" style="display:inline-block;margin-bottom:.9rem">
           <img src="https://verticalai.it/wp-content/uploads/2024/10/Logo.svg" alt="Vertical AI" height="36" style="height:36px;width:auto;display:block">
         </a>
-        <p class="footer-claim">Rendiamo la tua attività consigliabile dagli assistenti AI.</p>
         <div style="margin-top:1rem;font-size:.82rem;color:var(--soft);line-height:1.6">
           <strong style="color:var(--ink-soft);display:block;margin-bottom:.3rem">Vertical AI srl — Società Benefit &amp; Startup Innovativa</strong>
-          <span>Sede legale: Via Monte Napoleone, 8 – 20121 Milano, Italia</span><br>
-          <span>Sede secondaria: Piazza G. Matteotti, 21 – 06019 Umbertide (PG), Italia</span><br>
+          <span>Sede legale: Via Monte Napoleone, 8 – 20121 Milano</span><br>
+          <span>Sede secondaria: Piazza G. Matteotti, 21 – 06019 Umbertide (PG)</span><br>
           <span>P.IVA 13764720960</span>
         </div>
       </div>
-      <a href="#audit-gratuito" class="btn btn-primary btn-pill">Richiedi l'audit gratuito
+      <a href="#audit-gratuito" class="btn btn-primary btn-pill">Richiedi il report gratuito
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </div>
     <div class="footer-bottom">
       <div class="footer-legal">
         <span class="dom">verticalai.it</span>
-        <span class="law">© 2025 Vertical AI srl · Tutti i diritti riservati · P.IVA 13764720960</span>
+        <span class="law">© 2026 Vertical AI srl · Tutti i diritti riservati · P.IVA 13764720960</span>
       </div>
       <div class="footer-links">
-        <a href="#">Privacy</a>
-        <a href="#">Cookie</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/cookie-policy">Cookie Policy</a>
       </div>
     </div>
   </div>
@@ -1236,12 +1264,12 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
       "name": "Ottimizzazione del sito per gli assistenti AI",
       "provider": { "@id": "https://verticalai.it/#organization" },
       "areaServed": "IT",
-      "description": "Analizziamo e ottimizziamo il tuo sito perché gli assistenti AI lo capiscano e lo consiglino quando un cliente chiede consigli. Si parte da un audit gratuito senza impegno."
+      "description": "Analizziamo e ottimizziamo il tuo sito perché gli assistenti AI lo capiscano e lo consiglino quando un cliente chiede consigli. Si parte da un report gratuito senza impegno."
     },
     {
       "@type": "WebPage",
       "url": "https://verticalai.it/",
-      "name": "Farsi trovare su ChatGPT e AI | Audit gratuito",
+      "name": "Farsi trovare su ChatGPT e AI | Report gratuito",
       "inLanguage": "it-IT",
       "about": ["Generative Engine Optimization", "ChatGPT", "Gemini", "AI search"]
     },
@@ -1261,7 +1289,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
         {
           "@type": "Question",
           "name": "Quanto dura l'intervento?",
-          "acceptedAnswer": { "@type": "Answer", "text": "L'audit è veloce. L'ottimizzazione del sito si fa in genere in poche settimane, e i primi miglioramenti si iniziano a vedere poco dopo. Te lo diciamo con precisione dopo il controllo gratuito." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Il report è veloce. L'ottimizzazione del sito si fa in genere in poche settimane, e i primi miglioramenti si iniziano a vedere poco dopo. Te lo diciamo con precisione dopo il controllo gratuito." }
         },
         {
           "@type": "Question",
@@ -1270,7 +1298,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
         },
         {
           "@type": "Question",
-          "name": "L'audit è davvero gratis?",
+          "name": "Il report è davvero gratis?",
           "acceptedAnswer": { "@type": "Answer", "text": "Sì, è gratuito e senza impegno. Controlliamo come l'AI vede la tua attività e te lo spieghiamo in parole semplici. Solo se vorrai proseguire ti proporremo un preventivo su misura." }
         }
       ]
@@ -1438,7 +1466,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
       if(open){ setTimeout(function(){ var f=document.getElementById("f-nome"); if(f) f.focus(); }, 50); }
     });
     miniForm.addEventListener("submit", function(){
-      miniForm.innerHTML = '<p style="color:#fff;text-align:center;font-weight:600;padding:1rem 0">Grazie! Ti ricontattiamo a breve per il tuo audit gratuito.</p>';
+      miniForm.innerHTML = '<p style="color:#fff;text-align:center;font-weight:600;padding:1rem 0">Grazie! Ti ricontattiamo a breve per il tuo report gratuito.</p>';
     });
   }
 })();
