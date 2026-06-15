@@ -1469,6 +1469,17 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
       miniForm.innerHTML = '<p style="color:#fff;text-align:center;font-weight:600;padding:1rem 0">Grazie! Ti ricontattiamo a breve per il tuo report gratuito.</p>';
     });
   }
+  /* --- COOKIE BANNER --- */
+  var cb = document.getElementById("cookieBanner");
+  if(cb && !localStorage.getItem("cookieConsent")){
+    cb.style.display = "block";
+  }
+  document.getElementById("cookieAccept")&&document.getElementById("cookieAccept").addEventListener("click",function(){
+    localStorage.setItem("cookieConsent","all"); cb.style.display="none";
+  });
+  document.getElementById("cookieReject")&&document.getElementById("cookieReject").addEventListener("click",function(){
+    localStorage.setItem("cookieConsent","necessary"); cb.style.display="none";
+  });
 })();
 </script>
 
