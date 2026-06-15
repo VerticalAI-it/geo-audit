@@ -460,78 +460,78 @@ def analyze_page(url, fetched, static_for_parity, render_used):
                 score=score_checks(checks), checks=checks)
 
 # ============================================================ REPORT
-SC = {OK:"#16A34A", WARN:"#D9920A", FAIL:"#DC2626", UNK:"#8B88A0"}
+SC = {OK:"#0E9F6E", WARN:"#C77700", FAIL:"#D92D34", UNK:"#76768A"}
 SLAB = {OK:"OK", WARN:"DA MIGLIORARE", FAIL:"CRITICITÀ", UNK:"DA VERIFICARE"}
-SEV_PRIO = {"critical":("critica","#DC2626"), "high":("alta","#D9920A"),
-            "medium":("media","#6C5CE7"), "low":("media","#6C5CE7"), "info":("media","#6C5CE7")}
+SEV_PRIO = {"critical":("critica","#D92D34"), "high":("alta","#C77700"),
+            "medium":("media","#5A45D8"), "low":("media","#5A45D8"), "info":("media","#5A45D8")}
 SHORT = {"Dati strutturati":"Dati", "Contenuti & answerability":"Contenuti",
     "Meta & social":"Meta", "Autorità & trust":"Autorità", "HTML semantico":"HTML",
     "Rendering & accesso":"Accesso"}
 MONTHS = ["","gennaio","febbraio","marzo","aprile","maggio","giugno","luglio",
           "agosto","settembre","ottobre","novembre","dicembre"]
 def esc(s): return H.escape(str(s))
-def barcol(s): return "#16A34A" if s>=75 else ("#D9920A" if s>=55 else "#DC2626")
+def barcol(s): return "#0E9F6E" if s>=75 else ("#C77700" if s>=55 else "#D92D34")
 def fmt_date(): d = datetime.now(); return f"{d.day} {MONTHS[d.month]} {d.year}"
 
 def gauge(score):
     r=52; c=2*math.pi*r; off=c*(1-score/100); col=barcol(score)
     return (f'<svg width="146" height="146" viewBox="0 0 150 150">'
-      f'<circle cx="75" cy="75" r="{r}" fill="none" stroke="#ECEAF5" stroke-width="14"/>'
+      f'<circle cx="75" cy="75" r="{r}" fill="none" stroke="#E6E6EF" stroke-width="14"/>'
       f'<circle cx="75" cy="75" r="{r}" fill="none" stroke="{col}" stroke-width="14" stroke-linecap="round" '
       f'stroke-dasharray="{c:.1f}" stroke-dashoffset="{off:.1f}" transform="rotate(-90 75 75)"/>'
-      f'<text x="75" y="68" text-anchor="middle" font-family="Archivo" font-weight="800" font-size="40" fill="#15131F">{score}</text>'
-      f'<text x="75" y="90" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#8B88A0">/ 100</text></svg>')
+      f'<text x="75" y="68" text-anchor="middle" font-family="Space Grotesk" font-weight="800" font-size="40" fill="#16151E">{score}</text>'
+      f'<text x="75" y="90" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#76768A">/ 100</text></svg>')
 
 def radar(cats):
     n = len(cats)
     if n < 3: return ""
     cx = 160; cy = 140; R = 90
-    rings = "".join(f'<circle cx="{cx}" cy="{cy}" r="{R*k/100:.0f}" fill="none" stroke="#ECEAF5" stroke-width="1"/>' for k in (25,50,75,100))
+    rings = "".join(f'<circle cx="{cx}" cy="{cy}" r="{R*k/100:.0f}" fill="none" stroke="#E6E6EF" stroke-width="1"/>' for k in (25,50,75,100))
     axes = ""; labels = ""; pts = []
     for i,(name,sc) in enumerate(cats):
         ang = -math.pi/2 + 2*math.pi*i/n
         ax = cx + R*math.cos(ang); ay = cy + R*math.sin(ang)
-        axes += f'<line x1="{cx}" y1="{cy}" x2="{ax:.0f}" y2="{ay:.0f}" stroke="#ECEAF5"/>'
+        axes += f'<line x1="{cx}" y1="{cy}" x2="{ax:.0f}" y2="{ay:.0f}" stroke="#E6E6EF"/>'
         rr = R*sc/100; pts.append(f"{cx+rr*math.cos(ang):.0f},{cy+rr*math.sin(ang):.0f}")
         lx = cx + (R+16)*math.cos(ang); ly = cy + (R+16)*math.sin(ang)
         anc = "middle" if abs(math.cos(ang))<0.3 else ("start" if math.cos(ang)>0 else "end")
-        labels += (f'<text x="{lx:.0f}" y="{ly+3:.0f}" text-anchor="{anc}" font-family="IBM Plex Mono" '
-                   f'font-size="9.5" fill="#6B6880">{esc(SHORT.get(name,name))}</text>')
-    poly = f'<polygon points="{" ".join(pts)}" fill="#6C5CE733" stroke="#6C5CE7" stroke-width="2"/>'
-    dots = "".join(f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" r="3" fill="#6C5CE7"/>' for p in pts)
+        labels += (f'<text x="{lx:.0f}" y="{ly+3:.0f}" text-anchor="{anc}" font-family="JetBrains Mono" '
+                   f'font-size="9.5" fill="#76768A">{esc(SHORT.get(name,name))}</text>')
+    poly = f'<polygon points="{" ".join(pts)}" fill="rgba(90,69,216,.18)" stroke="#5A45D8" stroke-width="2"/>'
+    dots = "".join(f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" r="3" fill="#5A45D8"/>' for p in pts)
     return f'<svg width="300" height="285" viewBox="0 0 320 285">{rings}{axes}{poly}{dots}{labels}</svg>'
 
 def donut(ok, warn, fail):
     total = ok + warn + fail or 1
     r = 54; C = 2*math.pi*r; cx = cy = 70
-    out = [f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#EEECF6" stroke-width="16"/>']
+    out = [f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#E6E6EF" stroke-width="16"/>']
     acc = 0.0
-    for val, col in [(ok,"#16A34A"),(warn,"#D9920A"),(fail,"#DC2626")]:
+    for val, col in [(ok,"#0E9F6E"),(warn,"#C77700"),(fail,"#D92D34")]:
         if val <= 0: continue
         frac = val/total
         out.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{col}" stroke-width="16" '
                    f'stroke-dasharray="{frac*C:.2f} {C:.2f}" stroke-dashoffset="{-acc*C:.2f}" '
                    f'transform="rotate(-90 {cx} {cy})" stroke-linecap="butt"/>')
         acc += frac
-    out.append(f'<text x="{cx}" y="{cy-2}" text-anchor="middle" font-family="Archivo" font-weight="800" font-size="24" fill="#15131F">{total}</text>')
-    out.append(f'<text x="{cx}" y="{cy+15}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8.5" fill="#8B88A0">CONTROLLI</text>')
+    out.append(f'<text x="{cx}" y="{cy-2}" text-anchor="middle" font-family="Space Grotesk" font-weight="800" font-size="24" fill="#16151E">{total}</text>')
+    out.append(f'<text x="{cx}" y="{cy+15}" text-anchor="middle" font-family="JetBrains Mono" font-size="8.5" fill="#76768A">CONTROLLI</text>')
     return f'<svg width="140" height="140" viewBox="0 0 140 140">{"".join(out)}</svg>'
 
 def scale_bar(score):
-    segs = [("F","#DC2626"),("E","#E0612A"),("D","#D9920A"),("C","#C9A227"),("B","#5FA52E"),("A","#16A34A")]
+    segs = [("F","#D92D34"),("E","#E0612A"),("D","#C77700"),("C","#C9A227"),("B","#5FA52E"),("A","#0E9F6E")]
     cells = "".join(f'<div style="flex:1;height:14px;background:{c};display:flex;align-items:center;'
-                    f'justify-content:center;font-family:IBM Plex Mono;font-size:8px;color:#fff;font-weight:600">{l}</div>'
+                    f'justify-content:center;font-family:JetBrains Mono;font-size:8px;color:#fff;font-weight:600">{l}</div>'
                     for l,c in segs)
     return (f'<div style="position:relative;margin:6px 0 2px">'
             f'<div style="display:flex;border-radius:6px;overflow:hidden">{cells}</div>'
             f'<div style="position:absolute;top:-7px;left:{score}%;transform:translateX(-50%);width:0;height:0;'
-            f'border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #15131F"></div>'
-            f'<div style="position:absolute;top:18px;left:{score}%;transform:translateX(-50%);font-family:IBM Plex Mono;'
-            f'font-size:9px;color:#15131F;font-weight:600;white-space:nowrap">{score}/100</div></div>')
+            f'border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #16151E"></div>'
+            f'<div style="position:absolute;top:18px;left:{score}%;transform:translateX(-50%);font-family:JetBrains Mono;'
+            f'font-size:9px;color:#16151E;font-weight:600;white-space:nowrap">{score}/100</div></div>')
 
 def dist_chart(pages):
-    bands = [("Ottimo",90,100,"#16A34A"),("Buono",75,89,"#5FA52E"),("Discreto",60,74,"#D9920A"),
-             ("Debole",45,59,"#E0612A"),("Critico",0,44,"#DC2626")]
+    bands = [("Ottimo",90,100,"#0E9F6E"),("Buono",75,89,"#5FA52E"),("Discreto",60,74,"#C77700"),
+             ("Debole",45,59,"#E0612A"),("Critico",0,44,"#D92D34")]
     counts = []
     for name,lo,hi,col in bands:
         counts.append((name, len([p for p in pages if lo <= p.score <= hi]), col))
@@ -540,92 +540,94 @@ def dist_chart(pages):
     for name,c,col in counts:
         h = 8 + int(78*c/mx)
         cols += (f'<div style="flex:1;text-align:center">'
-                 f'<div style="font-family:Archivo;font-weight:800;font-size:14px;color:#15131F">{c}</div>'
+                 f'<div style="font-family:Space Grotesk;font-weight:800;font-size:14px;color:#16151E">{c}</div>'
                  f'<div style="height:{h}px;background:{col};border-radius:5px 5px 0 0;margin:3px 6px 0"></div>'
-                 f'<div style="font-family:IBM Plex Mono;font-size:8.5px;color:#6B6880;margin-top:5px">{name}</div></div>')
+                 f'<div style="font-family:JetBrains Mono;font-size:8.5px;color:#76768A;margin-top:5px">{name}</div></div>')
     return f'<div style="display:flex;align-items:flex-end;gap:4px;height:130px">{cols}</div>'
 
 LOGO = ('<span class="logo"><svg width="22" height="22" viewBox="0 0 22 22" fill="none">'
-  '<rect x="2" y="9" width="4" height="11" rx="1.5" fill="#6C5CE7"/>'
-  '<rect x="9" y="4" width="4" height="16" rx="1.5" fill="#9B8CFF"/>'
-  '<rect x="16" y="11" width="4" height="9" rx="1.5" fill="#6C5CE7"/></svg><b>vertical</b>ai</span>')
+  '<rect x="2" y="9" width="4" height="11" rx="1.5" fill="#5A45D8"/>'
+  '<rect x="9" y="4" width="4" height="16" rx="1.5" fill="#B3A8F7"/>'
+  '<rect x="16" y="11" width="4" height="9" rx="1.5" fill="#5A45D8"/></svg>'
+  '<b>vertical</b><span style="color:#B3A8F7">ai</span></span>')
 
 CSS = """
-:root{--ink:#15131F;--muted:#6B6880;--line:#E7E4F0;--soft:#F6F4FC;--violet:#6C5CE7;--violet-deep:#4B3FB8}
+:root{--ink:#16151E;--muted:#76768A;--line:#E6E6EF;--soft:#F3F1FB;--violet:#5A45D8;--violet-deep:#3D2CB8}
 *{box-sizing:border-box;margin:0;padding:0}html{font-size:15px}
-body{font-family:"Hanken Grotesk",sans-serif;color:var(--ink);background:#EDEBF3;line-height:1.55}
-.mono{font-family:"IBM Plex Mono",monospace}
-.sheet{background:#fff;max-width:880px;margin:24px auto;box-shadow:0 8px 40px rgba(20,16,40,.12)}
-h1,h2,h3,.logo b{font-family:"Archivo",sans-serif}
+body{font-family:"Inter",sans-serif;color:var(--ink);background:linear-gradient(135deg,#EAE6FB 0%,#F0EDF8 60%,#E8EEFB 100%);background-attachment:fixed;line-height:1.55}
+.mono{font-family:"JetBrains Mono",monospace}
+.sheet{background:#fff;max-width:880px;margin:28px auto;box-shadow:0 4px 6px rgba(90,69,216,.06),0 16px 48px rgba(20,16,60,.14);border-radius:20px;overflow:hidden}
+h1,h2,h3{font-family:"Space Grotesk",sans-serif}
+.logo b{font-family:"Space Grotesk",sans-serif}
 .top{background:var(--ink);color:#fff;padding:30px 56px 26px}
 .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}
-.logo{display:inline-flex;align-items:center;gap:8px;font-size:17px;color:#fff}.logo b{font-weight:800}
-.kicker{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:3px;color:#9B8CFF;text-transform:uppercase}
-.top h1{font-size:32px;font-weight:800;margin:6px 0 12px;word-break:break-word}
-.meta{font-family:"IBM Plex Mono";font-size:12px;color:#B9B6CC;display:flex;gap:22px;flex-wrap:wrap}.meta b{color:#fff;font-weight:500}
-.scaninfo{margin-top:14px;font-family:"IBM Plex Mono";font-size:10.5px;color:#8E8BA8;display:flex;gap:14px;flex-wrap:wrap}
-.scaninfo .on{color:#7FE3B0}.scaninfo .off{color:#E0A04A}
+.logo{display:inline-flex;align-items:center;gap:8px;font-size:17px;color:#fff;font-family:"Space Grotesk",sans-serif;font-weight:700}.logo b{font-weight:800}
+.kicker{font-family:"JetBrains Mono";font-size:11px;letter-spacing:3px;color:#B3A8F7;text-transform:uppercase}
+.top h1{font-size:32px;font-weight:800;margin:6px 0 12px;word-break:break-word;letter-spacing:-.02em}
+.meta{font-family:"JetBrains Mono";font-size:12px;color:#BCBBCB;display:flex;gap:22px;flex-wrap:wrap}.meta b{color:#fff;font-weight:500}
+.scaninfo{margin-top:14px;font-family:"JetBrains Mono";font-size:10.5px;color:#8E8BA8;display:flex;gap:14px;flex-wrap:wrap}
+.scaninfo .on{color:#3DDC97}.scaninfo .off{color:#F5BE57}
 .summary{display:flex;gap:30px;align-items:center;padding:32px 56px 4px}
-.gaugewrap{text-align:center;flex:none}.band{font-family:"Archivo";font-weight:800;font-size:13px;color:var(--violet-deep);margin-top:2px}
-.sumright{flex:1;min-width:0}.tiles{display:flex;gap:12px;margin-bottom:12px}
-.tile{flex:1;border:1px solid var(--line);border-radius:12px;padding:11px 13px}
-.tile .n{font-family:"Archivo";font-weight:800;font-size:24px}.tile .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;font-family:"IBM Plex Mono";margin-top:1px}
-.verdict{font-size:14px;border-left:3px solid var(--violet);padding-left:13px;color:#2C2A3A}
+.gaugewrap{text-align:center;flex:none}.band{font-family:"Space Grotesk";font-weight:800;font-size:13px;color:var(--violet-deep);margin-top:4px;letter-spacing:.04em}
+.sumright{flex:1;min-width:0}.tiles{display:flex;gap:12px;margin-bottom:14px}
+.tile{flex:1;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--soft)}
+.tile .n{font-family:"Space Grotesk";font-weight:800;font-size:24px}.tile .l{font-size:10px;color:var(--muted);text-transform:uppercase;font-family:"JetBrains Mono";margin-top:2px;letter-spacing:.06em}
+.verdict{font-size:14px;border-left:3px solid var(--violet);padding-left:13px;color:#2C2A3A;line-height:1.6}
 .sec{padding:28px 56px 4px}
-h2{font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--violet-deep);font-weight:800;margin-bottom:15px;font-family:"IBM Plex Mono"}
+h2{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--violet-deep);font-weight:700;margin-bottom:16px;font-family:"JetBrains Mono"}
 .two{display:flex;gap:30px;align-items:center;flex-wrap:wrap}
 .two .half{flex:1;min-width:240px}
 .legend{font-size:12.5px;color:var(--muted);margin-top:8px}.legend span{display:inline-flex;align-items:center;gap:6px;margin-right:14px}
 .dotL{width:9px;height:9px;border-radius:50%;display:inline-block}
 .catrow{display:flex;align-items:center;gap:14px;margin-bottom:9px}
-.catname{width:200px;font-size:13px}.cattrack{flex:1;height:8px;background:#EEECF6;border-radius:6px;overflow:hidden}
-.catfill{height:100%;border-radius:6px}.catscore{width:30px;text-align:right;font-size:12.5px;font-weight:600}
+.catname{width:200px;font-size:13px}.cattrack{flex:1;height:8px;background:var(--line);border-radius:6px;overflow:hidden}
+.catfill{height:100%;border-radius:6px}.catscore{width:30px;text-align:right;font-size:12.5px;font-weight:600;font-family:"Space Grotesk"}
 .callouts{display:flex;gap:12px;flex-wrap:wrap}
-.callout{flex:1;min-width:150px;background:var(--soft);border-radius:12px;padding:14px 16px}
-.callout .big{font-family:"Archivo";font-weight:800;font-size:28px;color:var(--violet-deep)}
+.callout{flex:1;min-width:150px;background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.callout .big{font-family:"Space Grotesk";font-weight:800;font-size:28px;color:var(--violet-deep)}
 .callout .lbl{font-size:12px;color:var(--muted);margin-top:2px}
 table{width:100%;border-collapse:collapse}td{padding:9px 6px;border-top:1px solid var(--line);font-size:13px;vertical-align:top}
 tr:first-child td{border-top:none}.cdot{width:18px}.dot{display:inline-block;width:9px;height:9px;border-radius:50%}
-.cchk{font-weight:600;width:30%}.cdet{color:var(--muted)}.cst{width:118px;text-align:right;font-size:10px;font-weight:500}
+.cchk{font-weight:600;width:30%}.cdet{color:var(--muted)}.cst{width:118px;text-align:right;font-size:10px;font-weight:500;font-family:"JetBrains Mono"}
 .wins{display:flex;gap:12px;flex-wrap:wrap}
-.win{flex:1;min-width:200px;border:1px solid var(--line);border-radius:14px;padding:16px 18px;break-inside:avoid}
-.win .wn{font-family:"IBM Plex Mono";font-size:11px;color:var(--violet);font-weight:600}
-.win h3{font-size:15px;margin:6px 0 4px}.win p{font-size:12.5px;color:var(--muted)}
-.win .badge{display:inline-block;margin-top:8px;font-family:"IBM Plex Mono";font-size:9.5px;color:var(--violet-deep);background:#EDE9FB;border-radius:20px;padding:2px 9px}
-.pcard{border:1px solid var(--line);border-radius:14px;margin-bottom:12px;overflow:hidden;break-inside:avoid}
+.win{flex:1;min-width:200px;border:1px solid var(--line);border-radius:16px;padding:18px 20px;break-inside:avoid;background:var(--soft)}
+.win .wn{font-family:"JetBrains Mono";font-size:10px;color:var(--violet);font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.win h3{font-family:"Space Grotesk";font-size:15px;font-weight:700;margin:6px 0 4px}.win p{font-size:12.5px;color:var(--muted);line-height:1.5}
+.win .badge{display:inline-block;margin-top:8px;font-family:"JetBrains Mono";font-size:9.5px;color:var(--violet-deep);background:#EDE9FB;border-radius:20px;padding:3px 10px;border:1px solid #D4CFFA}
+.pcard{border:1px solid var(--line);border-radius:16px;margin-bottom:12px;overflow:hidden;break-inside:avoid}
 .phead{display:flex;justify-content:space-between;align-items:center;background:var(--soft);padding:12px 18px;border-bottom:1px solid var(--line)}
-.ptag{display:inline-block;background:var(--violet);color:#fff;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;font-family:"IBM Plex Mono";text-transform:uppercase;margin-right:10px}
-.purl{font-size:12px;color:var(--muted);word-break:break-all}.pscore{font-family:"Archivo";font-weight:800;font-size:23px}.pscore i{font-size:12px;color:var(--muted);font-style:normal}
+.ptag{display:inline-block;background:var(--violet);color:#fff;font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;font-family:"JetBrains Mono";text-transform:uppercase;margin-right:10px;letter-spacing:.06em}
+.purl{font-size:12px;color:var(--muted);word-break:break-all}.pscore{font-family:"Space Grotesk";font-weight:800;font-size:23px}.pscore i{font-size:12px;color:var(--muted);font-style:normal}
 .pbody{padding:11px 18px}.finding{display:flex;gap:11px;padding:6px 0;align-items:flex-start}.finding .dot{margin-top:6px;flex:none}
-.ftitle{display:block;font-weight:600;font-size:13px}.fdetail{display:block;font-size:12.5px;color:var(--muted)}.allok{color:#16A34A;font-size:13px;padding:6px 0}
-.action{display:flex;gap:16px;padding:12px 0;border-top:1px solid var(--line);break-inside:avoid}.action:first-child{border-top:none}
-.anum{font-family:"Archivo";font-weight:800;font-size:19px;color:var(--violet);width:32px;flex:none}
-.ahead{display:flex;align-items:center;gap:10px;margin-bottom:2px;flex-wrap:wrap}.ptitle{font-weight:700;font-size:14px}
-.pill{font-family:"IBM Plex Mono";font-size:9.5px;font-weight:600;border:1px solid;border-radius:20px;padding:2px 8px}
-.adesc{font-size:12.5px;color:var(--muted)}
-.notes{background:var(--soft);border-radius:12px;padding:15px 19px;font-size:12.5px;color:#46435A}.notes b{color:var(--ink)}
+.ftitle{display:block;font-weight:600;font-size:13px}.fdetail{display:block;font-size:12.5px;color:var(--muted)}.allok{color:#0E9F6E;font-size:13px;padding:6px 0;font-weight:600}
+.action{display:flex;gap:16px;padding:14px 0;border-top:1px solid var(--line);break-inside:avoid}.action:first-child{border-top:none}
+.anum{font-family:"Space Grotesk";font-weight:800;font-size:19px;color:var(--violet);width:32px;flex:none}
+.ahead{display:flex;align-items:center;gap:10px;margin-bottom:3px;flex-wrap:wrap}.ptitle{font-weight:700;font-size:14px;font-family:"Space Grotesk"}
+.pill{font-family:"JetBrains Mono";font-size:9.5px;font-weight:600;border:1px solid;border-radius:20px;padding:2px 8px}
+.adesc{font-size:12.5px;color:var(--muted);line-height:1.5}
+.notes{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px 20px;font-size:12.5px;color:#46435A;line-height:1.6}.notes b{color:var(--ink)}
 .cta{background:var(--ink);color:#fff;padding:40px 56px;margin-top:32px;display:flex;justify-content:space-between;align-items:flex-start;gap:40px;flex-wrap:wrap}
 .cta-l{flex:1;min-width:220px}
-.cta-badge{display:inline-block;background:rgba(108,92,231,.25);color:#B8AEFF;font-family:"IBM Plex Mono";font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:4px 10px;border-radius:20px;margin-bottom:14px}
-.cta h3{font-size:23px;font-weight:800;margin:0 0 12px;line-height:1.25;color:#fff}
-.cta-desc{font-size:13.5px;color:#CFCDE0;margin:0 0 14px;line-height:1.6}
+.cta-badge{display:inline-block;background:rgba(90,69,216,.3);color:#B3A8F7;font-family:"JetBrains Mono";font-size:10px;letter-spacing:2.5px;text-transform:uppercase;padding:4px 11px;border-radius:20px;margin-bottom:14px}
+.cta h3{font-family:"Space Grotesk";font-size:23px;font-weight:800;margin:0 0 12px;line-height:1.25;color:#fff;letter-spacing:-.01em}
+.cta-desc{font-size:13.5px;color:#BCBBCB;margin:0 0 14px;line-height:1.6}
 .cta ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px}
-.cta li{font-size:13px;color:#CFCDE0;padding-left:18px;position:relative}
-.cta li::before{content:"✓";position:absolute;left:0;color:#9B8CFF;font-weight:700}
+.cta li{font-size:13px;color:#BCBBCB;padding-left:18px;position:relative}
+.cta li::before{content:"✓";position:absolute;left:0;color:#B3A8F7;font-weight:700}
 .cta-r{flex:0 0 290px;min-width:260px}
-.cta-r p{font-size:13px;color:#CFCDE0;margin:0 0 12px;line-height:1.5}
-.cta-r input{width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:9px;color:#fff;font-size:14px;padding:11px 13px;font-family:inherit;outline:none;margin-bottom:8px;box-sizing:border-box}
-.cta-r input::placeholder{color:rgba(255,255,255,.35)}
-.cta-r input:focus{border-color:#9B8CFF}
-.cta-pref{display:flex;align-items:center;gap:12px;font-size:13px;color:#CFCDE0;margin-bottom:12px;flex-wrap:wrap}
+.cta-r p{font-size:13px;color:#BCBBCB;margin:0 0 12px;line-height:1.5}
+.cta-r input{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;font-size:14px;padding:11px 13px;font-family:inherit;outline:none;margin-bottom:8px;box-sizing:border-box;transition:border-color .15s}
+.cta-r input::placeholder{color:rgba(255,255,255,.32)}
+.cta-r input:focus{border-color:#B3A8F7}
+.cta-pref{display:flex;align-items:center;gap:12px;font-size:13px;color:#BCBBCB;margin-bottom:12px;flex-wrap:wrap}
 .cta-pref label{display:flex;align-items:center;gap:5px;cursor:pointer}
-.cta-btn{width:100%;background:#6C5CE7;color:#fff;border:none;border-radius:10px;font-family:"Archivo";font-weight:700;font-size:15px;padding:13px;cursor:pointer}
-.cta-btn:hover{background:#5b4bd8}
-.cta-ok{display:none;color:#00b894;font-size:14px;margin-top:12px;font-weight:600;text-align:center}
-.foot{padding:16px 56px;font-size:11px;color:var(--muted);font-family:"IBM Plex Mono";display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.cta-btn{width:100%;background:#5A45D8;color:#fff;border:none;border-radius:10px;font-family:"Space Grotesk";font-weight:700;font-size:15px;padding:13px;cursor:pointer;transition:background .15s;letter-spacing:.01em}
+.cta-btn:hover{background:#4A37BE}
+.cta-ok{display:none;color:#3DDC97;font-size:14px;margin-top:12px;font-weight:600;text-align:center}
+.foot{padding:16px 56px;font-size:11px;color:var(--muted);font-family:"JetBrains Mono";display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;border-top:1px solid var(--line)}
 @page{size:A4;margin:13mm 0}
-@media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none}.sec,.summary,.top,.cta,.foot{padding-left:15mm;padding-right:15mm}}
-@media (max-width:760px){.sheet{margin:0;max-width:none}.top,.sec,.cta,.foot{padding-left:22px;padding-right:22px}.top h1{font-size:25px}
+@media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none;border-radius:0}.sec,.summary,.top,.cta,.foot{padding-left:15mm;padding-right:15mm}}
+@media (max-width:760px){.sheet{margin:8px;border-radius:14px}.top,.sec,.cta,.foot{padding-left:22px;padding-right:22px}.top h1{font-size:25px}
 .summary{flex-direction:column;align-items:stretch;padding:26px 22px 4px;gap:18px}.gaugewrap{align-self:center}.catname{width:120px}.cst{width:90px}
 .phead{flex-wrap:wrap;gap:8px}.cta{flex-direction:column;align-items:flex-start}.cta-r{width:100%}.foot{flex-direction:column}}
 """
@@ -664,8 +666,8 @@ def render_report(domain, site, pages, render_used, respect_robots):
     head = ('<!doctype html><html lang="it"><head><meta charset="utf-8">'
       '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — '+esc(domain)+'</title>'
       '<link rel="preconnect" href="https://fonts.googleapis.com">'
-      '<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400..800;1,600..800'
-      '&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">'
+      '<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800'
+      '&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">'
       '<style>'+CSS+'</style></head><body><div class="sheet">')
 
     rmode = '<span class="on">rendering JS attivo</span>' if render_used else '<span class="off">rendering JS non attivo</span>'
@@ -681,17 +683,17 @@ def render_report(domain, site, pages, render_used, respect_robots):
     summ = (f'<div class="summary"><div class="gaugewrap">{gauge(overall)}<div class="band">{bnd.upper()} · {g}</div></div>'
       f'<div class="sumright"><div class="tiles">'
       f'<div class="tile"><div class="n">{len(pages)}</div><div class="l">Pagine</div></div>'
-      f'<div class="tile"><div class="n" style="color:#D9920A">{len(issues)}</div><div class="l">Problemi</div></div>'
-      f'<div class="tile"><div class="n" style="color:#DC2626">{crit}</div><div class="l">Critici</div></div></div>'
+      f'<div class="tile"><div class="n" style="color:#C77700">{len(issues)}</div><div class="l">Problemi</div></div>'
+      f'<div class="tile"><div class="n" style="color:#D92D34">{crit}</div><div class="l">Critici</div></div></div>'
       f'{scale_bar(overall)}<div class="verdict" style="margin-top:14px">{verdict}</div></div></div>')
 
     # salute controlli (donut) + callouts
     pct_ok = round(100*nok/(nok+nwarn+nfail or 1))
     health = (f'<div class="sec"><h2>La salute dei controlli</h2><div class="two">'
       f'<div style="flex:none;text-align:center">{donut(nok,nwarn,nfail)}'
-      f'<div class="legend"><span><i class="dotL" style="background:#16A34A"></i>{nok} ok</span>'
-      f'<span><i class="dotL" style="background:#D9920A"></i>{nwarn} da migliorare</span>'
-      f'<span><i class="dotL" style="background:#DC2626"></i>{nfail} critici</span></div></div>'
+      f'<div class="legend"><span><i class="dotL" style="background:#0E9F6E"></i>{nok} ok</span>'
+      f'<span><i class="dotL" style="background:#C77700"></i>{nwarn} da migliorare</span>'
+      f'<span><i class="dotL" style="background:#D92D34"></i>{nfail} critici</span></div></div>'
       f'<div class="half"><div class="callouts">'
       f'<div class="callout"><div class="big">{pct_ok}%</div><div class="lbl">controlli superati</div></div>'
       f'<div class="callout"><div class="big">{len(repeated)}</div><div class="lbl">problemi ricorrenti su più pagine</div></div>'
@@ -745,7 +747,7 @@ def render_report(domain, site, pages, render_used, respect_robots):
           f'<div class="pscore mono" style="color:{barcol(p.score)}">{p.score}<i>/100</i></div></div>'
           f'<div class="pbody">{body}</div></div>')
     if extra > 0:
-        cards += f'<div style="text-align:center;color:#6B6880;font-size:12.5px;font-family:IBM Plex Mono;padding:6px">+ altre {extra} pagine analizzate</div>'
+        cards += f'<div style="text-align:center;color:#76768A;font-size:12.5px;font-family:JetBrains Mono;padding:6px">+ altre {extra} pagine analizzate</div>'
     pages_sec = f'<div class="sec"><h2>Analisi per pagina</h2>{cards}</div>' if cards else ""
 
     notes = ('<div class="sec"><h2>Metodo &amp; note</h2><div class="notes">'
