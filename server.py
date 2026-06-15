@@ -1002,3 +1002,107 @@ def contact(job_id: str,
         pass
 
     return Response(status_code=200)
+
+
+# ── Richiesta report dalla landing page ─────────────────────────────────────
+
+_ADMIN_REPORT_EMAIL = "verticalai00@gmail.com"
+_REPORT_FROM        = "geo@verticalai.it"
+
+
+def _send_report_request_admin(nome: str, email: str, sito: str) -> None:
+    if not RESEND_KEY:
+        return
+    html = f"""<!doctype html><html lang="it"><head><meta charset="UTF-8"><style>
+body{{font-family:Inter,Arial,sans-serif;background:#F6F4FC;margin:0;padding:32px}}
+.wrap{{max-width:560px;margin:0 auto;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(90,69,216,.10);overflow:hidden}}
+.top{{background:linear-gradient(135deg,#7C6BEC,#5A45D8);padding:28px 32px}}
+.top h1{{color:#fff;font-size:1.1rem;margin:0;font-weight:700}}
+.body{{padding:28px 32px}}
+.row{{margin-bottom:16px}}
+.label{{font-size:.78rem;font-weight:700;color:#9182F0;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}}
+.value{{font-size:1rem;color:#15131F;font-weight:500}}
+.foot{{padding:18px 32px;background:#F6F4FC;font-size:.8rem;color:#9C99B5;text-align:center}}
+</style></head><body>
+<div class="wrap">
+  <div class="top"><h1>🔔 Nuova richiesta di report GEO</h1></div>
+  <div class="body">
+    <div class="row"><div class="label">Nome</div><div class="value">{nome}</div></div>
+    <div class="row"><div class="label">Email</div><div class="value">{email}</div></div>
+    <div class="row"><div class="label">Sito web</div><div class="value">{sito or "—"}</div></div>
+  </div>
+  <div class="foot">Richiesta dalla landing page di verticalai.it</div>
+</div></body></html>"""
+    req.post("https://api.resend.com/emails",
+             json={"from": _REPORT_FROM, "to": [_ADMIN_REPORT_EMAIL],
+                   "subject": f"Nuova richiesta di report GEO – {nome}", "html": html},
+             headers={"Authorization": f"Bearer {RESEND_KEY}", "Content-Type": "application/json"},
+             timeout=10)
+
+
+def _send_report_request_user(nome: str, email: str) -> None:
+    if not RESEND_KEY:
+        return
+    first = nome.split()[0] if nome else "ciao"
+    html = f"""<!doctype html><html lang="it"><head><meta charset="UTF-8"><style>
+body{{font-family:Inter,Arial,sans-serif;background:#F6F4FC;margin:0;padding:32px}}
+.wrap{{max-width:560px;margin:0 auto;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(90,69,216,.10);overflow:hidden}}
+.top{{background:linear-gradient(135deg,#7C6BEC,#5A45D8);padding:36px 32px;text-align:center}}
+.logo{{font-family:Arial,sans-serif;font-weight:900;font-size:1.5rem;color:#fff;letter-spacing:-.02em}}
+.logo span{{color:#c4b8ff}}
+.top p{{color:rgba(255,255,255,.8);margin:8px 0 0;font-size:.95rem}}
+.body{{padding:32px}}
+.body h2{{color:#15131F;font-size:1.2rem;margin:0 0 16px}}
+.body p{{color:#5C586F;line-height:1.65;margin:0 0 16px}}
+.pill{{display:inline-block;background:#F2F0FE;color:#5A45D8;border-radius:999px;padding:.45rem 1.1rem;font-weight:700;font-size:.9rem;margin-bottom:20px}}
+.cta{{text-align:center;margin:24px 0}}
+.cta a{{background:linear-gradient(135deg,#7C6BEC,#5A45D8);color:#fff;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:700;font-size:1rem}}
+.foot{{padding:20px 32px;background:#F6F4FC;font-size:.8rem;color:#9C99B5;text-align:center}}
+.foot a{{color:#9182F0;text-decoration:none}}
+</style></head><body>
+<div class="wrap">
+  <div class="top">
+    <div class="logo">vertical<span>ai</span></div>
+    <p>Generative Engine Optimization</p>
+  </div>
+  <div class="body">
+    <span class="pill">✅ Richiesta ricevuta</span>
+    <h2>Ciao {first}, abbiamo ricevuto la tua richiesta!</h2>
+    <p>Grazie per aver richiesto il <strong>report GEO gratuito</strong>. Il nostro team ha già preso in carico la tua richiesta e ti contatterà a breve per spiegarti — in parole semplici — come gli assistenti AI vedono oggi la tua attività.</p>
+    <p>Nel frattempo, se hai domande puoi rispondere direttamente a questa email.</p>
+    <div class="cta"><a href="https://verticalai.it">Scopri di più su verticalai.it</a></div>
+    <p style="font-size:.85rem;color:#9C99B5">Il report è completamente gratuito e senza impegno.</p>
+  </div>
+  <div class="foot">
+    Vertical AI srl — Società Benefit &amp; Startup Innovativa<br>
+    Via Monte Napoleone, 8 – 20121 Milano · P.IVA 13764720960<br>
+    <a href="https://verticalai.it">verticalai.it</a>
+  </div>
+</div></body></html>"""
+    req.post("https://api.resend.com/emails",
+             json={"from": _REPORT_FROM, "to": [email], "reply_to": _ADMIN_REPORT_EMAIL,
+                   "subject": "Abbiamo ricevuto la tua richiesta di report GEO ✅", "html": html},
+             headers={"Authorization": f"Bearer {RESEND_KEY}", "Content-Type": "application/json"},
+             timeout=10)
+
+
+@app.post("/richiedi-audit")
+async def richiedi_audit(
+    nome:  str = Form(...),
+    email: str = Form(...),
+    sito:  str = Form(""),
+):
+    nome  = (nome  or "").strip()
+    email = (email or "").strip().lower()
+    sito  = (sito  or "").strip()
+    if not nome or not email:
+        return Response(status_code=400)
+    try:
+        await run_in_threadpool(_send_report_request_admin, nome, email, sito)
+    except Exception:
+        pass
+    try:
+        await run_in_threadpool(_send_report_request_user, nome, email)
+    except Exception:
+        pass
+    return Response(content='{"ok":true}', media_type="application/json", status_code=200)

@@ -1133,32 +1133,31 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
       </div>
       <p class="reassure">Gratis, senza impegno, zero pensieri tecnici: il difficile lo facciamo noi.</p>
 
-      <!-- mini-form opzionale (3 campi) — espandibile -->
-      <div class="form-toggle">
+      <!-- trigger secondario (nascosto: il bottone CTA principale apre già il form) -->
+      <div class="form-toggle" style="display:none">
         <button class="btn-link" id="toggleForm" aria-expanded="false" aria-controls="miniForm">
           Preferisci lasciarci i tuoi dati subito?
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
         </button>
       </div>
 
-      <form class="mini-form" id="miniForm" hidden onsubmit="return false">
+      <form class="mini-form" id="miniForm" hidden>
         <div class="field">
-          <label for="f-nome">Nome</label>
-          <input type="text" id="f-nome" name="nome" placeholder="Il tuo nome" autocomplete="name">
+          <label for="f-nome">Nome *</label>
+          <input type="text" id="f-nome" name="nome" placeholder="Il tuo nome" autocomplete="name" required>
+        </div>
+        <div class="field">
+          <label for="f-email">Email *</label>
+          <input type="email" id="f-email" name="email" placeholder="nome@email.it" autocomplete="email" required>
         </div>
         <div class="field">
           <label for="f-sito">Sito web</label>
-          <input type="url" id="f-sito" name="sito" placeholder="iltuosito.it" autocomplete="url">
-        </div>
-        <div class="field">
-          <label for="f-email">Email</label>
-          <input type="email" id="f-email" name="email" placeholder="nome@email.it" autocomplete="email">
+          <input type="text" id="f-sito" name="sito" placeholder="iltuosito.it" autocomplete="url">
         </div>
         <div class="field" style="display:flex;align-items:flex-start;gap:.6rem">
           <input type="checkbox" id="f-privacy" name="privacy" required style="width:18px;height:18px;margin-top:2px;flex:none;accent-color:#5A45D8">
           <label for="f-privacy" style="font-size:.82rem;font-weight:400;color:rgba(255,255,255,.7);margin-bottom:0">Ho letto e accetto la <a href="/privacy" target="_blank" style="color:#c4b8ff;text-decoration:underline">Privacy Policy</a>. Acconsento al trattamento dei miei dati personali per rispondere alla mia richiesta.</label>
         </div>
-        <button type="submit" class="btn btn-primary btn-lg btn-block">Richiedi il report gratuito</button>
+        <button type="submit" class="btn btn-primary btn-lg btn-block" id="submitAuditBtn">Richiedi il report gratuito</button>
         <p class="reassure" style="text-align:center">Gratis e senza impegno. Ti rispondiamo in parole semplici.</p>
       </form>
     </div>
@@ -1454,19 +1453,54 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
     }
   }
 
-  /* --- MINI-FORM toggle nella CTA finale --- */
-  var toggleForm = document.getElementById("toggleForm");
-  var miniForm = document.getElementById("miniForm");
-  if(toggleForm && miniForm){
-    toggleForm.addEventListener("click", function(){
-      var open = miniForm.hasAttribute("hidden");
-      if(open){ miniForm.removeAttribute("hidden"); }
-      else { miniForm.setAttribute("hidden",""); }
-      toggleForm.setAttribute("aria-expanded", String(open));
-      if(open){ setTimeout(function(){ var f=document.getElementById("f-nome"); if(f) f.focus(); }, 50); }
+  /* --- MINI-FORM: apertura e submit --- */
+  var miniForm  = document.getElementById("miniForm");
+  var toggleBtn = document.getElementById("toggleForm");
+  var openBtn   = document.getElementById("openFormBtn");
+
+  function openForm(){
+    if(!miniForm) return;
+    miniForm.removeAttribute("hidden");
+    if(toggleBtn) toggleBtn.setAttribute("aria-expanded","true");
+    setTimeout(function(){ var f=document.getElementById("f-nome"); if(f) f.focus(); }, 80);
+  }
+
+  /* click sul bottone principale CTA → scroll + apri form */
+  if(openBtn){
+    openBtn.addEventListener("click", function(e){
+      e.preventDefault();
+      document.getElementById("cta-finale").scrollIntoView({behavior:"smooth"});
+      setTimeout(openForm, 350);
     });
-    miniForm.addEventListener("submit", function(){
-      miniForm.innerHTML = '<p style="color:#fff;text-align:center;font-weight:600;padding:1rem 0">Grazie! Ti ricontattiamo a breve per il tuo report gratuito.</p>';
+  }
+
+  /* toggle "Preferisci lasciarci i tuoi dati?" (opzionale, nascosto di default) */
+  if(toggleBtn && miniForm){
+    toggleBtn.addEventListener("click", function(){
+      var isHidden = miniForm.hasAttribute("hidden");
+      if(isHidden){ openForm(); } else { miniForm.setAttribute("hidden",""); toggleBtn.setAttribute("aria-expanded","false"); }
+    });
+  }
+
+  /* submit via fetch → /richiedi-audit */
+  if(miniForm){
+    miniForm.addEventListener("submit", function(e){
+      e.preventDefault();
+      var btn = document.getElementById("submitAuditBtn");
+      if(btn){ btn.disabled=true; btn.textContent="Invio in corso…"; }
+      fetch("/richiedi-audit", {method:"POST", body:new FormData(miniForm)})
+        .then(function(r){
+          if(r.ok){
+            miniForm.innerHTML='<p style="color:#fff;text-align:center;font-weight:600;font-size:1.05rem;padding:1rem 0">✅ Richiesta inviata! Ti contatteremo presto — controlla anche la tua email.</p>';
+          } else {
+            if(btn){ btn.disabled=false; btn.textContent="Richiedi il report gratuito"; }
+            alert("Qualcosa non ha funzionato. Riprova o scrivici direttamente.");
+          }
+        })
+        .catch(function(){
+          if(btn){ btn.disabled=false; btn.textContent="Richiedi il report gratuito"; }
+          alert("Errore di rete. Riprova tra qualche secondo.");
+        });
     });
   }
   /* --- COOKIE BANNER --- */
