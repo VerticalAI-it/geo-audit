@@ -861,8 +861,11 @@ async def scan(request: Request, url: str = Form(...)):
             for c in p.get("checks", []):
                 all_checks.append({**c, "url": p.get("url")})
         _sb_issue_sync(project["id"], user["id"], job_id, all_checks)
-    except Exception:
-        pass  # Supabase non critico per la visualizzazione
+    except Exception as e:
+        # Non blocca la visualizzazione, ma va loggato: altrimenti un salvataggio
+        # rotto è invisibile e l'utente ricade silenziosamente sul gate legacy.
+        body = getattr(getattr(e, "response", None), "text", "")
+        print(f"[/scan] salvataggio Supabase fallito: {e!r} {body}".strip())
 
     if job_id:
         return _apply_refresh(RedirectResponse(f"/r/{job_id}", status_code=303), refreshed)
