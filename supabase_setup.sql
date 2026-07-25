@@ -1,7 +1,8 @@
 -- GEO Audit · Fase B — Supabase migration
 -- Eseguire nel SQL Editor di Supabase Dashboard
+-- Idempotente: sicuro da rieseguire per intero anche se una parte esiste già.
 
-CREATE TABLE public.audits (
+CREATE TABLE IF NOT EXISTS public.audits (
     id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
     pending_email   TEXT,
@@ -22,16 +23,17 @@ CREATE TABLE public.audits (
 -- Row Level Security: gli utenti vedono solo i propri audit
 ALTER TABLE public.audits ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "own_audits" ON public.audits;
 CREATE POLICY "own_audits" ON public.audits
     FOR ALL
     USING (auth.uid() = user_id);
 
 -- Indici per performance del cron worker e del lookup pending_email
-CREATE INDEX audits_status_created  ON public.audits (status, created_at);
-CREATE INDEX audits_pending_email   ON public.audits (pending_email) WHERE pending_email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS audits_status_created  ON public.audits (status, created_at);
+CREATE INDEX IF NOT EXISTS audits_pending_email   ON public.audits (pending_email) WHERE pending_email IS NOT NULL;
 
 -- ── Richieste di contatto ────────────────────────────────────────────────────
-CREATE TABLE public.contact_requests (
+CREATE TABLE IF NOT EXISTS public.contact_requests (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     audit_id    UUID        REFERENCES public.audits(id) ON DELETE SET NULL,
     email       TEXT        NOT NULL,
@@ -45,7 +47,7 @@ CREATE TABLE public.contact_requests (
 
 ALTER TABLE public.contact_requests ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX contact_requests_created ON public.contact_requests (created_at DESC);
+CREATE INDEX IF NOT EXISTS contact_requests_created ON public.contact_requests (created_at DESC);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- GEO Audit · Fase C — Dashboard v2 (Project Portfolio + Project Detail)
@@ -54,7 +56,7 @@ CREATE INDEX contact_requests_created ON public.contact_requests (created_at DES
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- ── Progetti (Account → Progetto → Sito) ─────────────────────────────────────
-CREATE TABLE public.project (
+CREATE TABLE IF NOT EXISTS public.project (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID        REFERENCES auth.users(id) ON DELETE CASCADE,
     name        TEXT        NOT NULL,
@@ -67,11 +69,12 @@ CREATE TABLE public.project (
 
 ALTER TABLE public.project ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "own_projects" ON public.project;
 CREATE POLICY "own_projects" ON public.project
     FOR ALL
     USING (auth.uid() = user_id);
 
-CREATE INDEX project_user ON public.project (user_id);
+CREATE INDEX IF NOT EXISTS project_user ON public.project (user_id);
 
 -- ── Estensione di audits: link al progetto + dati strutturati dell'audit ────
 ALTER TABLE public.audits ADD COLUMN IF NOT EXISTS project_id      UUID REFERENCES public.project(id) ON DELETE SET NULL;
@@ -86,7 +89,7 @@ ALTER TABLE public.audits ADD COLUMN IF NOT EXISTS critical_count  INTEGER;
 CREATE INDEX IF NOT EXISTS audits_project_created ON public.audits (project_id, created_at DESC);
 
 -- ── Issue lifecycle (persistente fra più audit dello stesso progetto) ───────
-CREATE TABLE public.issue (
+CREATE TABLE IF NOT EXISTS public.issue (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id        UUID        REFERENCES public.project(id) ON DELETE CASCADE,
     user_id           UUID        REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -107,11 +110,12 @@ CREATE TABLE public.issue (
 
 ALTER TABLE public.issue ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "own_issues" ON public.issue;
 CREATE POLICY "own_issues" ON public.issue
     FOR ALL
     USING (auth.uid() = user_id);
 
-CREATE INDEX issue_project_status ON public.issue (project_id, status);
+CREATE INDEX IF NOT EXISTS issue_project_status ON public.issue (project_id, status);
 
 -- IMPORTANTE: dopo aver eseguito questa migration, forza il reload dello
 -- schema cache di PostgREST — altrimenti le nuove tabelle/colonne restano
