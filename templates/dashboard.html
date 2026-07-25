@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="it" data-theme="dark">
 <head>
+<script>try{var _t=localStorage.getItem('geo-theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>I tuoi progetti · GEO Audit · verticalai</title>
@@ -139,6 +140,7 @@
 
   .project-meta-row { display:flex; gap:var(--sp-4); flex-wrap:wrap; font-size:12.5px; color:var(--text-2) }
   .project-meta-row b { color:var(--text); font-weight:600 }
+  .project-meta-scan { flex-basis:100% }
 
   .project-badges { display:flex; gap:6px; flex-wrap:wrap }
 
@@ -161,6 +163,10 @@
       <span><span class="logo-ai">vertical</span>ai</span>
     </a>
     <div class="topbar-actions">
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambia tema">
+        <svg class="i-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </button>
       <span class="topbar-user" id="topbar-user"></span>
       <a href="/auth/logout" class="topbar-logout">Esci</a>
       <a href="/audit" class="btn btn--primary btn--sm">+ Nuova analisi</a>
@@ -190,6 +196,13 @@
   </main>
 
   <script>
+    document.getElementById("theme-toggle").addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("geo-theme", next); } catch (e) {}
+    });
+
     const projects  = {{PROJECTS_JSON}};
     const summary   = {{SUMMARY_JSON}};
     const userEmail = {{USER_EMAIL}};
@@ -257,7 +270,7 @@
           <div class="project-meta-row">
             <span><b>${p.critical_count != null ? p.critical_count : "—"}</b> criticità</span>
             <span><b>${p.pages_count != null ? p.pages_count : "—"}</b> pagine</span>
-            <span>Ultimo scan <b>${fmtDate(p.last_scan)}</b></span>
+            <span class="project-meta-scan">Ultimo scan <b>${fmtDate(p.last_scan)}</b></span>
           </div>
           <div class="ai-not-configured">AI Visibility · AI Traffic · Citations: not configured</div>
         </a>`;

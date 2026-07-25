@@ -719,17 +719,29 @@ document.getElementById('geo-gate-form').addEventListener('submit', async functi
 
 
 def _with_topbar(html: str, email: str) -> str:
-    """Inietta una barra in alto con l'email dell'utente loggato e logout."""
+    """Inietta una barra in alto con toggle tema, email dell'utente loggato e logout."""
     topbar = (
         '<div id="auth-topbar" style="position:fixed;top:0;left:0;right:0;height:48px;'
-        'display:flex;align-items:center;justify-content:flex-end;gap:18px;padding:0 22px;'
+        'display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:0 22px;'
         'font-family:var(--font-mono);font-size:12px;color:var(--text-3);'
         'background:var(--canvas);border-bottom:1px solid var(--border);z-index:60;box-sizing:border-box">'
+        '<button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambia tema">'
+        '<svg class="i-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/>'
+        '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>'
+        '<svg class="i-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>'
+        '</button>'
         '<a href="/dashboard" style="color:var(--text-2);text-decoration:none">I tuoi report</a>'
         f'<span>{geo_audit.esc(email)}</span>'
         '<a href="/auth/logout" style="color:var(--text-2);text-decoration:none">Esci</a>'
         '</div>'
         '<style>body{padding-top:70px!important}</style>'
+        '<script>document.getElementById("theme-toggle").addEventListener("click",function(){'
+        'var cur=document.documentElement.getAttribute("data-theme")==="dark"?"dark":"light";'
+        'var next=cur==="dark"?"light":"dark";'
+        'document.documentElement.setAttribute("data-theme",next);'
+        'try{localStorage.setItem("geo-theme",next);}catch(e){}});</script>'
     )
     return html.replace("<body>", "<body>" + topbar, 1)
 
@@ -1145,12 +1157,16 @@ def _aggregate_page_check(pages_detail: list, check_id: str) -> dict:
             "ok": ok, "warn": warn, "fail": fail, "total": len(matches)}
 
 
-def _section_card(project_id: str, tab_key: str, label: str, summary: str, soon: bool) -> str:
+def _section_card(project_id: str, tab_key: str, label: str, stat_num: str, stat_label: str,
+                   summary: str, soon: bool) -> str:
     badge = '<span class="badge badge--neutral">Coming soon</span>' if soon else ''
     cls = "card section-card" + (" coming-soon-card" if soon else "")
     return (
         f'<a href="/project/{project_id}?tab={tab_key}" class="{cls}">'
-        f'{badge}<div class="card-title" style="margin-top:{"8px" if soon else "0"}">{geo_audit.esc(label)}</div>'
+        f'{badge}'
+        f'<div class="section-card-stat"><span class="section-stat-num">{geo_audit.esc(stat_num)}</span>'
+        f'<span class="section-stat-label">{geo_audit.esc(stat_label)}</span></div>'
+        f'<div class="card-title">{geo_audit.esc(label)}</div>'
         f'<p class="card-sub">{summary}</p>'
         '<span class="section-card-link">Apri dettaglio →</span>'
         '</a>'
@@ -1163,24 +1179,31 @@ def _overview_sections_grid(project_id: str, latest: dict | None, open_issues: i
         pages_with_issues = len([p for p in pages if any(c.get("status") in ("warn", "fail") for c in (p.get("checks") or []))])
         site_checks = latest.get("site_checks") or []
         site_ok = len([c for c in site_checks if c.get("status") == "ok"])
+
+        pages_stat = str(len(pages)) if pages else "—"
         pages_summary = f'{len(pages)} pagine analizzate, {pages_with_issues} con almeno un problema.' if pages else "Nessuna pagina analizzata."
+
+        tech_stat = f'{round(100 * site_ok / len(site_checks))}%' if site_checks else "—"
         technical_summary = f'{site_ok}/{len(site_checks)} check di accesso e infrastruttura superati.' if site_checks else "Nessun dato tecnico disponibile."
+
         areas = latest.get("areas") or []
+        audit_stat = str(latest.get("overall")) if latest.get("overall") is not None else "—"
         audit_summary = (f'Punteggio {latest.get("overall", "—")}/100 su {len(areas)} aree, '
                           f'area migliore «{geo_audit.esc(areas[-1]["key"])}».') if areas else "Nessun audit ancora eseguito."
     else:
+        pages_stat = tech_stat = audit_stat = "—"
         pages_summary = technical_summary = audit_summary = "Nessun audit ancora eseguito."
 
     opportunities_summary = f'{open_issues} issue aperte' + (f', {resolved_recent} risolte di recente.' if resolved_recent else '.')
 
     cards = [
-        _section_card(project_id, "audit", "Audit", audit_summary, False),
-        _section_card(project_id, "pages", "Pages", pages_summary, False),
-        _section_card(project_id, "technical", "Technical GEO", technical_summary, False),
-        _section_card(project_id, "opportunities", "Opportunities", opportunities_summary, False),
+        _section_card(project_id, "audit", "Audit", audit_stat, "Punteggio GEO", audit_summary, False),
+        _section_card(project_id, "pages", "Pages", pages_stat, "pagine analizzate", pages_summary, False),
+        _section_card(project_id, "technical", "Technical GEO", tech_stat, "check superati", technical_summary, False),
+        _section_card(project_id, "opportunities", "Opportunities", str(open_issues), "issue aperte", opportunities_summary, False),
     ]
     for tab_key, (label, desc) in _COMING_SOON_TABS.items():
-        cards.append(_section_card(project_id, tab_key, label, desc, True))
+        cards.append(_section_card(project_id, tab_key, label, "—", "non configurato", desc, True))
 
     return f'<div class="card-title" style="margin:24px 0 12px">Tutte le sezioni</div><div class="section-grid">{"".join(cards)}</div>'
 

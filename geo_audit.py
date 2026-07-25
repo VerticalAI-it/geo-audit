@@ -476,35 +476,35 @@ def fmt_date(): d = datetime.now(); return f"{d.day} {MONTHS[d.month]} {d.year}"
 def gauge(score):
     r=52; c=2*math.pi*r; off=c*(1-score/100); col=barcol(score)
     return (f'<svg width="146" height="146" viewBox="0 0 150 150">'
-      f'<circle cx="75" cy="75" r="{r}" fill="none" stroke="#E6E6EF" stroke-width="14"/>'
+      f'<circle cx="75" cy="75" r="{r}" fill="none" style="stroke:var(--line)" stroke-width="14"/>'
       f'<circle cx="75" cy="75" r="{r}" fill="none" stroke="{col}" stroke-width="14" stroke-linecap="round" '
       f'stroke-dasharray="{c:.1f}" stroke-dashoffset="{off:.1f}" transform="rotate(-90 75 75)"/>'
-      f'<text x="75" y="68" text-anchor="middle" font-family="Space Grotesk" font-weight="800" font-size="40" fill="#16151E">{score}</text>'
-      f'<text x="75" y="90" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#76768A">/ 100</text></svg>')
+      f'<text x="75" y="68" text-anchor="middle" font-family="Space Grotesk" font-weight="800" font-size="40" style="fill:var(--ink)">{score}</text>'
+      f'<text x="75" y="90" text-anchor="middle" font-family="JetBrains Mono" font-size="11" style="fill:var(--muted)">/ 100</text></svg>')
 
 def radar(cats):
     n = len(cats)
     if n < 3: return ""
     cx = 160; cy = 140; R = 90
-    rings = "".join(f'<circle cx="{cx}" cy="{cy}" r="{R*k/100:.0f}" fill="none" stroke="#E6E6EF" stroke-width="1"/>' for k in (25,50,75,100))
+    rings = "".join(f'<circle cx="{cx}" cy="{cy}" r="{R*k/100:.0f}" fill="none" style="stroke:var(--line)" stroke-width="1"/>' for k in (25,50,75,100))
     axes = ""; labels = ""; pts = []
     for i,(name,sc) in enumerate(cats):
         ang = -math.pi/2 + 2*math.pi*i/n
         ax = cx + R*math.cos(ang); ay = cy + R*math.sin(ang)
-        axes += f'<line x1="{cx}" y1="{cy}" x2="{ax:.0f}" y2="{ay:.0f}" stroke="#E6E6EF"/>'
+        axes += f'<line x1="{cx}" y1="{cy}" x2="{ax:.0f}" y2="{ay:.0f}" style="stroke:var(--line)"/>'
         rr = R*sc/100; pts.append(f"{cx+rr*math.cos(ang):.0f},{cy+rr*math.sin(ang):.0f}")
         lx = cx + (R+16)*math.cos(ang); ly = cy + (R+16)*math.sin(ang)
         anc = "middle" if abs(math.cos(ang))<0.3 else ("start" if math.cos(ang)>0 else "end")
         labels += (f'<text x="{lx:.0f}" y="{ly+3:.0f}" text-anchor="{anc}" font-family="JetBrains Mono" '
-                   f'font-size="9.5" fill="#76768A">{esc(SHORT.get(name,name))}</text>')
-    poly = f'<polygon points="{" ".join(pts)}" fill="rgba(90,69,216,.18)" stroke="#5A45D8" stroke-width="2"/>'
-    dots = "".join(f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" r="3" fill="#5A45D8"/>' for p in pts)
+                   f'font-size="9.5" style="fill:var(--muted)">{esc(SHORT.get(name,name))}</text>')
+    poly = f'<polygon points="{" ".join(pts)}" fill="rgba(124,107,236,.18)" style="stroke:var(--violet)" stroke-width="2"/>'
+    dots = "".join(f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" r="3" style="fill:var(--violet)"/>' for p in pts)
     return f'<svg width="300" height="285" viewBox="0 0 320 285">{rings}{axes}{poly}{dots}{labels}</svg>'
 
 def donut(ok, warn, fail):
     total = ok + warn + fail or 1
     r = 54; C = 2*math.pi*r; cx = cy = 70
-    out = [f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#E6E6EF" stroke-width="16"/>']
+    out = [f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" style="stroke:var(--line)" stroke-width="16"/>']
     acc = 0.0
     for val, col in [(ok,"#0E9F6E"),(warn,"#C77700"),(fail,"#D92D34")]:
         if val <= 0: continue
@@ -513,8 +513,8 @@ def donut(ok, warn, fail):
                    f'stroke-dasharray="{frac*C:.2f} {C:.2f}" stroke-dashoffset="{-acc*C:.2f}" '
                    f'transform="rotate(-90 {cx} {cy})" stroke-linecap="butt"/>')
         acc += frac
-    out.append(f'<text x="{cx}" y="{cy-2}" text-anchor="middle" font-family="Space Grotesk" font-weight="800" font-size="24" fill="#16151E">{total}</text>')
-    out.append(f'<text x="{cx}" y="{cy+15}" text-anchor="middle" font-family="JetBrains Mono" font-size="8.5" fill="#76768A">CONTROLLI</text>')
+    out.append(f'<text x="{cx}" y="{cy-2}" text-anchor="middle" font-family="Space Grotesk" font-weight="800" font-size="24" style="fill:var(--ink)">{total}</text>')
+    out.append(f'<text x="{cx}" y="{cy+15}" text-anchor="middle" font-family="JetBrains Mono" font-size="8.5" style="fill:var(--muted)">CONTROLLI</text>')
     return f'<svg width="140" height="140" viewBox="0 0 140 140">{"".join(out)}</svg>'
 
 def scale_bar(score):
@@ -552,14 +552,14 @@ LOGO = ('<span class="logo"><svg width="22" height="22" viewBox="0 0 22 22" fill
   '<b>vertical</b><span style="color:#B3A8F7">ai</span></span>')
 
 CSS = """
-:root{--ink:#16151E;--muted:#76768A;--line:#E6E6EF;--soft:#F3F1FB;--violet:#5A45D8;--violet-deep:#3D2CB8}
+:root{--ink:#16151E;--muted:#76768A;--line:#E6E6EF;--soft:#F3F1FB;--violet:#5A45D8;--violet-deep:#3D2CB8;--accent-dark:#16151E}
 *{box-sizing:border-box;margin:0;padding:0}html{font-size:15px}
 body{font-family:"Inter",sans-serif;color:var(--ink);background:linear-gradient(135deg,#EAE6FB 0%,#F0EDF8 60%,#E8EEFB 100%);background-attachment:fixed;line-height:1.55}
 .mono{font-family:"JetBrains Mono",monospace}
 .sheet{background:#fff;max-width:880px;margin:28px auto;box-shadow:0 4px 6px rgba(90,69,216,.06),0 16px 48px rgba(20,16,60,.14);border-radius:20px;overflow:hidden}
 h1,h2,h3{font-family:"Space Grotesk",sans-serif}
 .logo b{font-family:"Space Grotesk",sans-serif}
-.top{background:var(--ink);color:#fff;padding:30px 56px 26px}
+.top{background:var(--accent-dark);color:#fff;padding:30px 56px 26px}
 .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}
 .logo{display:inline-flex;align-items:center;gap:8px;font-size:17px;color:#fff;font-family:"Space Grotesk",sans-serif;font-weight:700}.logo b{font-weight:800}
 .kicker{font-family:"JetBrains Mono";font-size:11px;letter-spacing:3px;color:#B3A8F7;text-transform:uppercase}
@@ -606,7 +606,7 @@ tr:first-child td{border-top:none}.cdot{width:18px}.dot{display:inline-block;wid
 .pill{font-family:"JetBrains Mono";font-size:9.5px;font-weight:600;border:1px solid;border-radius:20px;padding:2px 8px}
 .adesc{font-size:12.5px;color:var(--muted);line-height:1.5}
 .notes{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px 20px;font-size:12.5px;color:#46435A;line-height:1.6}.notes b{color:var(--ink)}
-.cta{background:var(--ink);color:#fff;padding:40px 56px;margin-top:32px;display:flex;justify-content:space-between;align-items:flex-start;gap:40px;flex-wrap:wrap}
+.cta{background:var(--accent-dark);color:#fff;padding:40px 56px;margin-top:32px;display:flex;justify-content:space-between;align-items:flex-start;gap:40px;flex-wrap:wrap}
 .cta-l{flex:1;min-width:220px}
 .cta-badge{display:inline-block;background:rgba(90,69,216,.3);color:#B3A8F7;font-family:"JetBrains Mono";font-size:10px;letter-spacing:2.5px;text-transform:uppercase;padding:4px 11px;border-radius:20px;margin-bottom:14px}
 .cta h3{font-family:"Space Grotesk";font-size:23px;font-weight:800;margin:0 0 12px;line-height:1.25;color:#fff;letter-spacing:-.01em}
@@ -625,6 +625,22 @@ tr:first-child td{border-top:none}.cdot{width:18px}.dot{display:inline-block;wid
 .cta-btn:hover{background:#4A37BE}
 .cta-ok{display:none;color:#3DDC97;font-size:14px;margin-top:12px;font-weight:600;text-align:center}
 .foot{padding:16px 56px;font-size:11px;color:var(--muted);font-family:"JetBrains Mono";display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;border-top:1px solid var(--line)}
+.theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;padding:0;margin-left:10px}
+.theme-toggle:hover{background:rgba(255,255,255,.12)}
+.theme-toggle svg{width:15px;height:15px}
+.theme-toggle .i-moon{display:block}.theme-toggle .i-sun{display:none}
+[data-theme="dark"] .theme-toggle .i-moon{display:none}[data-theme="dark"] .theme-toggle .i-sun{display:block}
+/* Tema scuro (allineato al resto del sito): solo a schermo, mai in stampa/PDF */
+@media screen{
+[data-theme="dark"]{--ink:#F4F3F8;--muted:#9C99B5;--line:#272636;--soft:#1A1925;--violet:#7C6BEC;--violet-deep:#B3A8F7}
+[data-theme="dark"] body{background:radial-gradient(140% 100% at 70% -5%,#1E1A38 0%,#0B0A12 60%);background-attachment:fixed}
+[data-theme="dark"] .sheet{background:#131220;box-shadow:0 4px 6px rgba(0,0,0,.3),0 16px 48px rgba(0,0,0,.45)}
+[data-theme="dark"] .verdict{color:var(--ink)}
+[data-theme="dark"] .notes{color:var(--muted)}
+[data-theme="dark"] .win .badge{background:rgba(124,107,236,.18);border-color:rgba(124,107,236,.4)}
+[data-theme="dark"] .allok{color:#3DDC97}
+[data-theme="dark"] .cta-badge{background:rgba(124,107,236,.25)}
+}
 @page{size:A4;margin:13mm 0}
 @media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none;border-radius:0}.sec,.summary,.top,.cta,.foot{padding-left:15mm;padding-right:15mm}}
 @media (max-width:760px){.sheet{margin:8px;border-radius:14px}.top,.sec,.cta,.foot{padding-left:22px;padding-right:22px}.top h1{font-size:25px}
@@ -692,7 +708,9 @@ def render_report(domain, site, pages, render_used, respect_robots):
     worst = min(cats, key=lambda x: x[1]) if cats else ("—", 0)
     repeated = [a for a in acts if a[4] > 1]
 
-    head = ('<!doctype html><html lang="it"><head><meta charset="utf-8">'
+    theme_init = ("<script>try{var _t=localStorage.getItem('geo-theme')||'dark';"
+      "document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>")
+    head = ('<!doctype html><html lang="it" data-theme="dark"><head>'+theme_init+'<meta charset="utf-8">'
       '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — '+esc(domain)+'</title>'
       '<link rel="preconnect" href="https://fonts.googleapis.com">'
       '<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800'
@@ -701,7 +719,12 @@ def render_report(domain, site, pages, render_used, respect_robots):
 
     rmode = '<span class="on">rendering JS attivo</span>' if render_used else '<span class="off">rendering JS non attivo</span>'
     robmode = '<span class="off">robots rispettato</span>' if respect_robots else '<span class="on">robots superato (audit)</span>'
-    top = (f'<div class="top"><div class="topbar">{LOGO}<span class="kicker">GEO Audit Report</span></div>'
+    theme_btn = ('<button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambia tema">'
+      '<svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+      '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>'
+      '<svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+      '<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></button>')
+    top = (f'<div class="top"><div class="topbar">{LOGO}<span class="kicker">GEO Audit Report</span>{theme_btn}</div>'
       f'<h1>{esc(domain)}</h1><div class="meta"><span>Data <b>{fmt_date()}</b></span>'
       f'<span>Pagine analizzate <b>{len(pages)}</b></span><span>Preparato da <b>verticalai.it</b></span></div>'
       f'<div class="scaninfo">{rmode} · {robmode} · <span>engine v{ENGINE_VERSION}</span></div></div>')
@@ -831,8 +854,14 @@ def render_report(domain, site, pages, render_used, respect_robots):
     )
     foot = f'<div class="foot"><span>verticalai.it · GEO Audit</span><span>Generato il {fmt_date()}</span></div>'
 
+    theme_script = ('<script>document.getElementById("theme-toggle").addEventListener("click",function(){'
+      'var cur=document.documentElement.getAttribute("data-theme")==="dark"?"dark":"light";'
+      'var next=cur==="dark"?"light":"dark";'
+      'document.documentElement.setAttribute("data-theme",next);'
+      'try{localStorage.setItem("geo-theme",next);}catch(e){}});</script>')
+
     return (head + top + summ + health + profile + dist + site_sec + wins_sec
-            + act_sec + pages_sec + notes + cta + foot + "</div></body></html>"), overall
+            + act_sec + pages_sec + notes + cta + foot + theme_script + "</div></body></html>"), overall
 
 # ============================================================ MAIN
 def build_site_checks(site):
