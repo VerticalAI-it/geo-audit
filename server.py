@@ -18,18 +18,29 @@ if os.path.isdir(_STATIC_DIR):
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 # ── Config ──────────────────────────────────────────────────────────────────
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_SVC = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+SUPABASE_URL  = os.environ["SUPABASE_URL"]
+SUPABASE_SVC  = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+SUPABASE_ANON = os.environ.get("SUPABASE_ANON_KEY", "")
 RESEND_KEY   = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL   = os.environ.get("FROM_EMAIL", "")
 SITE_URL     = os.environ.get("SITE_URL", "").rstrip("/")
 _SECRET      = os.environ.get("CRON_SECRET", "fallback-secret").encode()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-FORM_HTML    = open(os.path.join(_HERE, "templates", "form.html"),    encoding="utf-8").read()
-HOME_HTML    = open(os.path.join(_HERE, "templates", "home.html"),    encoding="utf-8").read()
-PRIVACY_HTML = open(os.path.join(_HERE, "templates", "privacy.html"), encoding="utf-8").read()
-COOKIE_HTML  = open(os.path.join(_HERE, "templates", "cookie.html"),  encoding="utf-8").read()
+FORM_HTML     = open(os.path.join(_HERE, "templates", "form.html"),          encoding="utf-8").read()
+HOME_HTML     = open(os.path.join(_HERE, "templates", "home.html"),          encoding="utf-8").read()
+PRIVACY_HTML  = open(os.path.join(_HERE, "templates", "privacy.html"),       encoding="utf-8").read()
+COOKIE_HTML   = open(os.path.join(_HERE, "templates", "cookie.html"),        encoding="utf-8").read()
+LOGIN_HTML    = open(os.path.join(_HERE, "templates", "login.html"),         encoding="utf-8").read()
+AUTH_CB_HTML  = open(os.path.join(_HERE, "templates", "auth_callback.html"), encoding="utf-8").read()
+DASHBOARD_HTML = open(os.path.join(_HERE, "templates", "dashboard.html"),    encoding="utf-8").read()
+
+
+def _render(tpl: str, **kv) -> str:
+    """Sostituisce i placeholder {{CHIAVE}} nel template."""
+    for k, v in kv.items():
+        tpl = tpl.replace("{{" + k + "}}", v)
+    return tpl
 
 # Supabase REST headers (service role bypassa RLS)
 _SB_H = {
@@ -78,6 +89,16 @@ def _sb_get_by_email(email: str) -> list:
     return r.json() if r.ok else []
 
 
+def _sb_get_by_user(user_id: str) -> list:
+    r = req.get(f"{SUPABASE_URL}/rest/v1/audits",
+                headers=_SB_H,
+                params={"user_id": f"eq.{user_id}",
+                        "select": "id,url,domain,overall,grade,status,pages_count,created_at",
+                        "order": "domain.asc,created_at.desc"},
+                timeout=10)
+    return r.json() if r.ok else []
+
+
 # ── Token helpers ────────────────────────────────────────────────────────────
 
 def _make_token(job_id: str) -> str:
@@ -93,6 +114,74 @@ def _has_access(request: Request, job_id: str) -> bool:
     """True se l'utente ha già un cookie di accesso valido per questo report."""
     cookie = request.cookies.get(f"geo-access-{job_id}", "")
     return _valid_token(job_id, cookie)
+
+
+# ── Auth helpers (Supabase Auth · magic link) ────────────────────────────────
+
+_AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 giorni (rinnovato ad ogni refresh)
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    response.set_cookie("sb-access-token", access_token,
+                         httponly=True, secure=True, samesite="lax",
+                         max_age=_AUTH_COOKIE_MAX_AGE)
+    response.set_cookie("sb-refresh-token", refresh_token,
+                         httponly=True, secure=True, samesite="lax",
+                         max_age=_AUTH_COOKIE_MAX_AGE)
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie("sb-access-token")
+    response.delete_cookie("sb-refresh-token")
+
+
+def _sb_auth_user(access_token: str) -> dict | None:
+    r = req.get(f"{SUPABASE_URL}/auth/v1/user",
+                headers={"apikey": SUPABASE_ANON, "Authorization": f"Bearer {access_token}"},
+                timeout=10)
+    return r.json() if r.ok else None
+
+
+def _sb_auth_refresh(refresh_token: str) -> dict | None:
+    r = req.post(f"{SUPABASE_URL}/auth/v1/token",
+                 params={"grant_type": "refresh_token"},
+                 json={"refresh_token": refresh_token},
+                 headers={"apikey": SUPABASE_ANON, "Content-Type": "application/json"},
+                 timeout=10)
+    return r.json() if r.ok else None
+
+
+def _current_user(request: Request) -> tuple[dict | None, dict | None]:
+    """Utente loggato (via cookie sb-access-token), con refresh trasparente.
+    Ritorna (user, refreshed_tokens): refreshed_tokens è {access_token,
+    refresh_token} da riscrivere nei cookie della risposta se non None
+    (i cookie iniettati via Response non sopravvivono se la route ritorna
+    direttamente un altro oggetto Response, quindi il refresh va applicato
+    esplicitamente da chi chiama)."""
+    access = request.cookies.get("sb-access-token", "")
+    if access:
+        user = _sb_auth_user(access)
+        if user:
+            return user, None
+
+    refresh = request.cookies.get("sb-refresh-token", "")
+    if not refresh:
+        return None, None
+
+    session = _sb_auth_refresh(refresh)
+    if not session or not session.get("access_token"):
+        return None, None
+
+    user = _sb_auth_user(session["access_token"])
+    if not user:
+        return None, None
+    return user, {"access_token": session["access_token"], "refresh_token": session["refresh_token"]}
+
+
+def _apply_refresh(response: Response, refreshed: dict | None) -> Response:
+    if refreshed:
+        _set_auth_cookies(response, refreshed["access_token"], refreshed["refresh_token"])
+    return response
 
 
 # ── Email helpers ─────────────────────────────────────────────────────────────
@@ -390,8 +479,9 @@ def _page(title, body):
     )
 
 
-def _inject_bar(html: str, job_id: str = "", email: str = "") -> str:
+def _inject_bar(html: str, job_id: str = "", email: str = "", dashboard_link: bool = False) -> str:
     """Barra azioni per report sbloccato. Sostituisce il placeholder __JOB_ID__ e pre-compila la mail nel form CTA."""
+    reports_href, reports_label = ("/dashboard", "I tuoi report") if dashboard_link else ("/miei-report", "I miei report")
     bar_css = (
         "<style>"
         "@media print{#geo-bar{display:none!important}}"
@@ -409,7 +499,7 @@ def _inject_bar(html: str, job_id: str = "", email: str = "") -> str:
         '<div id="geo-bar">'
         '<a href="#" class="bar-primary" onclick="window.print();return false;"'
         ' aria-label="Scarica PDF">↓ PDF</a>'
-        '<a href="/miei-report" class="bar-secondary">I miei report</a>'
+        f'<a href="{reports_href}" class="bar-secondary">{reports_label}</a>'
         '<a href="/audit" class="bar-secondary">Nuova analisi</a>'
         '</div>'
     )
@@ -504,6 +594,22 @@ document.getElementById('geo-gate-form').addEventListener('submit', async functi
     return html.replace("</body>", gate + "</body>", 1)
 
 
+def _with_topbar(html: str, email: str) -> str:
+    """Inietta una barra in alto con l'email dell'utente loggato e logout."""
+    topbar = (
+        '<div id="auth-topbar" style="position:fixed;top:0;left:0;right:0;height:48px;'
+        'display:flex;align-items:center;justify-content:flex-end;gap:18px;padding:0 22px;'
+        'font-family:var(--font-mono);font-size:12px;color:var(--text-3);'
+        'background:var(--canvas);border-bottom:1px solid var(--border);z-index:60;box-sizing:border-box">'
+        '<a href="/dashboard" style="color:var(--text-2);text-decoration:none">I tuoi report</a>'
+        f'<span>{geo_audit.esc(email)}</span>'
+        '<a href="/auth/logout" style="color:var(--text-2);text-decoration:none">Esci</a>'
+        '</div>'
+        '<style>body{padding-top:70px!important}</style>'
+    )
+    return html.replace("<body>", "<body>" + topbar, 1)
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -511,9 +617,49 @@ def index():
     return HOME_HTML
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return _render(LOGIN_HTML, SUPABASE_URL=SUPABASE_URL, SUPABASE_ANON_KEY=SUPABASE_ANON)
+
+
+@app.get("/auth/callback", response_class=HTMLResponse)
+def auth_callback_page():
+    return _render(AUTH_CB_HTML, SUPABASE_URL=SUPABASE_URL, SUPABASE_ANON_KEY=SUPABASE_ANON)
+
+
+@app.post("/auth/set-session")
+async def auth_set_session(request: Request, response: Response):
+    body = await request.json()
+    access_token  = (body.get("access_token")  or "").strip()
+    refresh_token = (body.get("refresh_token") or "").strip()
+    next_path     = body.get("next") or "/audit"
+    if not next_path.startswith("/"):
+        next_path = "/audit"
+    if not access_token or not refresh_token:
+        return Response(status_code=400)
+
+    user = _sb_auth_user(access_token)
+    if not user:
+        return Response(status_code=401)
+
+    _set_auth_cookies(response, access_token, refresh_token)
+    return {"redirect": next_path}
+
+
+@app.get("/auth/logout")
+def auth_logout():
+    resp = RedirectResponse("/", status_code=303)
+    _clear_auth_cookies(resp)
+    return resp
+
+
 @app.get("/audit", response_class=HTMLResponse)
-def audit_form():
-    return FORM_HTML
+def audit_form(request: Request):
+    user, refreshed = _current_user(request)
+    if not user:
+        return RedirectResponse("/login?next=/audit", status_code=303)
+    resp = HTMLResponse(_with_topbar(FORM_HTML, user.get("email", "")))
+    return _apply_refresh(resp, refreshed)
 
 
 @app.get("/privacy", response_class=HTMLResponse)
@@ -532,10 +678,14 @@ def health():
 
 
 @app.post("/scan")
-async def scan(url: str = Form(...)):
+async def scan(request: Request, url: str = Form(...)):
+    user, refreshed = _current_user(request)
+    if not user:
+        return RedirectResponse("/login?next=/audit", status_code=303)
+
     url = (url or "").strip()
     if not url:
-        return RedirectResponse("/audit", status_code=303)
+        return _apply_refresh(RedirectResponse("/audit", status_code=303), refreshed)
     if url.startswith("//"):
         url = "https:" + url
     elif not url.startswith(("http://", "https://")):
@@ -544,17 +694,19 @@ async def scan(url: str = Form(...)):
     try:
         res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
     except Exception as e:
-        return HTMLResponse(
+        resp = HTMLResponse(
             _page("Errore",
                   f"<h2>Non riesco ad analizzare questo sito</h2>"
                   f"<p>{geo_audit.esc(str(e))}</p><p><a href='/audit'>← Riprova</a></p>"),
             status_code=400,
         )
+        return _apply_refresh(resp, refreshed)
 
-    # Salva su Supabase (non bloccante se fallisce)
+    # Salva su Supabase, associato all'utente loggato (non bloccante se fallisce)
     job_id = None
     try:
         row = _sb_insert({
+            "user_id":    user["id"],
             "url":        url,
             "status":     "done",
             "domain":     res.get("domain"),
@@ -569,10 +721,11 @@ async def scan(url: str = Form(...)):
         pass  # Supabase non critico per la visualizzazione
 
     if job_id:
-        return RedirectResponse(f"/r/{job_id}", status_code=303)
+        return _apply_refresh(RedirectResponse(f"/r/{job_id}", status_code=303), refreshed)
     # Fallback se Supabase non disponibile: mostra comunque il gate inline
     # (il link email non funzionerà, ma il gate appare)
-    return HTMLResponse(_inject_gate(res["html"], "offline"))
+    resp = HTMLResponse(_inject_gate(res["html"], "offline"))
+    return _apply_refresh(resp, refreshed)
 
 
 @app.get("/r/{job_id}", response_class=HTMLResponse)
@@ -592,10 +745,51 @@ def report(job_id: str, request: Request, token: str = ""):
             status_code=404,
         )
 
+    # Report associato a un account: richiede login come proprietario, niente più gate email
+    if job.get("user_id"):
+        user, refreshed = _current_user(request)
+        if not user or user["id"] != job["user_id"]:
+            return RedirectResponse(f"/login?next=/r/{job_id}", status_code=303)
+        resp = HTMLResponse(_inject_bar(job["html"], job_id, user.get("email", ""), dashboard_link=True))
+        return _apply_refresh(resp, refreshed)
+
+    # Report legacy anonimo: flusso invariato (gate email + cookie HMAC)
     if _has_access(request, job_id):
         return HTMLResponse(_inject_bar(job["html"], job_id, job.get("pending_email", "")))
 
     return HTMLResponse(_inject_gate(job["html"], job_id))
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request):
+    user, refreshed = _current_user(request)
+    if not user:
+        return RedirectResponse("/login?next=/dashboard", status_code=303)
+
+    rows = _sb_get_by_user(user["id"])
+
+    groups: dict[str, list] = {}
+    for r in rows:
+        key = r.get("domain") or r.get("url") or "—"
+        groups.setdefault(key, []).append(r)
+
+    domains = []
+    for domain, runs in groups.items():
+        runs.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        for i, r in enumerate(runs):
+            prev = runs[i + 1] if i + 1 < len(runs) else None
+            if r.get("overall") is not None and prev and prev.get("overall") is not None:
+                r["delta"] = r["overall"] - prev["overall"]
+            else:
+                r["delta"] = None
+        domains.append({"domain": domain, "runs": runs})
+    domains.sort(key=lambda d: d["runs"][0].get("created_at") or "", reverse=True)
+
+    html = _render(DASHBOARD_HTML,
+                    AUDITS_JSON=json.dumps(domains),
+                    USER_EMAIL=json.dumps(user.get("email", "")))
+    resp = HTMLResponse(html)
+    return _apply_refresh(resp, refreshed)
 
 
 @app.post("/unlock/{job_id}")

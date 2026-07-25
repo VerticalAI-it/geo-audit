@@ -48,6 +48,18 @@
   .logo-ai { color:var(--brand-text) }
 
   .topbar-actions { display:flex; align-items:center; gap:var(--sp-3) }
+  .topbar-user {
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-3);
+  }
+  .topbar-logout {
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-2);
+    text-decoration:none;
+  }
+  .topbar-logout:hover { color:var(--text) }
 
   main {
     max-width:820px;
@@ -62,31 +74,55 @@
   }
   .page-head p { color:var(--text-2); font-size:15px }
 
-  /* Lista audit */
-  .audit-list { display:flex; flex-direction:column; gap:var(--sp-3) }
+  /* Gruppi per dominio */
+  .domain-list { display:flex; flex-direction:column; gap:var(--sp-5) }
+  .domain-group {
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--r-lg);
+    box-shadow:var(--sh-xs);
+    overflow:hidden;
+  }
 
   .audit-card {
     display:flex;
     align-items:center;
     gap:var(--sp-4);
-    background:var(--surface);
-    border:1px solid var(--border);
-    border-radius:var(--r-lg);
     padding:var(--sp-4) var(--sp-5);
     text-decoration:none;
     color:var(--text);
-    transition:border-color var(--t-fast), box-shadow var(--t-fast);
-    box-shadow:var(--sh-xs);
+    transition:background var(--t-fast);
   }
   .audit-card:hover {
-    border-color:var(--brand);
-    box-shadow:var(--sh-sm);
+    background:var(--surface-2);
     text-decoration:none;
   }
   .audit-card:focus-visible {
     outline:2px solid var(--focus);
     outline-offset:2px;
   }
+  .audit-card.latest {
+    border-bottom:1px solid var(--border);
+  }
+  .audit-card.history {
+    padding-top:var(--sp-3);
+    padding-bottom:var(--sp-3);
+  }
+  .audit-card.history:not(:last-child) {
+    border-bottom:1px solid var(--border);
+  }
+
+  .delta-pill {
+    font-family:var(--font-mono);
+    font-size:11px;
+    font-weight:600;
+    padding:3px 8px;
+    border-radius:var(--r-pill);
+    flex-shrink:0;
+  }
+  .delta-up   { background:var(--success-bg); color:var(--success) }
+  .delta-down { background:var(--danger-bg);  color:var(--danger) }
+  .delta-flat { background:var(--surface-2);  color:var(--text-3) }
 
   /* Score number widget */
   .score-block {
@@ -181,6 +217,8 @@
       <span><span class="logo-ai">vertical</span>ai</span>
     </a>
     <div class="topbar-actions">
+      <span class="topbar-user" id="topbar-user"></span>
+      <a href="/auth/logout" class="topbar-logout">Esci</a>
       <a href="/audit" class="btn btn--primary btn--sm">+ Nuova analisi</a>
     </div>
   </header>
@@ -188,13 +226,15 @@
   <main>
     <div class="page-head">
       <h1>I tuoi report</h1>
-      <p>Storico delle analisi GEO per i siti che hai verificato.</p>
+      <p>Storico delle analisi GEO per i siti che hai verificato, raggruppate per dominio.</p>
     </div>
-    <div class="audit-list" id="list" role="list" aria-label="Report GEO"></div>
+    <div class="domain-list" id="list" role="list" aria-label="Report GEO per dominio"></div>
   </main>
 
   <script>
-    const audits = {{AUDITS_JSON}};
+    const domains  = {{AUDITS_JSON}};
+    const userEmail = {{USER_EMAIL}};
+    document.getElementById("topbar-user").textContent = userEmail || "";
 
     function scoreClass(overall, grade) {
       if (overall == null || !grade) return "score-unknown";
@@ -220,9 +260,36 @@
       return d.toLocaleDateString("it-IT", { day:"2-digit", month:"short", year:"numeric" });
     }
 
+    function deltaPill(delta) {
+      if (delta == null) return "";
+      if (delta === 0) return `<span class="delta-pill delta-flat">invariato</span>`;
+      const cls  = delta > 0 ? "delta-up" : "delta-down";
+      const sign = delta > 0 ? "+" : "";
+      return `<span class="delta-pill ${cls}">${sign}${delta} vs precedente</span>`;
+    }
+
+    function runCard(a, extraClass) {
+      const href  = `/r/${a.id}`;
+      const score = a.overall != null ? a.overall : "—";
+      const grade = a.grade || "—";
+      const sc    = scoreClass(a.overall, a.grade);
+      return `
+        <a href="${href}" class="audit-card ${extraClass}" role="listitem">
+          <div class="score-block ${sc}" aria-label="Punteggio ${score}/100">
+            <span class="num">${score}</span>
+            <span class="grd" aria-hidden="true">${grade}</span>
+          </div>
+          <div class="audit-info">
+            <div class="audit-domain">${fmtDate(a.created_at)}${a.pages_count ? " · " + a.pages_count + " pagine" : ""}</div>
+            <div class="audit-meta">${deltaPill(a.delta)}</div>
+          </div>
+          ${statusPill(a.status)}
+        </a>`;
+    }
+
     const list = document.getElementById("list");
 
-    if (!audits.length) {
+    if (!domains.length) {
       list.innerHTML = `
         <div class="empty" role="status">
           <h2>Nessun report ancora</h2>
@@ -230,24 +297,14 @@
           <a href="/audit" class="btn btn--primary">Inizia l'analisi →</a>
         </div>`;
     } else {
-      list.innerHTML = audits.map(a => {
-        const href   = a.status === "done" ? `/r/${a.id}` : `/job/${a.id}/gate`;
-        const domain = a.domain || a.url || "—";
-        const score  = a.overall != null ? a.overall : "—";
-        const grade  = a.grade || "—";
-        const sc     = scoreClass(a.overall, a.grade);
+      list.innerHTML = domains.map(group => {
+        const [latest, ...history] = group.runs;
         return `
-          <a href="${href}" class="audit-card" role="listitem">
-            <div class="score-block ${sc}" aria-label="Punteggio ${score}/100">
-              <span class="num">${score}</span>
-              <span class="grd" aria-hidden="true">${grade}</span>
-            </div>
-            <div class="audit-info">
-              <div class="audit-domain">${domain}</div>
-              <div class="audit-meta">${fmtDate(a.created_at)}${a.pages_count ? " · " + a.pages_count + " pagine" : ""}</div>
-            </div>
-            ${statusPill(a.status)}
-          </a>`;
+          <div class="domain-group" role="listitem">
+            <div class="audit-domain" style="padding:14px 20px 0">${group.domain}</div>
+            ${runCard(latest, "latest")}
+            ${history.map(a => runCard(a, "history")).join("")}
+          </div>`;
       }).join("");
     }
   </script>
