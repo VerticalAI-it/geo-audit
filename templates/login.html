@@ -196,7 +196,13 @@
       btn.textContent = "Invio in corso…";
 
       const email = document.getElementById("email").value.trim();
-      const redirectTo = window.location.origin + "/auth/callback?next=" + encodeURIComponent(NEXT);
+      /* niente query string nel redirect_to: alcune configurazioni di
+         whitelist su Supabase falliscono il match se l'URL non è esatto.
+         "next" viaggia via localStorage (sopravvive anche se il link
+         del magic link si apre in una nuova scheda, a differenza di
+         sessionStorage). */
+      localStorage.setItem("geo_login_next", NEXT);
+      const redirectTo = window.location.origin + "/auth/callback";
 
       const { error } = await sb.auth.signInWithOtp({
         email: email,
