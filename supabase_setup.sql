@@ -112,3 +112,9 @@ CREATE POLICY "own_issues" ON public.issue
     USING (auth.uid() = user_id);
 
 CREATE INDEX issue_project_status ON public.issue (project_id, status);
+
+-- IMPORTANTE: dopo aver eseguito questa migration, forza il reload dello
+-- schema cache di PostgREST — altrimenti le nuove tabelle/colonne restano
+-- invisibili all'API REST (errore PGRST205 "Could not find the table ...
+-- in the schema cache") finché Supabase non lo ricarica da sé:
+NOTIFY pgrst, 'reload schema';
