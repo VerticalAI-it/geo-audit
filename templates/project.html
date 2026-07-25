@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="it" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{PROJECT_NAME}} · GEO Audit · verticalai</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/static/css/design-system.css">
+<style>
+  body { min-height:100vh; background:var(--canvas); padding-bottom:var(--sp-16) }
+  .topbar {
+    position:sticky; top:0;
+    background:color-mix(in srgb, var(--canvas) 86%, transparent);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    padding:0 clamp(16px, 4vw, 40px); height:60px;
+    display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
+    z-index:30;
+  }
+  .logo-row {
+    display:flex; align-items:center; gap:10px;
+    font-family:var(--font-display); font-size:17px; font-weight:600; color:var(--text); text-decoration:none;
+  }
+  .logo-mark { width:28px; height:28px; background:var(--brand); border-radius:8px; display:grid; place-items:center; flex:none }
+  .logo-mark span { color:#fff; font-family:var(--font-mono); font-weight:600; font-size:14px }
+  .logo-ai { color:var(--brand-text) }
+  .topbar-actions { display:flex; align-items:center; gap:var(--sp-3) }
+  .topbar-user { font-family:var(--font-mono); font-size:12px; color:var(--text-3) }
+  .topbar-logout { font-family:var(--font-mono); font-size:12px; color:var(--text-2); text-decoration:none }
+  .topbar-logout:hover { color:var(--text) }
+
+  main { max-width:980px; margin:var(--sp-8) auto 0; padding:0 clamp(16px, 4vw, 32px) }
+
+  .back-link { font-size:13px; color:var(--text-3); text-decoration:none; display:inline-block; margin-bottom:var(--sp-3) }
+  .back-link:hover { color:var(--text-2) }
+
+  .project-head { margin-bottom:var(--sp-5) }
+  .project-head h1 { font-size:clamp(22px, 4vw, 28px); margin:0 0 4px; letter-spacing:-.02em }
+  .project-head .domain { font-family:var(--font-mono); font-size:13px; color:var(--text-3) }
+
+  nav.tabs { margin-bottom:var(--sp-6) }
+
+  .tab-body .card + .card { margin-top:0 }
+
+  /* Overview grid */
+  .ov-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:var(--sp-4) }
+  .ov-score-row { display:flex; align-items:center; gap:var(--sp-3); margin-top:8px }
+
+  .score-block {
+    border-radius:var(--r-md); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; flex-shrink:0; border:1px solid var(--border);
+  }
+  .score-block .num { font-family:var(--font-display); font-weight:600; line-height:1 }
+  .score-block .grd { font-family:var(--font-mono); font-size:10px; margin-top:2px; color:var(--text-3) }
+  .score-ottimo      { background:var(--success-bg);  border-color:var(--success-border) }
+  .score-ottimo .num     { color:var(--success) }
+  .score-migliorabile    { background:var(--warning-bg);  border-color:var(--warning-border) }
+  .score-migliorabile .num   { color:var(--warning) }
+  .score-critico     { background:var(--danger-bg);   border-color:var(--danger-border) }
+  .score-critico .num    { color:var(--danger) }
+  .score-unknown     { background:var(--surface-2);   border-color:var(--border) }
+  .score-unknown .num    { color:var(--text-3) }
+
+  .delta-pill { font-family:var(--font-mono); font-size:11px; font-weight:600; padding:3px 8px; border-radius:var(--r-pill) }
+  .delta-up   { background:var(--success-bg); color:var(--success) }
+  .delta-down { background:var(--danger-bg);  color:var(--danger) }
+  .delta-flat { background:var(--surface-2);  color:var(--text-3) }
+
+  /* Coming soon */
+  .coming-soon-card { opacity:.72 }
+
+  /* Area score bars */
+  .area-row { display:flex; align-items:center; gap:var(--sp-3); padding:8px 0 }
+  .area-label { width:180px; flex-shrink:0; font-size:13.5px; color:var(--text-2) }
+  .area-bar-track { flex:1; height:8px; border-radius:999px; background:var(--surface-2); overflow:hidden }
+  .area-bar-fill { height:100%; border-radius:999px }
+  .area-bar-fill.score-ottimo      { background:var(--success) }
+  .area-bar-fill.score-migliorabile { background:var(--warning) }
+  .area-bar-fill.score-critico     { background:var(--danger) }
+  .area-score { width:32px; text-align:right; font-family:var(--font-mono); font-size:12.5px; color:var(--text-3) }
+
+  .audit-head-row { display:flex; align-items:center; gap:var(--sp-4); flex-wrap:wrap }
+
+  .action-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--sp-3) }
+  .action-row { border-bottom:1px solid var(--border); padding-bottom:var(--sp-3) }
+  .action-row:last-child { border-bottom:none; padding-bottom:0 }
+
+  .settings-form { display:flex; flex-direction:column; gap:var(--sp-4); max-width:420px }
+
+  @media (max-width:520px) { .topbar { padding:0 var(--sp-4) } .area-label { width:120px } }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="logo-row" aria-label="verticalai — home">
+      <div class="logo-mark" aria-hidden="true"><span>V</span></div>
+      <span><span class="logo-ai">vertical</span>ai</span>
+    </a>
+    <div class="topbar-actions">
+      <span class="topbar-user" id="topbar-user"></span>
+      <a href="/auth/logout" class="topbar-logout">Esci</a>
+      <a href="/audit" class="btn btn--primary btn--sm">+ Nuova analisi</a>
+    </div>
+  </header>
+
+  <main>
+    <a href="/dashboard" class="back-link">← I tuoi progetti</a>
+    <div class="project-head">
+      <h1>{{PROJECT_NAME}}</h1>
+      <div class="domain">{{PROJECT_DOMAIN}}</div>
+    </div>
+
+    <nav class="tabs" aria-label="Sezioni progetto">{{TABS_NAV}}</nav>
+
+    <div class="tab-body">{{TAB_BODY}}</div>
+  </main>
+
+  <script>
+    document.getElementById("topbar-user").textContent = {{USER_EMAIL}} || "";
+  </script>
+</body>
+</html>

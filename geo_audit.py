@@ -646,15 +646,44 @@ def derive_actions(site_checks, pages, limit=8):
         out.append((prio, col, a["t"], desc, a["n"]))
     return out
 
+def derive_actions_full(site_checks, pages):
+    """Versione machine-readable di derive_actions: nessun limite di riga, con
+    URL interessati. Tenuta separata da derive_actions per non toccare l'output
+    HTML del report (che usa il formato a tupla)."""
+    agg = {}
+    for c in site_checks:
+        if c.status in (WARN, FAIL) and c.recommendation:
+            a = agg.setdefault(c.id, {"check_id": c.id, "title": c.title, "category": c.category,
+                                       "recommendation": c.recommendation, "severity": c.severity,
+                                       "count": 0, "urls": []})
+            a["count"] += 1
+    for p in pages:
+        for c in p.checks:
+            if c.status in (WARN, FAIL) and c.recommendation:
+                a = agg.setdefault(c.id, {"check_id": c.id, "title": c.title, "category": c.category,
+                                           "recommendation": c.recommendation, "severity": c.severity,
+                                           "count": 0, "urls": []})
+                a["count"] += 1
+                if p.url not in a["urls"]:
+                    a["urls"].append(p.url)
+    return sorted(agg.values(), key=lambda a: (SEV_ORDER[a["severity"]], -a["count"]))
+
+def compute_area_scores(checks):
+    """Raggruppa i check per area (categoria) e calcola lo score per area.
+    Ritorna (catmap, cats_sorted_asc_per_score)."""
+    catmap = {}
+    for c in checks:
+        if c.status in (OK, WARN, FAIL):
+            catmap.setdefault(c.category, []).append(c)
+    cats = sorted([(k, score_checks(v)) for k, v in catmap.items()], key=lambda x: x[1])
+    return catmap, cats
+
 def render_report(domain, site, pages, render_used, respect_robots):
     allc = list(site.site_checks) + [c for p in pages for c in p.checks]
     overall = score_checks(allc); g = grade(overall); bnd = band(overall)
     nok = len([c for c in allc if c.status == OK]); nwarn = len([c for c in allc if c.status == WARN])
     nfail = len([c for c in allc if c.status == FAIL])
-    catmap = {}
-    for c in allc:
-        if c.status in (OK, WARN, FAIL): catmap.setdefault(c.category, []).append(c)
-    cats = sorted([(k, score_checks(v)) for k, v in catmap.items()], key=lambda x: x[1])
+    catmap, cats = compute_area_scores(allc)
     cats_radar = [(k, score_checks(v)) for k, v in catmap.items()]
     issues = [c for c in allc if c.status in (WARN, FAIL)]
     crit = nfail  # "critici" = controlli rossi (FAIL), coerente col donut e con problemi = warn + crit
@@ -857,10 +886,21 @@ def run_audit(url, max_pages=20, render=True, respect_robots=False, log=lambda *
         if norm(u) != norm(base):
             time.sleep(CRAWL_DELAY)
     html, overall = render_report(urlparse(base).netloc, site, pages, render, respect_robots)
+
+    allc = list(site.site_checks) + [c for p in pages for c in p.checks]
+    _, cats = compute_area_scores(allc)
+    issues_count = len([c for c in allc if c.status in (WARN, FAIL)])
+    critical_count = len([c for c in allc if c.status == FAIL])
+
     return {"html": html, "overall": overall, "grade": grade(overall), "band": band(overall),
             "domain": urlparse(base).netloc, "render": render, "respect_robots": respect_robots,
-            "pages": [{"url": p.url, "type": p.page_type, "score": p.score} for p in pages],
-            "site_checks": [c.__dict__ for c in site.site_checks]}
+            "engine_version": ENGINE_VERSION,
+            "pages": [{"url": p.url, "type": p.page_type, "title": p.title, "score": p.score,
+                       "checks": [c.__dict__ for c in p.checks]} for p in pages],
+            "site_checks": [c.__dict__ for c in site.site_checks],
+            "areas": [{"key": k, "score": s} for k, s in cats],
+            "actions": derive_actions_full(site.site_checks, pages),
+            "issues_count": issues_count, "critical_count": critical_count}
 
 
 def _patch_macos_weasyprint():

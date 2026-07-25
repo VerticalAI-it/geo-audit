@@ -3,6 +3,7 @@ GEO Audit — servizio web
 Scan sincrono → salva su Supabase via REST → report oscurato → sblocco via email.
 """
 import os, hmac, hashlib, json
+from datetime import datetime, timezone
 import requests as req
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -34,6 +35,7 @@ COOKIE_HTML   = open(os.path.join(_HERE, "templates", "cookie.html"),        enc
 LOGIN_HTML    = open(os.path.join(_HERE, "templates", "login.html"),         encoding="utf-8").read()
 AUTH_CB_HTML  = open(os.path.join(_HERE, "templates", "auth_callback.html"), encoding="utf-8").read()
 DASHBOARD_HTML = open(os.path.join(_HERE, "templates", "dashboard.html"),    encoding="utf-8").read()
+PROJECT_HTML   = open(os.path.join(_HERE, "templates", "project.html"),      encoding="utf-8").read()
 
 
 def _render(tpl: str, **kv) -> str:
@@ -97,6 +99,128 @@ def _sb_get_by_user(user_id: str) -> list:
                         "order": "domain.asc,created_at.desc"},
                 timeout=10)
     return r.json() if r.ok else []
+
+
+# ── Project helpers ───────────────────────────────────────────────────────────
+
+def _sb_project_find(user_id: str, domain: str) -> dict | None:
+    r = req.get(f"{SUPABASE_URL}/rest/v1/project",
+                headers=_SB_H,
+                params={"user_id": f"eq.{user_id}", "domain": f"eq.{domain}", "select": "*"},
+                timeout=10)
+    d = r.json() if r.ok else []
+    return d[0] if d else None
+
+
+def _sb_project_upsert(user_id: str, domain: str) -> dict:
+    """Trova il project per (user_id, domain), altrimenti lo crea (nome default = dominio)."""
+    existing = _sb_project_find(user_id, domain)
+    if existing:
+        return existing
+    r = req.post(f"{SUPABASE_URL}/rest/v1/project",
+                 json={"user_id": user_id, "domain": domain, "name": domain},
+                 headers=_SB_H, timeout=10)
+    if r.status_code == 409:  # race: creato nel frattempo da un'altra richiesta concorrente
+        return _sb_project_find(user_id, domain)
+    r.raise_for_status()
+    return r.json()[0]
+
+
+def _sb_projects_by_user(user_id: str) -> list:
+    r = req.get(f"{SUPABASE_URL}/rest/v1/project",
+                headers=_SB_H,
+                params={"user_id": f"eq.{user_id}", "select": "*", "order": "updated_at.desc"},
+                timeout=10)
+    return r.json() if r.ok else []
+
+
+def _sb_project_get(project_id: str) -> dict | None:
+    r = req.get(f"{SUPABASE_URL}/rest/v1/project",
+                headers=_SB_H,
+                params={"id": f"eq.{project_id}", "select": "*"},
+                timeout=10)
+    d = r.json() if r.ok else []
+    return d[0] if d else None
+
+
+def _sb_project_patch(project_id: str, data: dict) -> None:
+    data = {**data, "updated_at": datetime.now(timezone.utc).isoformat()}
+    req.patch(f"{SUPABASE_URL}/rest/v1/project",
+              json=data, headers=_SB_H,
+              params={"id": f"eq.{project_id}"}, timeout=10)
+
+
+_AUDIT_LIGHT_FIELDS = "id,overall,grade,band,pages_count,issues_count,critical_count,status,created_at"
+_AUDIT_FULL_FIELDS = ("id,url,domain,status,overall,grade,band,pages_count,engine_version,"
+                       "areas,site_checks,pages_detail,actions,issues_count,critical_count,"
+                       "created_at,completed_at")
+
+
+def _sb_audits_by_project(project_id: str, limit: int = 50, full: bool = False) -> list:
+    r = req.get(f"{SUPABASE_URL}/rest/v1/audits",
+                headers=_SB_H,
+                params={"project_id": f"eq.{project_id}",
+                        "select": _AUDIT_FULL_FIELDS if full else _AUDIT_LIGHT_FIELDS,
+                        "order": "created_at.desc", "limit": str(limit)},
+                timeout=10)
+    return r.json() if r.ok else []
+
+
+def _sb_audits_without_project(user_id: str) -> list:
+    """Righe audits dell'utente non ancora agganciate a un project (backfill lazy)."""
+    r = req.get(f"{SUPABASE_URL}/rest/v1/audits",
+                headers=_SB_H,
+                params={"user_id": f"eq.{user_id}", "project_id": "is.null",
+                        "select": "id,domain", "order": "created_at.asc"},
+                timeout=10)
+    return r.json() if r.ok else []
+
+
+# ── Issue lifecycle helpers ───────────────────────────────────────────────────
+
+def _sb_issues_by_project(project_id: str, status: str | None = None) -> list:
+    params = {"project_id": f"eq.{project_id}", "select": "*", "order": "severity.asc,last_seen_at.desc"}
+    if status:
+        params["status"] = f"eq.{status}"
+    r = req.get(f"{SUPABASE_URL}/rest/v1/issue", headers=_SB_H, params=params, timeout=10)
+    return r.json() if r.ok else []
+
+
+def _sb_issue_sync(project_id: str, user_id: str, audit_id: str, checks: list) -> None:
+    """Ciclo di vita delle issue del progetto: apre/aggiorna quelle presenti nei
+    check warn/fail dell'audit appena completato, marca risolte quelle aperte in
+    precedenza e non più viste in questo run."""
+    now = datetime.now(timezone.utc).isoformat()
+    existing = {i["fingerprint"]: i for i in _sb_issues_by_project(project_id)}
+    seen = set()
+
+    for c in checks:
+        if c.get("status") not in ("warn", "fail"):
+            continue
+        url = c.get("url") or None
+        fingerprint = f"{c['id']}|{url or ''}"
+        seen.add(fingerprint)
+        prev = existing.get(fingerprint)
+        if prev:
+            req.patch(f"{SUPABASE_URL}/rest/v1/issue",
+                      json={"status": "open", "last_seen_audit": audit_id, "last_seen_at": now,
+                            "resolved_at": None, "severity": c.get("severity"), "title": c.get("title")},
+                      headers=_SB_H, params={"id": f"eq.{prev['id']}"}, timeout=10)
+        else:
+            req.post(f"{SUPABASE_URL}/rest/v1/issue",
+                     json={"project_id": project_id, "user_id": user_id,
+                           "check_id": c["id"], "category": c.get("category"), "url": url,
+                           "title": c.get("title"), "severity": c.get("severity"),
+                           "fingerprint": fingerprint, "status": "open",
+                           "first_seen_audit": audit_id, "last_seen_audit": audit_id,
+                           "first_seen_at": now, "last_seen_at": now},
+                     headers=_SB_H, timeout=10)
+
+    to_resolve = [i for fp, i in existing.items() if fp not in seen and i["status"] == "open"]
+    for i in to_resolve:
+        req.patch(f"{SUPABASE_URL}/rest/v1/issue",
+                  json={"status": "resolved", "resolved_at": now},
+                  headers=_SB_H, params={"id": f"eq.{i['id']}"}, timeout=10)
 
 
 # ── Token helpers ────────────────────────────────────────────────────────────
@@ -707,11 +831,13 @@ async def scan(request: Request, url: str = Form(...)):
         )
         return _apply_refresh(resp, refreshed)
 
-    # Salva su Supabase, associato all'utente loggato (non bloccante se fallisce)
+    # Salva su Supabase, associato al progetto dell'utente loggato (non bloccante se fallisce)
     job_id = None
     try:
+        project = _sb_project_upsert(user["id"], res.get("domain") or url)
         row = _sb_insert({
             "user_id":    user["id"],
+            "project_id": project["id"],
             "url":        url,
             "status":     "done",
             "domain":     res.get("domain"),
@@ -720,8 +846,21 @@ async def scan(request: Request, url: str = Form(...)):
             "band":       res.get("band"),
             "pages_count": len(res.get("pages", [])),
             "html":       res["html"],
+            "engine_version": res.get("engine_version"),
+            "areas":       res.get("areas"),
+            "site_checks": res.get("site_checks"),
+            "pages_detail": res.get("pages"),
+            "actions":      res.get("actions"),
+            "issues_count":    res.get("issues_count"),
+            "critical_count":  res.get("critical_count"),
         })
         job_id = row.get("id")
+
+        all_checks = list(res.get("site_checks", []))
+        for p in res.get("pages", []):
+            for c in p.get("checks", []):
+                all_checks.append({**c, "url": p.get("url")})
+        _sb_issue_sync(project["id"], user["id"], job_id, all_checks)
     except Exception:
         pass  # Supabase non critico per la visualizzazione
 
@@ -765,35 +904,493 @@ def report(job_id: str, request: Request, token: str = ""):
     return HTMLResponse(_inject_gate(job["html"], job_id))
 
 
+def _project_status(latest: dict | None) -> str:
+    """Healthy / Needs attention / Critical / Audit required, calcolato
+    dall'ultimo audit_run del progetto (nessuno stato persistito a mano)."""
+    if not latest or latest.get("overall") is None:
+        return "Audit required"
+    try:
+        created = datetime.fromisoformat(latest["created_at"].replace("Z", "+00:00"))
+        age_days = (datetime.now(timezone.utc) - created).days
+    except Exception:
+        age_days = 0
+    if age_days > 30:
+        return "Audit required"
+    if (latest.get("critical_count") or 0) > 0:
+        return "Critical"
+    overall = latest.get("overall") or 0
+    if overall < 50:
+        return "Critical"
+    if overall < 75:
+        return "Needs attention"
+    return "Healthy"
+
+
+def _backfill_projects(user_id: str) -> None:
+    """Aggancia a un project le righe audits create prima che il modello
+    project esistesse (idempotente: gira ad ogni /dashboard finché serve)."""
+    orphans = _sb_audits_without_project(user_id)
+    if not orphans:
+        return
+    domains = sorted({o["domain"] for o in orphans if o.get("domain")})
+    for domain in domains:
+        project = _sb_project_upsert(user_id, domain)
+        for o in orphans:
+            if o.get("domain") == domain:
+                _sb_patch(o["id"], {"project_id": project["id"]})
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
     user, refreshed = _current_user(request)
     if not user:
         return RedirectResponse("/login?next=/dashboard", status_code=303)
 
-    rows = _sb_get_by_user(user["id"])
+    _backfill_projects(user["id"])
 
-    groups: dict[str, list] = {}
-    for r in rows:
-        key = r.get("domain") or r.get("url") or "—"
-        groups.setdefault(key, []).append(r)
+    cards = []
+    for p in _sb_projects_by_user(user["id"]):
+        runs = _sb_audits_by_project(p["id"], limit=2, full=False)
+        latest = runs[0] if runs else None
+        previous = runs[1] if len(runs) > 1 else None
+        delta = None
+        if latest and previous and latest.get("overall") is not None and previous.get("overall") is not None:
+            delta = latest["overall"] - previous["overall"]
 
-    domains = []
-    for domain, runs in groups.items():
-        runs.sort(key=lambda r: r.get("created_at") or "", reverse=True)
-        for i, r in enumerate(runs):
-            prev = runs[i + 1] if i + 1 < len(runs) else None
-            if r.get("overall") is not None and prev and prev.get("overall") is not None:
-                r["delta"] = r["overall"] - prev["overall"]
-            else:
-                r["delta"] = None
-        domains.append({"domain": domain, "runs": runs})
-    domains.sort(key=lambda d: d["runs"][0].get("created_at") or "", reverse=True)
+        cards.append({
+            "id": p["id"], "name": p["name"], "domain": p["domain"],
+            "overall": latest.get("overall") if latest else None,
+            "grade": latest.get("grade") if latest else None,
+            "delta": delta,
+            "critical_count": latest.get("critical_count") if latest else None,
+            "pages_count": latest.get("pages_count") if latest else None,
+            "last_scan": latest.get("created_at") if latest else None,
+            "status": _project_status(latest),
+            "tracking": "Tracking not installed",
+        })
+    cards.sort(key=lambda c: c["last_scan"] or "", reverse=True)
+
+    summary = {
+        "total": len(cards),
+        "critical": len([c for c in cards if c["status"] == "Critical"]),
+        "audits_due": len([c for c in cards if c["status"] == "Audit required"]),
+        "tracking_active": 0,  # nessun modulo di tracking ancora installabile
+    }
 
     html = _render(DASHBOARD_HTML,
-                    AUDITS_JSON=json.dumps(domains),
+                    PROJECTS_JSON=json.dumps(cards),
+                    SUMMARY_JSON=json.dumps(summary),
                     USER_EMAIL=json.dumps(user.get("email", "")))
     resp = HTMLResponse(html)
+    return _apply_refresh(resp, refreshed)
+
+
+# ── Project detail: IA definitiva a 12 tab (dati reali dove disponibili) ────
+
+_PROJECT_TABS = [
+    ("overview", "Overview"), ("audit", "Audit"), ("pages", "Pages"),
+    ("ai-visibility", "AI Visibility"), ("prompts", "Prompts & Queries"),
+    ("competitors", "Competitors"), ("citations", "Citations"),
+    ("traffic", "AI Traffic"), ("technical", "Technical GEO"),
+    ("opportunities", "Opportunities"), ("reports", "Reports"),
+    ("settings", "Settings"),
+]
+
+_COMING_SOON_TABS = {
+    "ai-visibility": ("AI Visibility",
+        "Richiede un panel di monitoraggio prompt sui provider AI (ChatGPT, Gemini, Perplexity). "
+        "Non ancora configurato per questo progetto."),
+    "prompts": ("Prompts & Queries",
+        "Richiede il monitoraggio prompt attivo per esplorare cluster, risposte e storico. Non ancora configurato."),
+    "competitors": ("Competitors",
+        "Richiede lo stesso panel di monitoraggio prompt per calcolare Share of Voice e gap competitivi. "
+        "Non ancora configurato."),
+    "citations": ("Citations",
+        "Richiede l'osservazione delle citazioni nelle risposte AI. Non ancora configurato."),
+    "traffic": ("AI Traffic",
+        "Richiede l'installazione dello snippet di tracking first-party sul sito. Non ancora installato."),
+    "reports": ("Reports",
+        "Richiede almeno un modulo di monitoraggio attivo per generare variazioni e alert. Non ancora disponibile."),
+}
+
+_STATUS_BADGE_CLS = {"ok": "badge--success", "warn": "badge--warning", "fail": "badge--danger", "unknown": "badge--neutral"}
+_STATUS_LABEL     = {"ok": "OK", "warn": "Da migliorare", "fail": "Critico", "unknown": "N/D"}
+_SEV_BADGE_CLS    = {"critical": "badge--danger", "high": "badge--danger", "medium": "badge--warning",
+                      "low": "badge--neutral", "info": "badge--neutral"}
+
+
+def _tab_nav(project_id: str, active: str) -> str:
+    links = []
+    for key, label in _PROJECT_TABS:
+        cls = "tab active" if key == active else "tab"
+        links.append(f'<a href="/project/{project_id}?tab={key}" class="{cls}">{geo_audit.esc(label)}</a>')
+    return "".join(links)
+
+
+def _coming_soon_tab(title: str, description: str) -> str:
+    return (
+        '<div class="card coming-soon-card">'
+        '<span class="badge badge--neutral"><span class="dot"></span>Coming soon</span>'
+        f'<h2 class="card-title" style="margin-top:12px">{geo_audit.esc(title)}</h2>'
+        f'<p class="card-sub">{geo_audit.esc(description)}</p>'
+        '</div>'
+    )
+
+
+def _status_badge(status: str) -> str:
+    cls = _STATUS_BADGE_CLS.get(status, "badge--neutral")
+    label = _STATUS_LABEL.get(status, status or "—")
+    return f'<span class="badge {cls}"><span class="dot"></span>{geo_audit.esc(label)}</span>'
+
+
+def _sev_badge(sev: str) -> str:
+    cls = _SEV_BADGE_CLS.get(sev, "badge--neutral")
+    return f'<span class="badge {cls}">{geo_audit.esc(sev or "—")}</span>'
+
+
+def _score_class(overall) -> str:
+    if overall is None:
+        return "score-unknown"
+    if overall >= 75:
+        return "score-ottimo"
+    if overall >= 50:
+        return "score-migliorabile"
+    return "score-critico"
+
+
+def _fmt_date(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    try:
+        d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return d.strftime("%d %b %Y")
+    except Exception:
+        return iso
+
+
+def _checks_table(rows: list) -> str:
+    """rows: [{'title','status','detail','recommendation'}]"""
+    if not rows:
+        return '<p class="card-sub">Nessun dato disponibile.</p>'
+    body = "".join(
+        f'<tr><td data-label="Check"><b>{geo_audit.esc(r["title"])}</b></td>'
+        f'<td data-label="Stato">{_status_badge(r["status"])}</td>'
+        f'<td data-label="Dettaglio">{geo_audit.esc(r.get("detail") or "—")}</td>'
+        f'<td data-label="Raccomandazione">{geo_audit.esc(r.get("recommendation") or "—")}</td></tr>'
+        for r in rows
+    )
+    return (
+        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr>'
+        '<th>Check</th><th>Stato</th><th>Dettaglio</th><th>Raccomandazione</th>'
+        '</tr></thead><tbody>' + body + '</tbody></table></div>'
+    )
+
+
+def _aggregate_page_check(pages_detail: list, check_id: str) -> dict:
+    """Aggrega lo stato di un check page-level su tutte le pagine dell'audit."""
+    matches = [c for p in (pages_detail or []) for c in (p.get("checks") or []) if c.get("id") == check_id]
+    if not matches:
+        return {"total": 0}
+    ok = len([c for c in matches if c["status"] == "ok"])
+    warn = len([c for c in matches if c["status"] == "warn"])
+    fail = len([c for c in matches if c["status"] == "fail"])
+    worst = matches[0]
+    for c in matches:
+        if c["status"] == "fail":
+            worst = c
+            break
+        if c["status"] == "warn" and worst["status"] != "fail":
+            worst = c
+    return {"title": worst["title"], "status": worst["status"], "recommendation": worst.get("recommendation"),
+            "ok": ok, "warn": warn, "fail": fail, "total": len(matches)}
+
+
+def _tab_overview(latest: dict | None, previous: dict | None, open_issues: int) -> str:
+    if not latest:
+        return ('<div class="alert alert--info"><div class="ic">i</div>'
+                '<div>Nessun audit ancora eseguito per questo progetto. '
+                '<a href="/audit">Avvia la prima analisi →</a></div></div>')
+
+    overall = latest.get("overall")
+    delta = None
+    if previous and previous.get("overall") is not None and overall is not None:
+        delta = overall - previous["overall"]
+    delta_html = ""
+    if delta is not None:
+        cls = "delta-up" if delta > 0 else ("delta-down" if delta < 0 else "delta-flat")
+        sign = "+" if delta > 0 else ""
+        delta_html = f'<span class="delta-pill {cls}">{sign}{delta} vs audit precedente</span>'
+
+    areas = latest.get("areas") or []
+    worst = areas[0] if areas else None
+    best = areas[-1] if areas else None
+    worst_txt = f'{geo_audit.esc(worst["key"])} ({worst["score"]}/100)' if worst else "—"
+    best_txt = f'{geo_audit.esc(best["key"])} ({best["score"]}/100)' if best else "—"
+
+    issues_count = latest.get("issues_count")
+    critical_count = latest.get("critical_count")
+    variazione = (f'Punteggio passato da {previous["overall"]} a {overall} rispetto '
+                  f'all\'audit del {_fmt_date(previous.get("created_at"))}.'
+                  if previous and previous.get("overall") is not None
+                  else "Ancora nessun audit precedente per calcolare una variazione.")
+
+    sc = _score_class(overall)
+    return (
+        '<div class="ov-grid">'
+        '<div class="card"><div class="card-sub">GEO Score</div>'
+        f'<div class="ov-score-row"><div class="score-block {sc}" style="width:72px;height:72px">'
+        f'<span class="num" style="font-size:24px">{overall if overall is not None else "—"}</span>'
+        f'<span class="grd">{geo_audit.esc(latest.get("grade") or "—")}</span></div>{delta_html}</div>'
+        f'<p class="card-sub" style="margin-top:10px">Ultimo audit: {_fmt_date(latest.get("created_at"))}</p></div>'
+
+        '<div class="card"><div class="card-sub">Salute issue</div>'
+        f'<p style="margin:6px 0"><b>{issues_count if issues_count is not None else "—"}</b> problemi totali · '
+        f'<b>{critical_count if critical_count is not None else "—"}</b> critici</p>'
+        f'<p style="margin:6px 0"><b>{open_issues}</b> issue aperte in Opportunities</p></div>'
+
+        '<div class="card"><div class="card-sub">Area migliore / peggiore</div>'
+        f'<p style="margin:6px 0">✓ <b>{best_txt}</b></p>'
+        f'<p style="margin:6px 0">⚠ <b>{worst_txt}</b></p></div>'
+
+        '<div class="card"><div class="card-sub">Tracking</div>'
+        '<p style="margin:6px 0"><span class="badge badge--neutral">Tracking not installed</span></p>'
+        '<p class="card-sub" style="margin-top:8px">AI Traffic diventa disponibile dopo l\'installazione dello snippet.</p></div>'
+        '</div>'
+
+        f'<div class="card" style="margin-top:16px"><div class="card-title">Ultime variazioni</div>'
+        f'<p class="card-sub">{variazione}</p></div>'
+    )
+
+
+def _tab_audit(latest: dict | None, history: list) -> str:
+    if not latest:
+        return ('<div class="alert alert--info"><div class="ic">i</div>'
+                '<div>Nessun audit ancora eseguito. <a href="/audit">Avvia la prima analisi →</a></div></div>')
+
+    areas = latest.get("areas") or []
+    area_rows = "".join(
+        f'<div class="area-row"><span class="area-label">{geo_audit.esc(a["key"])}</span>'
+        f'<div class="area-bar-track"><div class="area-bar-fill {_score_class(a["score"])}" '
+        f'style="width:{a["score"]}%"></div></div><span class="area-score">{a["score"]}</span></div>'
+        for a in areas
+    )
+
+    issues_count = latest.get("issues_count")
+    critical_count = latest.get("critical_count")
+    total_checks = len(latest.get("site_checks") or []) + sum(
+        len(p.get("checks") or []) for p in (latest.get("pages_detail") or []))
+    pct_ok = round(100 * (total_checks - (issues_count or 0)) / total_checks) if total_checks else None
+
+    actions = (latest.get("actions") or [])[:8]
+    actions_html = "".join(
+        f'<li class="action-row">{_sev_badge(a["severity"])} <b>{geo_audit.esc(a["title"])}</b>'
+        f'<p class="card-sub" style="margin:4px 0 0">{geo_audit.esc(a["recommendation"])} — '
+        f'{a["count"]} pagin{"a" if a["count"] == 1 else "e"} interessate</p></li>'
+        for a in actions
+    ) or '<li class="card-sub">Nessun intervento prioritario: tutti i check principali sono superati.</li>'
+
+    history_html = "".join(
+        f'<tr><td data-label="Data">{_fmt_date(h.get("created_at"))}</td>'
+        f'<td data-label="Score"><b>{h.get("overall") if h.get("overall") is not None else "—"}</b></td>'
+        f'<td data-label="Grade">{geo_audit.esc(h.get("grade") or "—")}</td>'
+        f'<td data-label="Critici">{h.get("critical_count") if h.get("critical_count") is not None else "—"}</td></tr>'
+        for h in history
+    )
+
+    sc = _score_class(latest.get("overall"))
+    return (
+        '<div class="card"><div class="audit-head-row">'
+        f'<div class="score-block {sc}" style="width:72px;height:72px">'
+        f'<span class="num" style="font-size:24px">{latest.get("overall") if latest.get("overall") is not None else "—"}</span>'
+        f'<span class="grd">{geo_audit.esc(latest.get("grade") or "—")}</span></div>'
+        f'<div><p style="margin:0"><b>{issues_count if issues_count is not None else "—"}</b> problemi · '
+        f'<b>{critical_count if critical_count is not None else "—"}</b> critici · '
+        f'<b>{pct_ok if pct_ok is not None else "—"}%</b> controlli superati</p>'
+        f'<a href="/r/{latest.get("id", "")}" class="btn btn--sm" style="margin-top:8px">Apri report completo →</a>'
+        '</div></div></div>'
+
+        f'<div class="card" style="margin-top:16px"><div class="card-title">Punteggio per area</div>{area_rows}</div>'
+        f'<div class="card" style="margin-top:16px"><div class="card-title">Interventi prioritari</div>'
+        f'<ul class="action-list">{actions_html}</ul></div>'
+        '<div class="card" style="margin-top:16px"><div class="card-title">Storico audit</div>'
+        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr>'
+        f'<th>Data</th><th>Score</th><th>Grade</th><th>Critici</th></tr></thead>'
+        f'<tbody>{history_html}</tbody></table></div></div>'
+    )
+
+
+def _tab_pages(latest: dict | None) -> str:
+    if not latest:
+        return '<p class="card-sub">Nessun audit ancora eseguito.</p>'
+    pages = latest.get("pages_detail") or []
+    rows_html = "".join(
+        f'<tr><td data-label="URL"><a href="{geo_audit.esc(p.get("url", ""))}" target="_blank" '
+        f'rel="noopener">{geo_audit.esc(p.get("url", ""))}</a></td>'
+        f'<td data-label="Tipo">{geo_audit.esc(p.get("type") or "—")}</td>'
+        f'<td data-label="Score"><b>{p.get("score") if p.get("score") is not None else "—"}</b></td>'
+        f'<td data-label="Issue">{len([c for c in (p.get("checks") or []) if c.get("status") in ("warn", "fail")])}</td>'
+        f'<td data-label="Critici">{len([c for c in (p.get("checks") or []) if c.get("status") == "fail"])}</td></tr>'
+        for p in pages
+    )
+    return (
+        '<div class="card" style="margin-bottom:16px">'
+        f'<a href="/r/{latest.get("id", "")}" class="btn btn--sm">Apri report completo per il dettaglio pagina-per-pagina →</a>'
+        '</div>'
+        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr>'
+        '<th>URL</th><th>Tipo</th><th>Score</th><th>Issue</th><th>Critici</th>'
+        f'</tr></thead><tbody>{rows_html}</tbody></table></div>'
+    )
+
+
+def _tab_technical(latest: dict | None) -> str:
+    if not latest:
+        return '<p class="card-sub">Nessun audit ancora eseguito.</p>'
+
+    site_checks = [c for c in (latest.get("site_checks") or []) if c.get("id", "").startswith("crawl.")]
+    rows_access = [{"title": c["title"], "status": c["status"], "detail": c.get("detail"),
+                     "recommendation": c.get("recommendation")} for c in site_checks]
+
+    pages_detail = latest.get("pages_detail") or []
+    for check_id in ("meta.canonical", "render.parity"):
+        agg = _aggregate_page_check(pages_detail, check_id)
+        if agg.get("total"):
+            rows_access.append({"title": agg["title"], "status": agg["status"],
+                                 "detail": f'{agg["ok"]}/{agg["total"]} pagine OK',
+                                 "recommendation": agg.get("recommendation")})
+
+    rows_structured = []
+    for check_id in ("sd.present", "sd.valid", "sd.highvalue", "sd.completeness", "sd.sameas",
+                      "trust.contact", "trust.social", "trust.author", "sem.html"):
+        agg = _aggregate_page_check(pages_detail, check_id)
+        if agg.get("total"):
+            rows_structured.append({"title": agg["title"], "status": agg["status"],
+                                     "detail": f'{agg["ok"]}/{agg["total"]} pagine OK',
+                                     "recommendation": agg.get("recommendation")})
+
+    return (
+        f'<div class="card-title" style="margin-bottom:10px">Accesso crawler e infrastruttura</div>{_checks_table(rows_access)}'
+        f'<div class="card-title" style="margin:20px 0 10px">Dati strutturati ed entity signals</div>{_checks_table(rows_structured)}'
+    )
+
+
+def _tab_opportunities(project_id: str) -> str:
+    issues = _sb_issues_by_project(project_id)
+    if not issues:
+        return '<p class="card-sub">Nessuna issue registrata: esegui un audit per popolare questa sezione.</p>'
+
+    open_issues = [i for i in issues if i["status"] == "open"]
+    resolved_issues = [i for i in issues if i["status"] != "open"]
+
+    def row(i):
+        return (f'<tr><td data-label="Check"><b>{geo_audit.esc(i.get("title") or i.get("check_id"))}</b></td>'
+                f'<td data-label="Severità">{_sev_badge(i.get("severity"))}</td>'
+                f'<td data-label="URL">{geo_audit.esc(i.get("url") or "sito")}</td>'
+                f'<td data-label="Prima vista">{_fmt_date(i.get("first_seen_at"))}</td>'
+                f'<td data-label="Ultima vista">{_fmt_date(i.get("last_seen_at"))}</td>'
+                f'<td data-label="Stato">{_status_badge("fail" if i["status"] == "open" else "ok")}</td></tr>')
+
+    thead = '<thead><tr><th>Check</th><th>Severità</th><th>URL</th><th>Prima vista</th><th>Ultima vista</th><th>Stato</th></tr></thead>'
+    open_html = "".join(row(i) for i in open_issues) or '<tr><td colspan="6" class="card-sub">Nessuna issue aperta 🎉</td></tr>'
+    out = (f'<div class="card-title" style="margin-bottom:10px">Issue aperte ({len(open_issues)})</div>'
+           f'<div class="tbl-wrap"><table class="tbl tbl-responsive">{thead}<tbody>{open_html}</tbody></table></div>')
+
+    if resolved_issues:
+        resolved_html = "".join(row(i) for i in resolved_issues[:20])
+        out += (f'<div class="card-title" style="margin:20px 0 10px">Risolte di recente ({len(resolved_issues)})</div>'
+                f'<div class="tbl-wrap"><table class="tbl tbl-responsive">{thead}<tbody>{resolved_html}</tbody></table></div>')
+    return out
+
+
+def _tab_settings(project: dict) -> str:
+    return (
+        '<div class="card"><div class="card-title">Informazioni progetto</div>'
+        f'<form method="post" action="/project/{project["id"]}/settings" class="settings-form">'
+        '<div class="field"><label for="name">Nome progetto</label>'
+        f'<input class="input" id="name" name="name" value="{geo_audit.esc(project.get("name") or "")}" required></div>'
+        '<div class="field"><label for="sector">Settore (opzionale)</label>'
+        f'<input class="input" id="sector" name="sector" value="{geo_audit.esc(project.get("sector") or "")}" '
+        'placeholder="es. Hospitality, Retail…"></div>'
+        '<div class="field"><label>Dominio</label>'
+        f'<input class="input" value="{geo_audit.esc(project.get("domain") or "")}" disabled></div>'
+        '<button type="submit" class="btn btn--primary" style="margin-top:8px">Salva</button>'
+        '</form></div>'
+
+        '<div class="card coming-soon-card" style="margin-top:16px">'
+        '<span class="badge badge--neutral"><span class="dot"></span>Coming soon</span>'
+        '<h2 class="card-title" style="margin-top:12px">Snippet di tracking</h2>'
+        '<p class="card-sub">Stato installazione snippet e conversion event configurabili non ancora '
+        'disponibili per questo progetto.</p></div>'
+    )
+
+
+@app.get("/project/{project_id}", response_class=HTMLResponse)
+def project_detail(project_id: str, request: Request, tab: str = "overview"):
+    user, refreshed = _current_user(request)
+    if not user:
+        return RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
+
+    project = _sb_project_get(project_id)
+    if not project or project.get("user_id") != user["id"]:
+        return HTMLResponse(
+            _page("Non trovato", "<h2>Progetto non trovato.</h2><p><a href='/dashboard'>← I tuoi progetti</a></p>"),
+            status_code=404,
+        )
+
+    valid_tabs = {k for k, _ in _PROJECT_TABS}
+    if tab not in valid_tabs:
+        tab = "overview"
+
+    if tab in _COMING_SOON_TABS:
+        title, desc = _COMING_SOON_TABS[tab]
+        body = _coming_soon_tab(title, desc)
+    elif tab == "overview":
+        runs = _sb_audits_by_project(project_id, limit=2, full=True)
+        latest = runs[0] if runs else None
+        previous = runs[1] if len(runs) > 1 else None
+        open_issues = len(_sb_issues_by_project(project_id, status="open"))
+        body = _tab_overview(latest, previous, open_issues)
+    elif tab == "audit":
+        history = _sb_audits_by_project(project_id, limit=50, full=False)
+        latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
+        body = _tab_audit(latest_full[0] if latest_full else None, history)
+    elif tab == "pages":
+        latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
+        body = _tab_pages(latest_full[0] if latest_full else None)
+    elif tab == "technical":
+        latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
+        body = _tab_technical(latest_full[0] if latest_full else None)
+    elif tab == "opportunities":
+        body = _tab_opportunities(project_id)
+    elif tab == "settings":
+        body = _tab_settings(project)
+    else:
+        body = ""
+
+    html = _render(PROJECT_HTML,
+                    PROJECT_NAME=geo_audit.esc(project.get("name") or project.get("domain")),
+                    PROJECT_DOMAIN=geo_audit.esc(project.get("domain") or ""),
+                    TABS_NAV=_tab_nav(project_id, tab),
+                    TAB_BODY=body,
+                    USER_EMAIL=json.dumps(user.get("email", "")))
+    resp = HTMLResponse(html)
+    return _apply_refresh(resp, refreshed)
+
+
+@app.post("/project/{project_id}/settings")
+def project_settings(project_id: str, request: Request, name: str = Form(...), sector: str = Form("")):
+    user, refreshed = _current_user(request)
+    if not user:
+        return RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
+
+    project = _sb_project_get(project_id)
+    if not project or project.get("user_id") != user["id"]:
+        return HTMLResponse(status_code=404, content="Non trovato")
+
+    name = (name or "").strip() or project["domain"]
+    sector = (sector or "").strip() or None
+    _sb_project_patch(project_id, {"name": name, "sector": sector})
+
+    resp = RedirectResponse(f"/project/{project_id}?tab=settings", status_code=303)
     return _apply_refresh(resp, refreshed)
 
 
