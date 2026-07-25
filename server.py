@@ -618,7 +618,12 @@ def index():
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page():
+def login_page(request: Request, next: str = "/audit"):
+    # Se sei già loggato, salta il form e vai dritto alla destinazione
+    user, refreshed = _current_user(request)
+    if user:
+        target = next if next.startswith("/") else "/audit"
+        return _apply_refresh(RedirectResponse(target, status_code=303), refreshed)
     return _render(LOGIN_HTML, SUPABASE_URL=SUPABASE_URL, SUPABASE_ANON_KEY=SUPABASE_ANON)
 
 

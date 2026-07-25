@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<script>
+/* Rete di sicurezza: se Supabase per un redirect_to non in whitelist ci
+   riporta qui con i token del magic link nel fragment invece che su
+   /auth/callback, "salviamo" comunque il login rispedendoli lì. */
+if (window.location.hash.indexOf("access_token") !== -1) {
+  window.location.replace("/auth/callback" + window.location.hash);
+}
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -588,6 +596,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
     </nav>
 
     <div class="nav-cta">
+      <a href="/login?next=/dashboard" class="btn btn-sm btn-pill" style="border:1px solid rgba(255,255,255,.25)">Accedi</a>
       <a href="#audit-gratuito" class="btn btn-primary btn-sm btn-pill">Richiedi il report gratuito</a>
       <button class="hamburger" id="hamburger" aria-label="Apri il menu" aria-expanded="false" aria-controls="mobileMenu">
         <span></span><span></span><span></span>
@@ -602,6 +611,7 @@ h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;color:var(--ink);font-weight:
   <a href="#come-funziona">Come funziona</a>
   <a href="#audit-gratuito">Le offerte</a>
   <a href="#faq">Domande frequenti</a>
+  <a href="/login?next=/dashboard">Accedi</a>
 </nav>
 
 <main>
