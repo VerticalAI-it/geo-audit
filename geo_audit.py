@@ -479,8 +479,7 @@ def gauge(score):
       f'<circle cx="75" cy="75" r="{r}" fill="none" style="stroke:var(--line)" stroke-width="14"/>'
       f'<circle cx="75" cy="75" r="{r}" fill="none" stroke="{col}" stroke-width="14" stroke-linecap="round" '
       f'stroke-dasharray="{c:.1f}" stroke-dashoffset="{off:.1f}" transform="rotate(-90 75 75)"/>'
-      f'<text x="75" y="68" text-anchor="middle" font-family="Space Grotesk" font-weight="800" font-size="40" style="fill:var(--ink)">{score}</text>'
-      f'<text x="75" y="90" text-anchor="middle" font-family="JetBrains Mono" font-size="11" style="fill:var(--muted)">/ 100</text></svg>')
+      f'<text x="75" y="75" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk" font-weight="800" font-size="40" style="fill:var(--ink)">{score}</text></svg>')
 
 def radar(cats):
     n = len(cats)
