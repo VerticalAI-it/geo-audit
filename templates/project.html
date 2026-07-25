@@ -82,10 +82,34 @@
   .score-unknown     { background:var(--surface-2);   border-color:var(--border) }
   .score-unknown .num    { color:var(--text-3) }
 
-  .delta-pill { font-family:var(--font-mono); font-size:11px; font-weight:600; padding:3px 8px; border-radius:var(--r-pill) }
+  .delta-block { display:flex; flex-direction:column; align-items:flex-start; gap:6px }
+  .delta-pill { font-family:var(--font-mono); font-size:16px; font-weight:700; padding:5px 12px; border-radius:var(--r-pill); line-height:1 }
   .delta-up   { background:var(--success-bg); color:var(--success) }
   .delta-down { background:var(--danger-bg);  color:var(--danger) }
   .delta-flat { background:var(--surface-2);  color:var(--text-3) }
+  .delta-text { font-size:12px; color:var(--text-3) }
+
+  /* Numeri colorati per soglia (score aree, senza box) */
+  .txt-ottimo       { color:var(--success) }
+  .txt-migliorabile { color:var(--warning) }
+  .txt-critico      { color:var(--danger) }
+  .txt-unknown      { color:var(--text-3) }
+
+  /* Mini stat box (Salute issue) */
+  .mini-stat-row { display:flex; gap:10px }
+  .mini-stat {
+    flex:1; border-radius:var(--r-md); border:1px solid var(--border); background:var(--surface-2);
+    padding:10px 12px; text-align:center;
+  }
+  .mini-stat-num { display:block; font-family:var(--font-display); font-weight:600; font-size:22px; line-height:1; color:var(--ink) }
+  .mini-stat-label { display:block; font-family:var(--font-mono); font-size:10.5px; color:var(--text-3); margin-top:5px; text-transform:uppercase; letter-spacing:.03em }
+  .mini-stat.stat-good  { background:var(--success-bg); border-color:var(--success-border) }
+  .mini-stat.stat-good .mini-stat-num  { color:var(--success) }
+  .mini-stat.stat-warn  { background:var(--warning-bg); border-color:var(--warning-border) }
+  .mini-stat.stat-warn .mini-stat-num  { color:var(--warning) }
+  .mini-stat.stat-bad   { background:var(--danger-bg);  border-color:var(--danger-border) }
+  .mini-stat.stat-bad .mini-stat-num   { color:var(--danger) }
+  .mini-stat.stat-neutral .mini-stat-num { color:var(--text-3) }
 
   /* Coming soon */
   .coming-soon-card { opacity:.72 }

@@ -1228,13 +1228,20 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
     if delta is not None:
         cls = "delta-up" if delta > 0 else ("delta-down" if delta < 0 else "delta-flat")
         sign = "+" if delta > 0 else ""
-        delta_html = f'<span class="delta-pill {cls}">{sign}{delta} vs audit precedente</span>'
+        delta_html = (
+            f'<div class="delta-block"><span class="delta-pill {cls}">{sign}{delta}</span>'
+            '<span class="delta-text">vs audit precedente</span></div>'
+        )
 
     areas = latest.get("areas") or []
     worst = areas[0] if areas else None
     best = areas[-1] if areas else None
-    worst_txt = f'{geo_audit.esc(worst["key"])} ({worst["score"]}/100)' if worst else "—"
-    best_txt = f'{geo_audit.esc(best["key"])} ({best["score"]}/100)' if best else "—"
+    best_cls = _score_class(best["score"]).replace("score-", "txt-") if best else "txt-unknown"
+    worst_cls = _score_class(worst["score"]).replace("score-", "txt-") if worst else "txt-unknown"
+    best_txt = (f'<b>{geo_audit.esc(best["key"])}</b> <span class="{best_cls}">({best["score"]}/100)</span>'
+                if best else "—")
+    worst_txt = (f'<b>{geo_audit.esc(worst["key"])}</b> <span class="{worst_cls}">({worst["score"]}/100)</span>'
+                 if worst else "—")
 
     issues_count = latest.get("issues_count")
     critical_count = latest.get("critical_count")
@@ -1242,6 +1249,15 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
                   f'all\'audit del {_fmt_date(previous.get("created_at"))}.'
                   if previous and previous.get("overall") is not None
                   else "Ancora nessun audit precedente per calcolare una variazione.")
+
+    def _count_cls(value, critical):
+        if value is None:
+            return "stat-neutral"
+        if critical:
+            return "stat-good" if value == 0 else "stat-bad"
+        if value == 0:
+            return "stat-good"
+        return "stat-warn" if value <= 10 else "stat-bad"
 
     sc = _score_class(overall)
     return (
@@ -1253,13 +1269,17 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
         f'<p class="card-sub" style="margin-top:10px">Ultimo audit: {_fmt_date(latest.get("created_at"))}</p></div>'
 
         '<div class="card"><div class="card-sub">Salute issue</div>'
-        f'<p style="margin:6px 0"><b>{issues_count if issues_count is not None else "—"}</b> problemi totali · '
-        f'<b>{critical_count if critical_count is not None else "—"}</b> critici</p>'
-        f'<p style="margin:6px 0"><b>{open_issues}</b> issue aperte in Opportunities</p></div>'
+        '<div class="mini-stat-row">'
+        f'<div class="mini-stat {_count_cls(issues_count, False)}"><span class="mini-stat-num">{issues_count if issues_count is not None else "—"}</span>'
+        '<span class="mini-stat-label">problemi totali</span></div>'
+        f'<div class="mini-stat {_count_cls(critical_count, True)}"><span class="mini-stat-num">{critical_count if critical_count is not None else "—"}</span>'
+        '<span class="mini-stat-label">critici</span></div>'
+        '</div>'
+        f'<p style="margin:10px 0 0"><b>{open_issues}</b> issue aperte in Opportunities</p></div>'
 
         '<div class="card"><div class="card-sub">Area migliore / peggiore</div>'
-        f'<p style="margin:6px 0">✓ <b>{best_txt}</b></p>'
-        f'<p style="margin:6px 0">⚠ <b>{worst_txt}</b></p></div>'
+        f'<p style="margin:6px 0">✓ {best_txt}</p>'
+        f'<p style="margin:6px 0">⚠ {worst_txt}</p></div>'
 
         '<div class="card"><div class="card-sub">Tracking</div>'
         '<p style="margin:6px 0"><span class="badge badge--neutral">Tracking not installed</span></p>'
