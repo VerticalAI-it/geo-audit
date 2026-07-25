@@ -39,7 +39,26 @@
   .project-head h1 { font-size:clamp(22px, 4vw, 28px); margin:0 0 4px; letter-spacing:-.02em }
   .project-head .domain { font-family:var(--font-mono); font-size:13px; color:var(--text-3) }
 
-  nav.tabs { margin-bottom:var(--sp-6) }
+  .tabs { margin-bottom:0 }
+  .tab-soon {
+    font-size:9px; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em;
+    background:var(--surface-2); color:var(--text-3); padding:1px 5px; border-radius:999px;
+    margin-left:4px; vertical-align:middle;
+  }
+  .tab.active .tab-soon, .subtab.active .tab-soon { color:var(--brand-text) }
+  .tab.soon:not(.active), .subtab.soon:not(.active) { color:var(--text-3) }
+
+  .subtabs {
+    display:flex; gap:2px; overflow-x:auto;
+    border-bottom:1px solid var(--border); margin-bottom:var(--sp-6);
+  }
+  .subtab {
+    font-size:13px; font-weight:600; color:var(--text-2); padding:9px 12px;
+    border:none; background:none; cursor:pointer; text-decoration:none;
+    border-bottom:2px solid transparent; white-space:nowrap;
+  }
+  .subtab:hover { color:var(--text) }
+  .subtab.active { color:var(--brand-text); border-bottom-color:var(--brand) }
 
   .tab-body .card + .card { margin-top:0 }
 
@@ -69,6 +88,17 @@
 
   /* Coming soon */
   .coming-soon-card { opacity:.72 }
+
+  /* Griglia riepilogo sezioni (Overview) */
+  .section-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:var(--sp-3) }
+  .section-card {
+    display:block; text-decoration:none; color:inherit;
+    transition:border-color var(--t-fast), box-shadow var(--t-fast);
+  }
+  .section-card:hover { border-color:var(--brand); box-shadow:var(--sh-sm); text-decoration:none }
+  .section-card-link {
+    display:block; margin-top:10px; font-size:12.5px; font-weight:600; color:var(--brand-text);
+  }
 
   /* Area score bars */
   .area-row { display:flex; align-items:center; gap:var(--sp-3); padding:8px 0 }
@@ -111,7 +141,7 @@
       <div class="domain">{{PROJECT_DOMAIN}}</div>
     </div>
 
-    <nav class="tabs" aria-label="Sezioni progetto">{{TABS_NAV}}</nav>
+    <nav aria-label="Sezioni progetto">{{TABS_NAV}}</nav>
 
     <div class="tab-body">{{TAB_BODY}}</div>
   </main>

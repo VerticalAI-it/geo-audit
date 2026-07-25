@@ -990,14 +990,25 @@ def dashboard(request: Request):
 
 # ── Project detail: IA definitiva a 12 tab (dati reali dove disponibili) ────
 
-_PROJECT_TABS = [
-    ("overview", "Overview"), ("audit", "Audit"), ("pages", "Pages"),
-    ("ai-visibility", "AI Visibility"), ("prompts", "Prompts & Queries"),
-    ("competitors", "Competitors"), ("citations", "Citations"),
-    ("traffic", "AI Traffic"), ("technical", "Technical GEO"),
-    ("opportunities", "Opportunities"), ("reports", "Reports"),
-    ("settings", "Settings"),
+_TAB_CATEGORIES = [
+    ("overview", "Overview", None),
+    ("audit", "Audit", [
+        ("audit", "Riepilogo"), ("pages", "Pages"),
+        ("technical", "Technical GEO"), ("opportunities", "Opportunities"),
+    ]),
+    ("ai", "AI Intelligence", [
+        ("ai-visibility", "AI Visibility"), ("prompts", "Prompts & Queries"),
+        ("competitors", "Competitors"), ("citations", "Citations"),
+    ]),
+    ("growth", "Traffic & Reports", [
+        ("traffic", "AI Traffic"), ("reports", "Reports"),
+    ]),
+    ("settings", "Settings", None),
 ]
+
+_ALL_TAB_KEYS = []
+for _cat_key, _cat_label, _children in _TAB_CATEGORIES:
+    _ALL_TAB_KEYS.extend([_cat_key] if _children is None else [k for k, _ in _children])
 
 _COMING_SOON_TABS = {
     "ai-visibility": ("AI Visibility",
@@ -1022,12 +1033,38 @@ _SEV_BADGE_CLS    = {"critical": "badge--danger", "high": "badge--danger", "medi
                       "low": "badge--neutral", "info": "badge--neutral"}
 
 
-def _tab_nav(project_id: str, active: str) -> str:
-    links = []
-    for key, label in _PROJECT_TABS:
-        cls = "tab active" if key == active else "tab"
-        links.append(f'<a href="/project/{project_id}?tab={key}" class="{cls}">{geo_audit.esc(label)}</a>')
-    return "".join(links)
+def _category_for_tab(tab: str) -> str:
+    for cat_key, _, children in _TAB_CATEGORIES:
+        if children is None:
+            if cat_key == tab:
+                return cat_key
+        elif any(k == tab for k, _ in children):
+            return cat_key
+    return "overview"
+
+
+def _tab_nav(project_id: str, active_tab: str) -> str:
+    active_cat = _category_for_tab(active_tab)
+
+    top = []
+    for cat_key, cat_label, children in _TAB_CATEGORIES:
+        target = cat_key if children is None else children[0][0]
+        soon = children is not None and all(k in _COMING_SOON_TABS for k, _ in children)
+        cls = "tab" + (" active" if cat_key == active_cat else "") + (" soon" if soon else "")
+        badge = ' <span class="tab-soon">soon</span>' if soon else ""
+        top.append(f'<a href="/project/{project_id}?tab={target}" class="{cls}">{geo_audit.esc(cat_label)}{badge}</a>')
+    html = '<div class="tabs">' + "".join(top) + '</div>'
+
+    active_children = next((c for k, _, c in _TAB_CATEGORIES if k == active_cat), None)
+    if active_children:
+        subs = []
+        for key, label in active_children:
+            soon = key in _COMING_SOON_TABS
+            cls = "subtab" + (" active" if key == active_tab else "") + (" soon" if soon else "")
+            badge = ' <span class="tab-soon">soon</span>' if soon else ""
+            subs.append(f'<a href="/project/{project_id}?tab={key}" class="{cls}">{geo_audit.esc(label)}{badge}</a>')
+        html += '<div class="subtabs">' + "".join(subs) + '</div>'
+    return html
 
 
 def _coming_soon_tab(title: str, description: str) -> str:
@@ -1108,11 +1145,57 @@ def _aggregate_page_check(pages_detail: list, check_id: str) -> dict:
             "ok": ok, "warn": warn, "fail": fail, "total": len(matches)}
 
 
-def _tab_overview(latest: dict | None, previous: dict | None, open_issues: int) -> str:
+def _section_card(project_id: str, tab_key: str, label: str, summary: str, soon: bool) -> str:
+    badge = '<span class="badge badge--neutral">Coming soon</span>' if soon else ''
+    cls = "card section-card" + (" coming-soon-card" if soon else "")
+    return (
+        f'<a href="/project/{project_id}?tab={tab_key}" class="{cls}">'
+        f'{badge}<div class="card-title" style="margin-top:{"8px" if soon else "0"}">{geo_audit.esc(label)}</div>'
+        f'<p class="card-sub">{summary}</p>'
+        '<span class="section-card-link">Apri dettaglio →</span>'
+        '</a>'
+    )
+
+
+def _overview_sections_grid(project_id: str, latest: dict | None, open_issues: int, resolved_recent: int) -> str:
+    if latest:
+        pages = latest.get("pages_detail") or []
+        pages_with_issues = len([p for p in pages if any(c.get("status") in ("warn", "fail") for c in (p.get("checks") or []))])
+        site_checks = latest.get("site_checks") or []
+        site_ok = len([c for c in site_checks if c.get("status") == "ok"])
+        pages_summary = f'{len(pages)} pagine analizzate, {pages_with_issues} con almeno un problema.' if pages else "Nessuna pagina analizzata."
+        technical_summary = f'{site_ok}/{len(site_checks)} check di accesso e infrastruttura superati.' if site_checks else "Nessun dato tecnico disponibile."
+        areas = latest.get("areas") or []
+        audit_summary = (f'Punteggio {latest.get("overall", "—")}/100 su {len(areas)} aree, '
+                          f'area migliore «{geo_audit.esc(areas[-1]["key"])}».') if areas else "Nessun audit ancora eseguito."
+    else:
+        pages_summary = technical_summary = audit_summary = "Nessun audit ancora eseguito."
+
+    opportunities_summary = f'{open_issues} issue aperte' + (f', {resolved_recent} risolte di recente.' if resolved_recent else '.')
+
+    cards = [
+        _section_card(project_id, "audit", "Audit", audit_summary, False),
+        _section_card(project_id, "pages", "Pages", pages_summary, False),
+        _section_card(project_id, "technical", "Technical GEO", technical_summary, False),
+        _section_card(project_id, "opportunities", "Opportunities", opportunities_summary, False),
+    ]
+    for tab_key, (label, desc) in _COMING_SOON_TABS.items():
+        cards.append(_section_card(project_id, tab_key, label, desc, True))
+
+    return f'<div class="card-title" style="margin:24px 0 12px">Tutte le sezioni</div><div class="section-grid">{"".join(cards)}</div>'
+
+
+def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
+                   open_issues: int, resolved_recent: int) -> str:
+    sections_html = _overview_sections_grid(project_id, latest, open_issues, resolved_recent)
+
     if not latest:
-        return ('<div class="alert alert--info"><div class="ic">i</div>'
-                '<div>Nessun audit ancora eseguito per questo progetto. '
-                '<a href="/audit">Avvia la prima analisi →</a></div></div>')
+        return (
+            '<div class="alert alert--info"><div class="ic">i</div>'
+            '<div>Nessun audit ancora eseguito per questo progetto. '
+            '<a href="/audit">Avvia la prima analisi →</a></div></div>'
+            + sections_html
+        )
 
     overall = latest.get("overall")
     delta = None
@@ -1162,6 +1245,7 @@ def _tab_overview(latest: dict | None, previous: dict | None, open_issues: int) 
 
         f'<div class="card" style="margin-top:16px"><div class="card-title">Ultime variazioni</div>'
         f'<p class="card-sub">{variazione}</p></div>'
+        + sections_html
     )
 
 
@@ -1339,7 +1423,7 @@ def project_detail(project_id: str, request: Request, tab: str = "overview"):
             status_code=404,
         )
 
-    valid_tabs = {k for k, _ in _PROJECT_TABS}
+    valid_tabs = set(_ALL_TAB_KEYS)
     if tab not in valid_tabs:
         tab = "overview"
 
@@ -1350,8 +1434,10 @@ def project_detail(project_id: str, request: Request, tab: str = "overview"):
         runs = _sb_audits_by_project(project_id, limit=2, full=True)
         latest = runs[0] if runs else None
         previous = runs[1] if len(runs) > 1 else None
-        open_issues = len(_sb_issues_by_project(project_id, status="open"))
-        body = _tab_overview(latest, previous, open_issues)
+        all_issues = _sb_issues_by_project(project_id)
+        open_issues = len([i for i in all_issues if i["status"] == "open"])
+        resolved_recent = len([i for i in all_issues if i["status"] == "resolved"])
+        body = _tab_overview(project_id, latest, previous, open_issues, resolved_recent)
     elif tab == "audit":
         history = _sb_audits_by_project(project_id, limit=50, full=False)
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
