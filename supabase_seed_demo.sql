@@ -26,9 +26,21 @@ a1 AS (
     SELECT
         '05ba0f8c-7856-43d2-a86e-9036601e1cc0', proj.id, 'https://demo-website.it', 'done', 'demo-website.it',
         58, 'D', 'Da rafforzare', 3,
-        '<!doctype html><html lang="it"><head><meta charset="utf-8"><title>GEO Audit — demo-website.it</title></head>'
-        '<body style="font-family:sans-serif;padding:40px;background:#0B0A12;color:#F4F3F8"><h1>demo-website.it</h1>'
-        '<p>Punteggio GEO: <b>58/100</b> — Da rafforzare</p><p>Report demo — prima analisi.</p></body></html>',
+        '<!doctype html><html lang="it" data-theme="dark"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — demo-website.it</title>'
+        '<link rel="stylesheet" href="/static/css/design-system.css">'
+        '<style>body{min-height:100vh;margin:0;background:radial-gradient(140% 100% at 70% -5%,#1E1A38 0%,#0B0A12 60%);'
+        'display:flex;align-items:center;justify-content:center;padding:40px;font-family:var(--font-sans)}'
+        '.sheet{background:var(--surface);max-width:480px;width:100%;border-radius:20px;padding:44px 40px;'
+        'text-align:center;box-shadow:0 16px 48px rgba(0,0,0,.4)}'
+        '.sheet h1{font-family:var(--font-display);font-size:24px;margin:0 0 20px;color:var(--ink)}'
+        '.sheet .score{font-family:var(--font-display);font-size:64px;font-weight:700;line-height:1;color:#F5BE57}'
+        '.sheet .band{font-family:var(--font-mono);color:var(--text-3);letter-spacing:.08em;text-transform:uppercase;font-size:12px;margin-top:10px}'
+        '.sheet p.note{color:var(--text-2);margin-top:24px;font-size:14px;line-height:1.6}</style></head>'
+        '<body><div class="sheet"><h1>demo-website.it</h1><div class="score">58</div>'
+        '<div class="band">Da rafforzare · D</div>'
+        '<p class="note">Report demo — prima analisi. Dati dimostrativi generati per mostrare lo storico del progetto.</p>'
+        '</div></body></html>',
         '1.1.0',
         '[{"key":"Dati strutturati","score":18},{"key":"Autorità & trust","score":48},
           {"key":"Contenuti & answerability","score":52},{"key":"Meta & social","score":58},
@@ -68,9 +80,21 @@ a2 AS (
     SELECT
         '05ba0f8c-7856-43d2-a86e-9036601e1cc0', proj.id, 'https://demo-website.it', 'done', 'demo-website.it',
         74, 'C', 'Discreto', 3,
-        '<!doctype html><html lang="it"><head><meta charset="utf-8"><title>GEO Audit — demo-website.it</title></head>'
-        '<body style="font-family:sans-serif;padding:40px;background:#0B0A12;color:#F4F3F8"><h1>demo-website.it</h1>'
-        '<p>Punteggio GEO: <b>74/100</b> — Discreto</p><p>Report demo — secondo giro, JSON-LD e meta corrette in home.</p></body></html>',
+        '<!doctype html><html lang="it" data-theme="dark"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — demo-website.it</title>'
+        '<link rel="stylesheet" href="/static/css/design-system.css">'
+        '<style>body{min-height:100vh;margin:0;background:radial-gradient(140% 100% at 70% -5%,#1E1A38 0%,#0B0A12 60%);'
+        'display:flex;align-items:center;justify-content:center;padding:40px;font-family:var(--font-sans)}'
+        '.sheet{background:var(--surface);max-width:480px;width:100%;border-radius:20px;padding:44px 40px;'
+        'text-align:center;box-shadow:0 16px 48px rgba(0,0,0,.4)}'
+        '.sheet h1{font-family:var(--font-display);font-size:24px;margin:0 0 20px;color:var(--ink)}'
+        '.sheet .score{font-family:var(--font-display);font-size:64px;font-weight:700;line-height:1;color:#F5BE57}'
+        '.sheet .band{font-family:var(--font-mono);color:var(--text-3);letter-spacing:.08em;text-transform:uppercase;font-size:12px;margin-top:10px}'
+        '.sheet p.note{color:var(--text-2);margin-top:24px;font-size:14px;line-height:1.6}</style></head>'
+        '<body><div class="sheet"><h1>demo-website.it</h1><div class="score">74</div>'
+        '<div class="band">Discreto · C</div>'
+        '<p class="note">Report demo — secondo giro. JSON-LD e meta description corrette in home.</p>'
+        '</div></body></html>',
         '1.1.0',
         '[{"key":"Autorità & trust","score":66},{"key":"Contenuti & answerability","score":70},
           {"key":"Dati strutturati","score":55},{"key":"Meta & social","score":78},
@@ -110,9 +134,21 @@ a3 AS (
     SELECT
         '05ba0f8c-7856-43d2-a86e-9036601e1cc0', proj.id, 'https://demo-website.it', 'done', 'demo-website.it',
         88, 'B', 'Buono', 3,
-        '<!doctype html><html lang="it"><head><meta charset="utf-8"><title>GEO Audit — demo-website.it</title></head>'
-        '<body style="font-family:sans-serif;padding:40px;background:#0B0A12;color:#F4F3F8"><h1>demo-website.it</h1>'
-        '<p>Punteggio GEO: <b>88/100</b> — Buono</p><p>Report demo — terzo giro, dati strutturati e llms.txt completati.</p></body></html>',
+        '<!doctype html><html lang="it" data-theme="dark"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — demo-website.it</title>'
+        '<link rel="stylesheet" href="/static/css/design-system.css">'
+        '<style>body{min-height:100vh;margin:0;background:radial-gradient(140% 100% at 70% -5%,#1E1A38 0%,#0B0A12 60%);'
+        'display:flex;align-items:center;justify-content:center;padding:40px;font-family:var(--font-sans)}'
+        '.sheet{background:var(--surface);max-width:480px;width:100%;border-radius:20px;padding:44px 40px;'
+        'text-align:center;box-shadow:0 16px 48px rgba(0,0,0,.4)}'
+        '.sheet h1{font-family:var(--font-display);font-size:24px;margin:0 0 20px;color:var(--ink)}'
+        '.sheet .score{font-family:var(--font-display);font-size:64px;font-weight:700;line-height:1;color:#3DDC97}'
+        '.sheet .band{font-family:var(--font-mono);color:var(--text-3);letter-spacing:.08em;text-transform:uppercase;font-size:12px;margin-top:10px}'
+        '.sheet p.note{color:var(--text-2);margin-top:24px;font-size:14px;line-height:1.6}</style></head>'
+        '<body><div class="sheet"><h1>demo-website.it</h1><div class="score">88</div>'
+        '<div class="band">Buono · B</div>'
+        '<p class="note">Report demo — terzo giro. Dati strutturati e llms.txt completati.</p>'
+        '</div></body></html>',
         '1.1.0',
         '[{"key":"Autorità & trust","score":82},{"key":"Contenuti & answerability","score":85},
           {"key":"Dati strutturati","score":85},{"key":"HTML semantico","score":90},
@@ -150,9 +186,21 @@ a4 AS (
     SELECT
         '05ba0f8c-7856-43d2-a86e-9036601e1cc0', proj.id, 'https://demo-website.it', 'done', 'demo-website.it',
         99, 'A', 'Eccellente', 3,
-        '<!doctype html><html lang="it"><head><meta charset="utf-8"><title>GEO Audit — demo-website.it</title></head>'
-        '<body style="font-family:sans-serif;padding:40px;background:#0B0A12;color:#F4F3F8"><h1>demo-website.it</h1>'
-        '<p>Punteggio GEO: <b>99/100</b> — Eccellente</p><p>Report demo — quarto giro, praticamente tutti i check superati.</p></body></html>',
+        '<!doctype html><html lang="it" data-theme="dark"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — demo-website.it</title>'
+        '<link rel="stylesheet" href="/static/css/design-system.css">'
+        '<style>body{min-height:100vh;margin:0;background:radial-gradient(140% 100% at 70% -5%,#1E1A38 0%,#0B0A12 60%);'
+        'display:flex;align-items:center;justify-content:center;padding:40px;font-family:var(--font-sans)}'
+        '.sheet{background:var(--surface);max-width:480px;width:100%;border-radius:20px;padding:44px 40px;'
+        'text-align:center;box-shadow:0 16px 48px rgba(0,0,0,.4)}'
+        '.sheet h1{font-family:var(--font-display);font-size:24px;margin:0 0 20px;color:var(--ink)}'
+        '.sheet .score{font-family:var(--font-display);font-size:64px;font-weight:700;line-height:1;color:#3DDC97}'
+        '.sheet .band{font-family:var(--font-mono);color:var(--text-3);letter-spacing:.08em;text-transform:uppercase;font-size:12px;margin-top:10px}'
+        '.sheet p.note{color:var(--text-2);margin-top:24px;font-size:14px;line-height:1.6}</style></head>'
+        '<body><div class="sheet"><h1>demo-website.it</h1><div class="score">99</div>'
+        '<div class="band">Eccellente · A</div>'
+        '<p class="note">Report demo — quarto giro. Praticamente tutti i check superati.</p>'
+        '</div></body></html>',
         '1.1.0',
         '[{"key":"HTML semantico","score":97},{"key":"Contenuti & answerability","score":98},
           {"key":"Rendering & accesso","score":100},{"key":"Dati strutturati","score":100},
