@@ -1040,7 +1040,7 @@ _COMING_SOON_TABS = {
 }
 
 _STATUS_BADGE_CLS = {"ok": "badge--success", "warn": "badge--warning", "fail": "badge--danger", "unknown": "badge--neutral"}
-_STATUS_LABEL     = {"ok": "OK", "warn": "Da migliorare", "fail": "Critico", "unknown": "N/D"}
+_STATUS_LABEL     = {"ok": "OK", "warn": "Migliorabile", "fail": "Critico", "unknown": "N/D"}
 _SEV_BADGE_CLS    = {"critical": "badge--danger", "high": "badge--danger", "medium": "badge--warning",
                       "low": "badge--neutral", "info": "badge--neutral"}
 

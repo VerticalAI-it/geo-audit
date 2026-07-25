@@ -267,6 +267,7 @@ code,kbd { font-family:var(--font-mono); font-size:.875em }
   border-radius:var(--r-pill);
   border:1px solid transparent;
   line-height:1.4;
+  white-space:nowrap;
 }
 .badge--neutral  { background:var(--surface-2);  color:var(--text-2);     border-color:var(--border) }
 .badge--brand    { background:var(--brand-soft);  color:var(--brand-text) }
