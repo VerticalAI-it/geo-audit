@@ -196,7 +196,7 @@
       btn.textContent = "Invio in corso…";
 
       const email = document.getElementById("email").value.trim();
-      const redirectTo = window.location.origin + "/auth/callback?next=" + encodeURIComponent(NEXT);
+      const redirectTo = "{{SITE_URL}}/auth/callback?next=" + encodeURIComponent(NEXT);
 
       const { error } = await sb.auth.signInWithOtp({
         email: email,

@@ -619,7 +619,7 @@ def index():
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
-    return _render(LOGIN_HTML, SUPABASE_URL=SUPABASE_URL, SUPABASE_ANON_KEY=SUPABASE_ANON)
+    return _render(LOGIN_HTML, SUPABASE_URL=SUPABASE_URL, SUPABASE_ANON_KEY=SUPABASE_ANON, SITE_URL=SITE_URL)
 
 
 @app.get("/auth/callback", response_class=HTMLResponse)
