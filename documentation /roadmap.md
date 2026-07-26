@@ -48,20 +48,27 @@ Stesso prodotto, navigazione più chiara e look coerente ovunque.
 - Coerenza visiva: badge, colori soglia punteggio, componenti condivisi da
   `design-system.css`
 
----
-
-## Prossimi passi (in ordine)
-
 ### v1.3 — Tracking first-party → sblocca "AI Traffic"
 Non solo un audit statico: sapere chi arriva davvero dal sito dagli assistenti AI.
 
-- Snippet JS da installare sul sito cliente + endpoint di ingestion lato server
-- Nuova tabella `tracking_event` (session, referrer, ai_source, page_url, timestamp, ecc.)
-- Verifica installazione snippet (oggi in Settings è solo un placeholder "coming soon")
-- Sessioni di referral AI, landing page, trend, top pages
-- Custom conversion event di base
-- **Dipendenze**: nessuna esterna, ma introduce un endpoint pubblico da proteggere e
-  rate-limitare
+- Snippet `static/js/geo-track.js` (sendBeacon, sessione via `sessionStorage`, eventi
+  custom via `window.geoTrack(nome, props)`), da installare con un tag `<script data-project="...">`
+- Endpoint pubblico `POST /t`, nessuna autenticazione (gira su siti di terzi),
+  validazione minima e fallimento silenzioso per non rompere mai il sito del cliente
+- Tabella `tracking_event` (project_id, event_name, session_id, page_url, referrer,
+  ai_source, properties, created_at)
+- Rilevamento provider AI dal referrer (ChatGPT, Perplexity, Gemini, Claude, Copilot,
+  You.com, Meta AI — mappa estendibile in `_AI_REFERRER_DOMAINS`)
+- Tab AI Traffic: sessioni totali e da AI (30gg), breakdown per provider, landing page
+  più visitate da AI, andamento ultimi 14 giorni
+- Settings: stato installazione (rilevato al primo evento ricevuto, nessun "ping" di
+  verifica dedicato) e snippet pronto da copiare
+- **Nota**: nessun rate-limiting dedicato sull'endpoint pubblico in questa prima
+  versione — da valutare se il volume lo richiede
+
+---
+
+## Prossimi passi (in ordine)
 
 ### v2.0 — LLM monitoring → sblocca "AI Visibility" e "Prompts & Queries"
 Quanto e come il brand viene menzionato dai principali assistenti AI.

@@ -265,14 +265,14 @@
           </div>
           <div class="project-badges">
             ${statusBadge(p.status)}
-            <span class="badge badge--neutral">${p.tracking}</span>
+            <span class="badge ${p.tracking_active ? "badge--success" : "badge--neutral"}">${p.tracking}</span>
           </div>
           <div class="project-meta-row">
             <span><b>${p.critical_count != null ? p.critical_count : "—"}</b> criticità</span>
             <span><b>${p.pages_count != null ? p.pages_count : "—"}</b> pagine</span>
             <span class="project-meta-scan">Ultimo scan <b>${fmtDate(p.last_scan)}</b></span>
           </div>
-          <div class="ai-not-configured">AI Visibility · AI Traffic · Citations: not configured</div>
+          <div class="ai-not-configured">${p.tracking_active ? "AI Visibility · Citations: not configured" : "AI Visibility · AI Traffic · Citations: not configured"}</div>
         </a>`;
     }
 

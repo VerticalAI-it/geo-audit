@@ -117,6 +117,35 @@ CREATE POLICY "own_issues" ON public.issue
 
 CREATE INDEX IF NOT EXISTS issue_project_status ON public.issue (project_id, status);
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- GEO Audit · Fase D — Tracking first-party (v1.3, sblocca "AI Traffic")
+-- ════════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS public.tracking_event (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id  UUID        REFERENCES public.project(id) ON DELETE CASCADE,
+    event_name  TEXT        NOT NULL DEFAULT 'pageview',  -- pageview | nome evento custom
+    session_id  TEXT,
+    page_url    TEXT,
+    referrer    TEXT,
+    ai_source   TEXT,                                     -- provider AI rilevato dal referrer, NULL se non AI
+    properties  JSONB,                                     -- payload libero per eventi di conversione
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.tracking_event ENABLE ROW LEVEL SECURITY;
+
+-- Nessuna policy per utenti anonimi: l'endpoint di ingestion scrive con la
+-- service role (bypassa RLS). Questa resta un backstop in caso di accesso
+-- diretto via anon key da un client autenticato.
+DROP POLICY IF EXISTS "own_tracking_events" ON public.tracking_event;
+CREATE POLICY "own_tracking_events" ON public.tracking_event
+    FOR ALL
+    USING (project_id IN (SELECT id FROM public.project WHERE user_id = auth.uid()));
+
+CREATE INDEX IF NOT EXISTS tracking_event_project_created ON public.tracking_event (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS tracking_event_project_ai      ON public.tracking_event (project_id, ai_source) WHERE ai_source IS NOT NULL;
+
 -- IMPORTANTE: dopo aver eseguito questa migration, forza il reload dello
 -- schema cache di PostgREST — altrimenti le nuove tabelle/colonne restano
 -- invisibili all'API REST (errore PGRST205 "Could not find the table ...
