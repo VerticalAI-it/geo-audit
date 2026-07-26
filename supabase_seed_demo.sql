@@ -1,13 +1,18 @@
 -- GEO Audit · Seed demo — progetto "demo-website" con storico in miglioramento
--- Da eseguire DOPO supabase_setup.sql (richiede project/audits/issue già presenti).
+-- Da eseguire DOPO supabase_setup.sql (richiede project/audits/issue/tracking_event già presenti).
 -- Popola 4 audit su date diverse per mostrare il trend storico in dashboard,
 -- con dati "finti ma plausibili" per tutte le sezioni già coperte dall'audit
--- engine reale (aree, check, pagine, azioni, issue lifecycle).
+-- engine reale (aree, check, pagine, azioni, issue lifecycle), più 12 sessioni
+-- di tracking demo (7 da assistenti AI, 5 organiche/dirette) per popolare la
+-- tab AI Traffic senza dover installare davvero lo snippet sul sito demo.
 --
 -- Utente target: verticalai00@gmail.com (user_id 05ba0f8c-7856-43d2-a86e-9036601e1cc0)
--- Idempotente sul progetto (ON CONFLICT su user_id+domain); se rilanciato,
--- aggiunge comunque nuovi audit — rimuovi manualmente quelli vecchi se serve
--- un reset pulito (vedi query di cleanup in fondo, commentata).
+-- Idempotente su progetto (ON CONFLICT su user_id+domain) e issue (ON CONFLICT
+-- su fingerprint). Gli audit non hanno una chiave naturale: se rilanciato ne
+-- aggiunge di nuovi — rimuovili manualmente se serve uno storico pulito. Le
+-- sessioni di tracking demo invece vengono ripulite e reinserite identiche a
+-- ogni run, quindi rilanciare il file è sempre sicuro per quella parte (vedi
+-- query di cleanup manuale in fondo, commentata, per un reset completo).
 
 WITH proj AS (
     INSERT INTO public.project (user_id, name, domain, sector, created_at, updated_at)
@@ -259,10 +264,46 @@ issues_ins AS (
         status = EXCLUDED.status, last_seen_audit = EXCLUDED.last_seen_audit,
         last_seen_at = EXCLUDED.last_seen_at, resolved_at = EXCLUDED.resolved_at
     RETURNING id
+),
+
+-- ── Tracking demo · sessioni AI/organiche per popolare la tab AI Traffic ───
+-- tracking_event non ha una chiave naturale su cui fare ON CONFLICT: per restare
+-- idempotente si ripulisce prima il set demo del progetto e lo si reinserisce
+-- identico ad ogni run (tracking_cleanup è referenziata via LEFT JOIN ON TRUE
+-- così viene sempre eseguita, anche quando non c'è nulla da cancellare).
+tracking_cleanup AS (
+    DELETE FROM public.tracking_event t
+    USING proj
+    WHERE t.project_id = proj.id
+    RETURNING t.id
+),
+tracking_ins AS (
+    INSERT INTO public.tracking_event (project_id, event_name, session_id, page_url, referrer, ai_source, created_at)
+    SELECT proj.id, 'pageview', v.session_id, v.page_url, v.referrer, v.ai_source, v.created_at
+    FROM proj
+    LEFT JOIN tracking_cleanup ON TRUE
+    CROSS JOIN LATERAL (VALUES
+        -- sessioni da assistenti AI (7)
+        ('demo-sess-01', 'https://demo-website.it/',           'https://chat.openai.com/',       'ChatGPT',    NOW() - interval '1 day'  - interval '2 hours'),
+        ('demo-sess-02', 'https://demo-website.it/servizi',     'https://www.perplexity.ai/',     'Perplexity', NOW() - interval '2 days' - interval '5 hours'),
+        ('demo-sess-03', 'https://demo-website.it/chi-siamo',   'https://gemini.google.com/',     'Gemini',     NOW() - interval '3 days' - interval '1 hour'),
+        ('demo-sess-04', 'https://demo-website.it/',            'https://chat.openai.com/',       'ChatGPT',    NOW() - interval '5 days' - interval '4 hours'),
+        ('demo-sess-05', 'https://demo-website.it/servizi',     'https://claude.ai/',             'Claude',     NOW() - interval '6 days' - interval '3 hours'),
+        ('demo-sess-06', 'https://demo-website.it/',            'https://www.perplexity.ai/',     'Perplexity', NOW() - interval '8 days' - interval '6 hours'),
+        ('demo-sess-07', 'https://demo-website.it/chi-siamo',   'https://copilot.microsoft.com/', 'Copilot',    NOW() - interval '10 days' - interval '2 hours'),
+        -- sessioni organiche/dirette, senza provider AI (5)
+        ('demo-sess-08', 'https://demo-website.it/',            '',                               NULL,         NOW() - interval '1 day'  - interval '6 hours'),
+        ('demo-sess-09', 'https://demo-website.it/servizi',     'https://www.google.com/',        NULL,         NOW() - interval '2 days' - interval '1 hour'),
+        ('demo-sess-10', 'https://demo-website.it/',            '',                               NULL,         NOW() - interval '4 days' - interval '3 hours'),
+        ('demo-sess-11', 'https://demo-website.it/chi-siamo',   'https://www.google.com/',        NULL,         NOW() - interval '7 days' - interval '5 hours'),
+        ('demo-sess-12', 'https://demo-website.it/',            '',                               NULL,         NOW() - interval '9 days' - interval '2 hours')
+    ) AS v(session_id, page_url, referrer, ai_source, created_at)
+    RETURNING id
 )
-SELECT 'demo project + 4 audit + issue lifecycle inseriti' AS result;
+SELECT 'demo project + 4 audit + issue lifecycle + tracking events inseriti' AS result;
 
 -- Cleanup (se vuoi ripartire pulito prima di rilanciare questo file):
+-- DELETE FROM public.tracking_event WHERE project_id = (SELECT id FROM public.project WHERE domain = 'demo-website.it' AND user_id = '05ba0f8c-7856-43d2-a86e-9036601e1cc0');
 -- DELETE FROM public.issue   WHERE project_id = (SELECT id FROM public.project WHERE domain = 'demo-website.it' AND user_id = '05ba0f8c-7856-43d2-a86e-9036601e1cc0');
 -- DELETE FROM public.audits  WHERE project_id = (SELECT id FROM public.project WHERE domain = 'demo-website.it' AND user_id = '05ba0f8c-7856-43d2-a86e-9036601e1cc0');
 -- DELETE FROM public.project WHERE domain = 'demo-website.it' AND user_id = '05ba0f8c-7856-43d2-a86e-9036601e1cc0';
