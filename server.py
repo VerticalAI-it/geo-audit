@@ -32,6 +32,7 @@ FORM_HTML     = open(os.path.join(_HERE, "templates", "form.html"),          enc
 HOME_HTML     = open(os.path.join(_HERE, "templates", "home.html"),          encoding="utf-8").read()
 PRIVACY_HTML  = open(os.path.join(_HERE, "templates", "privacy.html"),       encoding="utf-8").read()
 COOKIE_HTML   = open(os.path.join(_HERE, "templates", "cookie.html"),        encoding="utf-8").read()
+ROADMAP_HTML  = open(os.path.join(_HERE, "templates", "roadmap.html"),       encoding="utf-8").read()
 LOGIN_HTML    = open(os.path.join(_HERE, "templates", "login.html"),         encoding="utf-8").read()
 AUTH_CB_HTML  = open(os.path.join(_HERE, "templates", "auth_callback.html"), encoding="utf-8").read()
 DASHBOARD_HTML = open(os.path.join(_HERE, "templates", "dashboard.html"),    encoding="utf-8").read()
@@ -811,6 +812,11 @@ def privacy():
 @app.get("/cookie-policy", response_class=HTMLResponse)
 def cookie_policy():
     return COOKIE_HTML
+
+
+@app.get("/roadmap", response_class=HTMLResponse)
+def roadmap():
+    return ROADMAP_HTML
 
 
 @app.get("/health")

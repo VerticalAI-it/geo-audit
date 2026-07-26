@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="it" data-theme="dark">
+<head>
+<script>try{var _t=localStorage.getItem('geo-theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roadmap · GEO Audit · verticalai</title>
+<meta name="description" content="Cosa abbiamo già costruito e cosa arriva dopo nella piattaforma GEO Audit di Vertical AI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/static/css/design-system.css">
+<style>
+  body { min-height:100vh; background:var(--canvas); padding-bottom:var(--sp-16) }
+  .topbar {
+    position:sticky; top:0;
+    background:color-mix(in srgb, var(--canvas) 86%, transparent);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    padding:0 clamp(16px, 4vw, 40px); height:60px;
+    display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
+    z-index:30;
+  }
+  .logo-row {
+    display:flex; align-items:center; gap:10px;
+    font-family:var(--font-display); font-size:17px; font-weight:600; color:var(--text); text-decoration:none;
+  }
+  .logo-mark { width:28px; height:28px; background:var(--brand); border-radius:8px; display:grid; place-items:center; flex:none }
+  .logo-mark span { color:#fff; font-family:var(--font-mono); font-weight:600; font-size:14px }
+  .logo-ai { color:var(--brand-text) }
+  .topbar-actions { display:flex; align-items:center; gap:var(--sp-3) }
+
+  main { max-width:760px; margin:var(--sp-10) auto 0; padding:0 clamp(16px, 4vw, 32px) }
+  .page-head { margin-bottom:var(--sp-10); text-align:center }
+  .page-head .eyebrow {
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:var(--brand-text);
+    text-transform:uppercase; margin-bottom:var(--sp-3);
+  }
+  .page-head h1 { font-size:clamp(28px, 5vw, 38px); margin:0 0 var(--sp-3); letter-spacing:-.02em }
+  .page-head p { color:var(--text-2); font-size:16px; max-width:520px; margin:0 auto; line-height:1.6 }
+
+  /* Timeline */
+  .timeline { position:relative; padding-left:36px }
+  .timeline::before {
+    content:""; position:absolute; left:9px; top:6px; bottom:6px; width:2px; background:var(--border);
+  }
+  .milestone { position:relative; padding-bottom:var(--sp-10) }
+  .milestone:last-child { padding-bottom:0 }
+  .milestone-dot {
+    position:absolute; left:-36px; top:4px; width:20px; height:20px; border-radius:50%;
+    background:var(--surface); border:2px solid var(--border); display:grid; place-items:center;
+  }
+  .milestone-dot::after { content:""; width:8px; height:8px; border-radius:50%; background:var(--border-strong) }
+  .milestone.is-done .milestone-dot { border-color:var(--success) }
+  .milestone.is-done .milestone-dot::after { background:var(--success) }
+  .milestone.is-next .milestone-dot { border-color:var(--brand) }
+  .milestone.is-next .milestone-dot::after { background:var(--brand) }
+
+  .milestone-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px }
+  .milestone-version { font-family:var(--font-mono); font-size:12px; color:var(--text-3); letter-spacing:.04em }
+  .milestone-title { font-family:var(--font-display); font-size:19px; font-weight:600; margin:2px 0 8px; color:var(--ink) }
+  .milestone-desc { color:var(--text-2); font-size:14.5px; line-height:1.6; margin-bottom:10px }
+  .milestone-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px }
+  .milestone-list li {
+    font-size:13.5px; color:var(--text-2); padding-left:20px; position:relative; line-height:1.5;
+  }
+  .milestone.is-done .milestone-list li::before { content:"✓"; position:absolute; left:0; color:var(--success); font-weight:700 }
+  .milestone.is-next .milestone-list li::before { content:"→"; position:absolute; left:0; color:var(--brand-text); font-weight:700 }
+  .milestone.is-later .milestone-list li::before { content:"·"; position:absolute; left:2px; color:var(--text-3); font-weight:700 }
+
+  .section-label {
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--text-3); margin:var(--sp-4) 0 var(--sp-5) -36px; padding-left:36px;
+  }
+
+  .foot-cta {
+    margin-top:var(--sp-10); text-align:center; padding-top:var(--sp-8); border-top:1px solid var(--border);
+  }
+  .foot-cta p { color:var(--text-2); margin-bottom:var(--sp-4) }
+
+  @media (max-width:520px) { .topbar { padding:0 var(--sp-4) } }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="logo-row" aria-label="verticalai — home">
+      <div class="logo-mark" aria-hidden="true"><span>V</span></div>
+      <span><span class="logo-ai">vertical</span>ai</span>
+    </a>
+    <div class="topbar-actions">
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambia tema">
+        <svg class="i-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </button>
+      <a href="/audit" class="btn btn--primary btn--sm">+ Nuova analisi</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-head">
+      <div class="eyebrow">Roadmap</div>
+      <h1>Cosa c'è oggi, cosa arriva dopo</h1>
+      <p>La piattaforma GEO Audit cresce a step. Qui sotto lo storico di quello che abbiamo già rilasciato e la direzione dei prossimi mesi.</p>
+    </div>
+
+    <div class="timeline">
+      <div class="section-label">Disponibile oggi</div>
+
+      <div class="milestone is-done">
+        <div class="milestone-dot" aria-hidden="true"></div>
+        <div class="milestone-head">
+          <span class="milestone-version">MVP</span>
+          <span class="badge badge--success"><span class="dot"></span>Disponibile</span>
+        </div>
+        <h2 class="milestone-title">Le fondamenta</h2>
+        <p class="milestone-desc">Accesso personale e prima analisi GEO del tuo sito, salvata per ritrovarla quando vuoi.</p>
+        <ul class="milestone-list">
+          <li>Accesso passwordless via link email, nessuna password da ricordare</li>
+          <li>Prima analisi GEO per sito, con punteggio e aree di miglioramento</li>
+          <li>Dashboard con il portfolio di tutti i tuoi progetti</li>
+        </ul>
+      </div>
+
+      <div class="milestone is-done">
+        <div class="milestone-dot" aria-hidden="true"></div>
+        <div class="milestone-head">
+          <span class="milestone-version">v1.1</span>
+          <span class="badge badge--success"><span class="dot"></span>Disponibile</span>
+        </div>
+        <h2 class="milestone-title">Intelligence di progetto</h2>
+        <p class="milestone-desc">Ogni sito diventa un progetto con una sua storia: non solo l'ultimo scan, ma l'andamento nel tempo.</p>
+        <ul class="milestone-list">
+          <li>Vista di dettaglio per progetto: punteggio, aree, pagine, tecnico, opportunità</li>
+          <li>Ciclo di vita delle issue — nuove, ricorrenti, risolte — tra un'analisi e la successiva</li>
+          <li>Storico audit e confronto diretto tra scan dello stesso sito</li>
+        </ul>
+      </div>
+
+      <div class="milestone is-done">
+        <div class="milestone-dot" aria-hidden="true"></div>
+        <div class="milestone-head">
+          <span class="milestone-version">v1.2</span>
+          <span class="badge badge--success"><span class="dot"></span>Disponibile</span>
+        </div>
+        <h2 class="milestone-title">Esperienza e coerenza</h2>
+        <p class="milestone-desc">Lo stesso prodotto, più chiaro da navigare e più curato in ogni dettaglio.</p>
+        <ul class="milestone-list">
+          <li>Navigazione a categorie nella dashboard di progetto</li>
+          <li>Tema chiaro/scuro su tutta la piattaforma, report completo incluso</li>
+          <li>Report di audit riallineato al design system del prodotto</li>
+        </ul>
+      </div>
+
+      <div class="section-label">Prossimi passi</div>
+
+      <div class="milestone is-next">
+        <div class="milestone-dot" aria-hidden="true"></div>
+        <div class="milestone-head">
+          <span class="milestone-version">v1.3</span>
+          <span class="badge badge--brand"><span class="dot"></span>In arrivo</span>
+        </div>
+        <h2 class="milestone-title">AI Traffic</h2>
+        <p class="milestone-desc">Non solo un audit statico: capire chi arriva davvero sul sito dagli assistenti AI.</p>
+        <ul class="milestone-list">
+          <li>Snippet di tracking first-party, installazione guidata</li>
+          <li>Sessioni di referral dagli assistenti AI, landing page e trend nel tempo</li>
+        </ul>
+      </div>
+
+      <div class="milestone is-later">
+        <div class="milestone-dot" aria-hidden="true"></div>
+        <div class="milestone-head">
+          <span class="milestone-version">v2.0</span>
+          <span class="badge badge--neutral">Pianificato</span>
+        </div>
+        <h2 class="milestone-title">AI Visibility</h2>
+        <p class="milestone-desc">Quanto e come il tuo brand viene menzionato dai principali assistenti AI.</p>
+        <ul class="milestone-list">
+          <li>Monitoraggio su un panel di prompt controllati (ChatGPT, Gemini, Perplexity)</li>
+          <li>Mention rate, visibilità per provider e per argomento, trend nel tempo</li>
+        </ul>
+      </div>
+
+      <div class="milestone is-later">
+        <div class="milestone-dot" aria-hidden="true"></div>
+        <div class="milestone-head">
+          <span class="milestone-version">v2.1</span>
+          <span class="badge badge--neutral">Pianificato</span>
+        </div>
+        <h2 class="milestone-title">Competitors &amp; Citations</h2>
+        <p class="milestone-desc">Come ti posizioni rispetto a chi compete con te nelle stesse risposte AI.</p>
+        <ul class="milestone-list">
+          <li>Share of voice e gap rispetto ai competitor</li>
+          <li>URL e pagine citate nelle risposte degli assistenti AI</li>
+        </ul>
+      </div>
+
+      <div class="milestone is-later">
+        <div class="milestone-dot" aria-hidden="true"></div>
+        <div class="milestone-head">
+          <span class="milestone-version">v2.2</span>
+          <span class="badge badge--neutral">Pianificato</span>
+        </div>
+        <h2 class="milestone-title">Brand accuracy &amp; Off-site</h2>
+        <p class="milestone-desc">Verificare che le AI raccontino il tuo brand in modo corretto, dentro e fuori dal sito.</p>
+        <ul class="milestone-list">
+          <li>Confronto tra i fatti reali del brand e ciò che le AI riportano</li>
+          <li>Presenza su Wikipedia, Wikidata e altre fonti terze rilevanti</li>
+        </ul>
+      </div>
+
+      <div class="milestone is-later">
+        <div class="milestone-dot" aria-hidden="true"></div>
+        <div class="milestone-head">
+          <span class="milestone-version">Verticale</span>
+          <span class="badge badge--neutral">Pianificato</span>
+        </div>
+        <h2 class="milestone-title">Hospitality</h2>
+        <p class="milestone-desc">Un livello dedicato per hotel e strutture ricettive, sopra lo stesso modello di progetto.</p>
+        <ul class="milestone-list">
+          <li>Tassonomia di prompt dedicata al settore (soggiorni, servizi, destinazioni)</li>
+          <li>Dati di struttura e visibilità per destinazione e confronto con i competitor</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="foot-cta">
+      <p>Vuoi vedere dove si posiziona oggi il tuo sito?</p>
+      <a href="/audit" class="btn btn--primary">Avvia la tua analisi gratuita →</a>
+    </div>
+  </main>
+
+  <script>
+    document.getElementById("theme-toggle").addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("geo-theme", next); } catch (e) {}
+    });
+  </script>
+</body>
+</html>
