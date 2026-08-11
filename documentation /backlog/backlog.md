@@ -15,3 +15,7 @@ FATTO
 
 # 6 nascondere molte info e rendere tutto molto più markettare
 FATTO
+
+# 7 gap analysis vs articolo ilmioposizionamento.it (GEO)
+vedi geo-gap-ilmioposizionamento.md — recap dei task per coprire il delta, con
+paragrafi da commentare dove ci sono più opzioni possibili
