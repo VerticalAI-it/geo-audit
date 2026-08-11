@@ -65,4 +65,6 @@ Tutte le email usano Resend. I template seguono il design system (sfondo `--canv
 
 ## Deploy
 
-Vercel riscrive tutto a `/api/index` (catch-all). Aggiungere nuove route statiche (es. `/robots.txt`) come endpoint FastAPI in `server.py`.
+Vercel rileva `server.py`/`api/index.py` come app FastAPI nativa (zero-config, via `fastapi` in `requirements.txt`) e la serve come singola Vercel Function che gestisce internamente tutto il routing — **niente `rewrites` in `vercel.json`**: un catch-all manuale (`"/(.*)" → "/api/index"`) va in conflitto con questo routing nativo e causa `{"detail":"Not Found"}` su ogni pagina (successo silenzioso in build, rotto in produzione). Aggiungere nuove route statiche (es. `/robots.txt`) come endpoint FastAPI in `server.py`.
+
+`api/cron.py` non definisce un'app FastAPI (usa `BaseHTTPRequestHandler`), quindi resta una Vercel Function indipendente su `/api/cron`, invariata da quanto sopra; è referenziata in `vercel.json` sotto `crons`.
