@@ -460,10 +460,13 @@ def _process_one_due_project() -> dict | None:
         return {"status": "failed", "project_id": project_id, "error": str(exc)[:200]}
 
 
-def _process_due_projects(max_projects: int = 5, time_budget_seconds: int = 45) -> dict:
+def _process_due_projects(max_projects: int = 3, time_budget_seconds: int = 20) -> dict:
     """Processa più progetti scaduti in una singola invocazione (limitato da
     conteggio e tempo) così anche uno scheduling poco frequente recupera il
-    ritardo accumulato nel tempo."""
+    ritardo accumulato nel tempo. Il budget copre solo l'avvio di una nuova
+    iterazione: ogni singolo audit (fino a 6 pagine, come /scan) può comunque
+    durare più del budget — max_projects resta basso apposta per limitare
+    quante iterazioni si possono incatenare in una sola invocazione."""
     started = time.monotonic()
     results = []
     while len(results) < max_projects and (time.monotonic() - started) < time_budget_seconds:
