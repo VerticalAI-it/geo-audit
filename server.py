@@ -1367,8 +1367,204 @@ def _overview_sections_grid(project_id: str, latest: dict | None, open_issues: i
     return f'<div class="card-title" style="margin:24px 0 12px">Tutte le sezioni</div><div class="section-grid">{"".join(cards)}</div>'
 
 
+_SCORE_CHART_JS = r"""
+(function(){
+  var W = 600, H = 180, PAD = {left:30, right:10, top:14, bottom:22};
+  var MS_DAY = 86400000;
+  var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var allPoints = __DATA__.map(function(p){ return {t: new Date(p.t).getTime(), s: p.s}; });
+  var card = document.getElementById("__CHART_ID__-card");
+  var svg = document.getElementById("__CHART_ID__");
+  var tip = document.getElementById("__CHART_ID__-tip");
+  var wrap = svg.parentElement;
+  var svgNS = "http://www.w3.org/2000/svg";
+
+  function fmtDate(ms) {
+    var d = new Date(ms);
+    return d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
+  }
+  function elNS(tag, attrs) {
+    var e = document.createElementNS(svgNS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  function xScale(t, minT, maxT) {
+    if (maxT === minT) return (W - PAD.left - PAD.right) / 2 + PAD.left;
+    return PAD.left + (t - minT) / (maxT - minT) * (W - PAD.left - PAD.right);
+  }
+  function yScale(s) {
+    return PAD.top + (100 - s) / 100 * (H - PAD.top - PAD.bottom);
+  }
+
+  function render(points) {
+    svg.innerHTML = "";
+    tip.hidden = true;
+    if (!points.length) {
+      var msg = elNS("text", {x:W/2, y:H/2, "text-anchor":"middle", "class":"grid-label"});
+      msg.textContent = "Nessun dato in questo intervallo.";
+      svg.appendChild(msg);
+      return;
+    }
+    var minT = points[0].t, maxT = points[points.length-1].t;
+
+    [0,50,100].forEach(function(v){
+      var y = yScale(v);
+      svg.appendChild(elNS("line", {x1:PAD.left, x2:W-PAD.right, y1:y, y2:y, "class":"grid-line"}));
+      var lbl = elNS("text", {x:4, y:y+3, "class":"grid-label"});
+      lbl.textContent = v;
+      svg.appendChild(lbl);
+    });
+
+    var last = points[points.length-1];
+    var lastX = xScale(last.t, minT, maxT);
+    if (points.length === 1) {
+      svg.appendChild(elNS("circle", {cx:lastX, cy:yScale(last.s), r:5, "class":"score-dot"}));
+    } else {
+      var d = "";
+      points.forEach(function(p, i){
+        var x = xScale(p.t, minT, maxT), y = yScale(p.s);
+        d += (i === 0 ? "M" : "L") + x + "," + y + " ";
+      });
+      var baseY = yScale(0);
+      var firstX = xScale(points[0].t, minT, maxT);
+      var area = d + "L" + lastX + "," + baseY + " L" + firstX + "," + baseY + " Z";
+      svg.appendChild(elNS("path", {d: area, "class":"score-area"}));
+      svg.appendChild(elNS("path", {d: d, "class":"score-line"}));
+      svg.appendChild(elNS("circle", {cx:lastX, cy:yScale(last.s), r:5, "class":"score-dot"}));
+    }
+
+    var crossLine = elNS("line", {"class":"crosshair-line", y1:PAD.top, y2:H-PAD.bottom});
+    var hoverDot = elNS("circle", {"class":"hover-dot", r:5});
+    svg.appendChild(crossLine);
+    svg.appendChild(hoverDot);
+
+    var hit = elNS("rect", {x:PAD.left, y:PAD.top, width:Math.max(1,W-PAD.left-PAD.right), height:Math.max(1,H-PAD.top-PAD.bottom), "class":"hit-area"});
+    svg.appendChild(hit);
+
+    function nearest(clientX) {
+      var pt = svg.createSVGPoint();
+      pt.x = clientX; pt.y = 0;
+      var loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+      var best = points[0], bestDist = Infinity;
+      points.forEach(function(p){
+        var x = xScale(p.t, minT, maxT);
+        var dist = Math.abs(x - loc.x);
+        if (dist < bestDist) { bestDist = dist; best = p; }
+      });
+      return best;
+    }
+
+    function showTip(clientX) {
+      var p = nearest(clientX);
+      var x = xScale(p.t, minT, maxT), y = yScale(p.s);
+      crossLine.setAttribute("x1", x); crossLine.setAttribute("x2", x);
+      crossLine.style.opacity = 1;
+      hoverDot.setAttribute("cx", x); hoverDot.setAttribute("cy", y);
+      hoverDot.style.opacity = 1;
+      var rect = svg.getBoundingClientRect();
+      var wrapRect = wrap.getBoundingClientRect();
+      var px = rect.left + (x / W) * rect.width - wrapRect.left;
+      var py = rect.top + (y / H) * rect.height - wrapRect.top;
+      tip.innerHTML = "";
+      var scEl = document.createElement("span"); scEl.className = "tip-score"; scEl.textContent = p.s + "/100";
+      var dtEl = document.createElement("span"); dtEl.className = "tip-date"; dtEl.textContent = fmtDate(p.t);
+      tip.appendChild(scEl); tip.appendChild(dtEl);
+      tip.style.left = px + "px";
+      tip.style.top = py + "px";
+      tip.hidden = false;
+    }
+    function hideTip() {
+      crossLine.style.opacity = 0;
+      hoverDot.style.opacity = 0;
+      tip.hidden = true;
+    }
+
+    hit.addEventListener("mousemove", function(e){ showTip(e.clientX); });
+    hit.addEventListener("mouseleave", hideTip);
+    hit.addEventListener("touchmove", function(e){
+      if (e.touches[0]) { showTip(e.touches[0].clientX); e.preventDefault(); }
+    }, {passive:false});
+    hit.addEventListener("touchend", hideTip);
+  }
+
+  function filterPoints(rangeDays) {
+    if (rangeDays === "all") return allPoints;
+    var cutoff = Date.now() - parseInt(rangeDays, 10) * MS_DAY;
+    return allPoints.filter(function(p){ return p.t >= cutoff; });
+  }
+
+  var buttons = card.querySelectorAll(".range-btn");
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener("click", function(){
+      var b = this;
+      for (var j = 0; j < buttons.length; j++) { buttons[j].classList.remove("active"); buttons[j].setAttribute("aria-pressed","false"); }
+      b.classList.add("active"); b.setAttribute("aria-pressed","true");
+      render(filterPoints(b.getAttribute("data-range")));
+    });
+  }
+
+  render(allPoints);
+})();
+"""
+
+
+def _score_history_chart(project_id: str, history: list) -> str:
+    """Grafico storico del punteggio GEO con filtri 3/6 mesi / all time.
+    `history` è la lista (ordine created_at desc) degli audit del progetto
+    con almeno {overall, created_at}; il rendering effettivo è lato client
+    (JS) così i filtri non richiedono un round-trip al server."""
+    points = [
+        {"t": h["created_at"], "s": h["overall"]}
+        for h in reversed(history)
+        if h.get("overall") is not None
+    ]
+    if not points:
+        return ('<div class="card" style="margin-top:16px"><div class="card-title">Storico punteggio</div>'
+                '<p class="card-sub">Ancora nessun punteggio registrato.</p></div>')
+
+    current = points[-1]["s"]
+    sc = _score_class(current)
+
+    if len(points) == 1:
+        return (
+            '<div class="card" style="margin-top:16px">'
+            '<div class="card-title">Storico punteggio</div>'
+            f'<div class="score-history-single"><span class="score-history-current {sc}">{current}</span>'
+            '<p class="card-sub">Servono almeno due audit per costruire uno storico. '
+            'Il prossimo audit automatico aggiungerà un nuovo punto.</p></div>'
+            '</div>'
+        )
+
+    chart_id = f"score-chart-{project_id}"
+    js = (_SCORE_CHART_JS
+          .replace("__DATA__", json.dumps(points))
+          .replace("__CHART_ID__", chart_id))
+
+    return (
+        f'<div class="card score-history-card" id="{chart_id}-card" style="margin-top:16px">'
+        '<div class="score-history-head">'
+        '<div class="card-title" style="margin:0">Storico punteggio</div>'
+        '<div class="range-filter" role="group" aria-label="Intervallo">'
+        '<button type="button" class="range-btn" data-range="90" aria-pressed="false">3 mesi</button>'
+        '<button type="button" class="range-btn" data-range="180" aria-pressed="false">6 mesi</button>'
+        '<button type="button" class="range-btn active" data-range="all" aria-pressed="true">Tutto</button>'
+        '</div></div>'
+        '<div class="score-history-body">'
+        '<div class="score-history-current-wrap">'
+        f'<span class="score-history-current {sc}">{current}</span>'
+        '<span class="score-history-current-label">punteggio attuale</span>'
+        '</div>'
+        '<div class="score-chart-wrap">'
+        f'<svg class="score-chart-svg" id="{chart_id}" viewBox="0 0 600 180" preserveAspectRatio="none" '
+        'role="img" aria-label="Andamento del punteggio GEO nel tempo"></svg>'
+        f'<div class="score-chart-tooltip" id="{chart_id}-tip" hidden></div>'
+        '</div></div></div>'
+        f'<script>{js}</script>'
+    )
+
+
 def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
-                   open_issues: int, resolved_recent: int) -> str:
+                   open_issues: int, resolved_recent: int, history: list | None = None) -> str:
     sections_html = _overview_sections_grid(project_id, latest, open_issues, resolved_recent)
 
     if not latest:
@@ -1404,10 +1600,6 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
 
     issues_count = latest.get("issues_count")
     critical_count = latest.get("critical_count")
-    variazione = (f'Punteggio passato da {previous["overall"]} a {overall} rispetto '
-                  f'all\'audit del {_fmt_date(previous.get("created_at"))}.'
-                  if previous and previous.get("overall") is not None
-                  else "Ancora nessun audit precedente per calcolare una variazione.")
 
     def _count_cls(value, critical):
         if value is None:
@@ -1445,8 +1637,7 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
         '<p class="card-sub" style="margin-top:8px">Vedi la tab AI Traffic per sessioni, provider e landing page.</p></div>'
         '</div>'
 
-        f'<div class="card" style="margin-top:16px"><div class="card-title">Ultime variazioni</div>'
-        f'<p class="card-sub">{variazione}</p></div>'
+        + _score_history_chart(project_id, history or [])
         + sections_html
     )
 
@@ -1770,10 +1961,11 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
         runs = _sb_audits_by_project(project_id, limit=2, full=True)
         latest = runs[0] if runs else None
         previous = runs[1] if len(runs) > 1 else None
+        history = _sb_audits_by_project(project_id, limit=260, full=False)
         all_issues = _sb_issues_by_project(project_id)
         open_issues = len([i for i in all_issues if i["status"] == "open"])
         resolved_recent = len([i for i in all_issues if i["status"] == "resolved"])
-        body = _tab_overview(project_id, latest, previous, open_issues, resolved_recent)
+        body = _tab_overview(project_id, latest, previous, open_issues, resolved_recent, history)
     elif tab == "audit":
         history = _sb_audits_by_project(project_id, limit=50, full=False)
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
