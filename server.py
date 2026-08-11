@@ -885,6 +885,46 @@ def roadmap():
     return ROADMAP_HTML
 
 
+_SITEMAP_PATHS = ["/", "/roadmap", "/privacy", "/cookie-policy"]
+
+
+@app.get("/robots.txt", response_class=Response)
+def robots_txt():
+    body = f"User-agent: *\nAllow: /\n\nSitemap: {SITE_URL}/sitemap.xml\n"
+    return Response(content=body, media_type="text/plain")
+
+
+@app.get("/sitemap.xml", response_class=Response)
+def sitemap_xml():
+    urls = "".join(f"<url><loc>{SITE_URL}{p}</loc></url>" for p in _SITEMAP_PATHS)
+    body = ('<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f'{urls}</urlset>')
+    return Response(content=body, media_type="application/xml")
+
+
+_LLMS_TXT = f"""# GEO Audit — Vertical AI
+
+> Strumento gratuito di Vertical AI che analizza quanto un sito è leggibile e consigliabile dagli assistenti AI (ChatGPT, Gemini, Claude, Perplexity) e indica cosa correggere: dati strutturati, accesso crawler, contenuti, rendering.
+
+## Pagine
+
+- [Home e report gratuito]({SITE_URL}/): richiedi un'analisi GEO gratuita del tuo sito.
+- [Roadmap]({SITE_URL}/roadmap): cosa è già costruito e cosa arriva dopo nella piattaforma.
+- [Privacy Policy]({SITE_URL}/privacy)
+- [Cookie Policy]({SITE_URL}/cookie-policy)
+
+## Su Vertical AI
+
+Vertical AI srl (verticalai.it) rende i siti web delle PMI leggibili e consigliabili dagli assistenti AI (GEO — Generative Engine Optimization).
+"""
+
+
+@app.get("/llms.txt", response_class=Response)
+def llms_txt():
+    return Response(content=_LLMS_TXT, media_type="text/plain")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
