@@ -3,7 +3,7 @@ GEO Audit — servizio web
 Scan sincrono → salva su Supabase via REST → report oscurato → sblocco via email.
 """
 import os, hmac, hashlib, json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import requests as req
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -103,6 +103,15 @@ def _sb_get_by_user(user_id: str) -> list:
 
 # ── Project helpers ───────────────────────────────────────────────────────────
 
+_SCAN_INTERVALS = {"daily": timedelta(days=1), "weekly": timedelta(days=7), "monthly": timedelta(days=30)}
+_SCAN_FREQUENCY_LABELS = {"daily": "Giornaliero", "weekly": "Settimanale", "monthly": "Mensile"}
+
+
+def _next_scan_at(frequency: str) -> str:
+    delta = _SCAN_INTERVALS.get(frequency, _SCAN_INTERVALS["weekly"])
+    return (datetime.now(timezone.utc) + delta).isoformat()
+
+
 def _sb_project_find(user_id: str, domain: str) -> dict | None:
     r = req.get(f"{SUPABASE_URL}/rest/v1/project",
                 headers=_SB_H,
@@ -118,7 +127,8 @@ def _sb_project_upsert(user_id: str, domain: str) -> dict:
     if existing:
         return existing
     r = req.post(f"{SUPABASE_URL}/rest/v1/project",
-                 json={"user_id": user_id, "domain": domain, "name": domain},
+                 json={"user_id": user_id, "domain": domain, "name": domain,
+                       "next_scan_at": _next_scan_at("weekly")},
                  headers=_SB_H, timeout=10)
     if r.status_code == 409:  # race: creato nel frattempo da un'altra richiesta concorrente
         return _sb_project_find(user_id, domain)
@@ -148,6 +158,12 @@ def _sb_project_patch(project_id: str, data: dict) -> None:
     req.patch(f"{SUPABASE_URL}/rest/v1/project",
               json=data, headers=_SB_H,
               params={"id": f"eq.{project_id}"}, timeout=10)
+
+
+def _sb_project_bump_scan(project_id: str, frequency: str) -> None:
+    """Da chiamare dopo ogni audit completato (manuale o da /scan): sposta in
+    avanti la prossima esecuzione automatica in base alla cadenza del progetto."""
+    _sb_project_patch(project_id, {"next_scan_at": _next_scan_at(frequency)})
 
 
 _AUDIT_LIGHT_FIELDS = "id,overall,grade,band,pages_count,issues_count,critical_count,status,created_at"
@@ -861,6 +877,7 @@ async def scan(request: Request, url: str = Form(...)):
             for c in p.get("checks", []):
                 all_checks.append({**c, "url": p.get("url")})
         _sb_issue_sync(project["id"], user["id"], job_id, all_checks)
+        _sb_project_bump_scan(project["id"], project.get("scan_frequency") or "weekly")
     except Exception as e:
         # Non blocca la visualizzazione, ma va loggato: altrimenti un salvataggio
         # rotto è invisibile e l'utente ricade silenziosamente sul gate legacy.
@@ -1305,6 +1322,11 @@ def _tab_opportunities(project_id: str) -> str:
 
 
 def _tab_settings(project: dict) -> str:
+    freq = project.get("scan_frequency") or "weekly"
+    freq_options = "".join(
+        f'<option value="{key}"{" selected" if key == freq else ""}>{label}</option>'
+        for key, label in _SCAN_FREQUENCY_LABELS.items()
+    )
     return (
         '<div class="card"><div class="card-title">Informazioni progetto</div>'
         f'<form method="post" action="/project/{project["id"]}/settings" class="settings-form">'
@@ -1315,6 +1337,9 @@ def _tab_settings(project: dict) -> str:
         'placeholder="es. Hospitality, Retail…"></div>'
         '<div class="field"><label>Dominio</label>'
         f'<input class="input" value="{geo_audit.esc(project.get("domain") or "")}" disabled></div>'
+        '<div class="field"><label for="scan_frequency">Audit automatico</label>'
+        f'<select class="input" id="scan_frequency" name="scan_frequency">{freq_options}</select>'
+        f'<span class="hint">Prossimo audit automatico: {geo_audit.esc(_fmt_date(project.get("next_scan_at")))}</span></div>'
         '<button type="submit" class="btn btn--primary" style="margin-top:8px">Salva</button>'
         '</form></div>'
 
@@ -1326,8 +1351,26 @@ def _tab_settings(project: dict) -> str:
     )
 
 
+def _project_actions(project: dict) -> str:
+    freq = project.get("scan_frequency") or "weekly"
+    freq_label = _SCAN_FREQUENCY_LABELS.get(freq, "Settimanale")
+    next_scan = project.get("next_scan_at")
+    next_txt = (f'Prossimo audit automatico: {_fmt_date(next_scan)} · {freq_label}'
+                if next_scan else f'Audit automatico: {freq_label}')
+    return (
+        '<div class="project-actions">'
+        f'<form method="post" action="/project/{project["id"]}/rerun" class="rerun-form" '
+        'onsubmit="var b=this.querySelector(\'button\');b.disabled=true;'
+        'b.textContent=\'Analisi in corso…\';">'
+        '<button type="submit" class="btn btn--secondary btn--sm">↻ Rifai audit</button>'
+        '</form>'
+        f'<p class="next-scan-note">{geo_audit.esc(next_txt)}</p>'
+        '</div>'
+    )
+
+
 @app.get("/project/{project_id}", response_class=HTMLResponse)
-def project_detail(project_id: str, request: Request, tab: str = "overview"):
+def project_detail(project_id: str, request: Request, tab: str = "overview", rerun_error: str = ""):
     user, refreshed = _current_user(request)
     if not user:
         return RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
@@ -1356,6 +1399,9 @@ def project_detail(project_id: str, request: Request, tab: str = "overview"):
         history = _sb_audits_by_project(project_id, limit=50, full=False)
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
         body = _tab_audit(latest_full[0] if latest_full else None, history)
+        if rerun_error:
+            body = ('<div class="alert alert--danger"><div class="ic">!</div>'
+                     '<div>Non siamo riusciti a rifare l\'audit. Riprova tra qualche minuto.</div></div>') + body
     elif tab == "pages":
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
         body = _tab_pages(latest_full[0] if latest_full else None)
@@ -1372,6 +1418,7 @@ def project_detail(project_id: str, request: Request, tab: str = "overview"):
     html = _render(PROJECT_HTML,
                     PROJECT_NAME=geo_audit.esc(project.get("name") or project.get("domain")),
                     PROJECT_DOMAIN=geo_audit.esc(project.get("domain") or ""),
+                    PROJECT_ACTIONS=_project_actions(project),
                     TABS_NAV=_tab_nav(project_id, tab),
                     TAB_BODY=body,
                     USER_EMAIL=json.dumps(user.get("email", "")))
@@ -1380,7 +1427,8 @@ def project_detail(project_id: str, request: Request, tab: str = "overview"):
 
 
 @app.post("/project/{project_id}/settings")
-def project_settings(project_id: str, request: Request, name: str = Form(...), sector: str = Form("")):
+def project_settings(project_id: str, request: Request, name: str = Form(...), sector: str = Form(""),
+                      scan_frequency: str = Form("weekly")):
     user, refreshed = _current_user(request)
     if not user:
         return RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
@@ -1391,9 +1439,67 @@ def project_settings(project_id: str, request: Request, name: str = Form(...), s
 
     name = (name or "").strip() or project["domain"]
     sector = (sector or "").strip() or None
-    _sb_project_patch(project_id, {"name": name, "sector": sector})
+    scan_frequency = scan_frequency if scan_frequency in _SCAN_INTERVALS else "weekly"
+
+    patch = {"name": name, "sector": sector, "scan_frequency": scan_frequency}
+    if scan_frequency != (project.get("scan_frequency") or "weekly"):
+        patch["next_scan_at"] = _next_scan_at(scan_frequency)
+    _sb_project_patch(project_id, patch)
 
     resp = RedirectResponse(f"/project/{project_id}?tab=settings", status_code=303)
+    return _apply_refresh(resp, refreshed)
+
+
+@app.post("/project/{project_id}/rerun")
+async def project_rerun(project_id: str, request: Request):
+    user, refreshed = _current_user(request)
+    if not user:
+        return RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
+
+    project = _sb_project_get(project_id)
+    if not project or project.get("user_id") != user["id"]:
+        return HTMLResponse(status_code=404, content="Non trovato")
+
+    domain = project["domain"]
+    url = domain if domain.startswith(("http://", "https://")) else "https://" + domain
+
+    try:
+        res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
+
+        row = _sb_insert({
+            "user_id":    user["id"],
+            "project_id": project["id"],
+            "url":        url,
+            "status":     "done",
+            "domain":     res.get("domain"),
+            "overall":    res.get("overall"),
+            "grade":      res.get("grade"),
+            "band":       res.get("band"),
+            "pages_count": len(res.get("pages", [])),
+            "html":       res["html"],
+            "engine_version": res.get("engine_version"),
+            "areas":       res.get("areas"),
+            "site_checks": res.get("site_checks"),
+            "pages_detail": res.get("pages"),
+            "actions":      res.get("actions"),
+            "issues_count":    res.get("issues_count"),
+            "critical_count":  res.get("critical_count"),
+        })
+        job_id = row.get("id")
+
+        all_checks = list(res.get("site_checks", []))
+        for p in res.get("pages", []):
+            for c in p.get("checks", []):
+                all_checks.append({**c, "url": p.get("url")})
+        _sb_issue_sync(project["id"], user["id"], job_id, all_checks)
+        _sb_project_bump_scan(project["id"], project.get("scan_frequency") or "weekly")
+    except Exception as e:
+        body = getattr(getattr(e, "response", None), "text", "")
+        print(f"[/project/{project_id}/rerun] audit fallito: {e!r} {body}".strip())
+        resp = RedirectResponse(f"/project/{project_id}?tab=audit&rerun_error=1", status_code=303)
+        return _apply_refresh(resp, refreshed)
+
+    resp = RedirectResponse(f"/project/{project_id}?tab=audit", status_code=303)
     return _apply_refresh(resp, refreshed)
 
 

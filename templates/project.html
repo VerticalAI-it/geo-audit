@@ -35,9 +35,13 @@
   .back-link { font-size:13px; color:var(--text-3); text-decoration:none; display:inline-block; margin-bottom:var(--sp-3) }
   .back-link:hover { color:var(--text-2) }
 
-  .project-head { margin-bottom:var(--sp-5) }
+  .project-head { margin-bottom:var(--sp-5); display:flex; align-items:flex-start; justify-content:space-between; gap:var(--sp-4); flex-wrap:wrap }
   .project-head h1 { font-size:clamp(22px, 4vw, 28px); margin:0 0 4px; letter-spacing:-.02em }
   .project-head .domain { font-family:var(--font-mono); font-size:13px; color:var(--text-3) }
+  .project-actions { display:flex; flex-direction:column; align-items:flex-end; gap:6px }
+  .project-actions .rerun-form { display:flex }
+  .project-actions .next-scan-note { font-size:12px; color:var(--text-3); margin:0; text-align:right }
+  @media (max-width:520px) { .project-head { flex-direction:column } .project-actions { align-items:flex-start } .project-actions .next-scan-note { text-align:left } }
 
   nav.tabs { margin-bottom:var(--sp-6) }
 
@@ -107,8 +111,11 @@
   <main>
     <a href="/dashboard" class="back-link">← I tuoi progetti</a>
     <div class="project-head">
-      <h1>{{PROJECT_NAME}}</h1>
-      <div class="domain">{{PROJECT_DOMAIN}}</div>
+      <div>
+        <h1>{{PROJECT_NAME}}</h1>
+        <div class="domain">{{PROJECT_DOMAIN}}</div>
+      </div>
+      {{PROJECT_ACTIONS}}
     </div>
 
     <nav class="tabs" aria-label="Sezioni progetto">{{TABS_NAV}}</nav>

@@ -3,9 +3,9 @@ GEO Audit · Fase B — Vercel Cron job worker
 Chiamato ogni minuto da Vercel Cron: GET /api/cron
 Processa il prossimo job "pending" dalla tabella audits.
 """
-import os, sys, json, traceback
+import os, sys, json, time, traceback
 from http.server import BaseHTTPRequestHandler
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -358,6 +358,122 @@ def _process_next_job() -> dict:
         return {"status": "failed", "job_id": job_id, "error": str(exc)[:200]}
 
 
+# ── Audit periodico dei progetti (giornaliero / settimanale / mensile) ──────
+
+_SCAN_INTERVALS = {"daily": timedelta(days=1), "weekly": timedelta(days=7), "monthly": timedelta(days=30)}
+
+
+def _next_scan_at(frequency: str) -> str:
+    delta = _SCAN_INTERVALS.get(frequency, _SCAN_INTERVALS["weekly"])
+    return (datetime.now(timezone.utc) + delta).isoformat()
+
+
+def _sync_project_issues(project_id: str, user_id: str, audit_id: str, checks: list) -> None:
+    """Stessa logica di server.py:_sb_issue_sync, duplicata qui perché questo
+    worker usa il client supabase-py invece delle chiamate REST dirette usate
+    dal processo web (due entry point Vercel separati, nessuno import fra i due)."""
+    now = _now()
+    existing = {i["fingerprint"]: i
+                for i in sb.table("issue").select("*").eq("project_id", project_id).execute().data}
+    seen = set()
+
+    for c in checks:
+        if c.get("status") not in ("warn", "fail"):
+            continue
+        url = c.get("url") or None
+        fingerprint = f"{c['id']}|{url or ''}"
+        seen.add(fingerprint)
+        prev = existing.get(fingerprint)
+        if prev:
+            sb.table("issue").update({
+                "status": "open", "last_seen_audit": audit_id, "last_seen_at": now,
+                "resolved_at": None, "severity": c.get("severity"), "title": c.get("title"),
+            }).eq("id", prev["id"]).execute()
+        else:
+            sb.table("issue").insert({
+                "project_id": project_id, "user_id": user_id,
+                "check_id": c["id"], "category": c.get("category"), "url": url,
+                "title": c.get("title"), "severity": c.get("severity"),
+                "fingerprint": fingerprint, "status": "open",
+                "first_seen_audit": audit_id, "last_seen_audit": audit_id,
+                "first_seen_at": now, "last_seen_at": now,
+            }).execute()
+
+    to_resolve = [i for fp, i in existing.items() if fp not in seen and i["status"] == "open"]
+    for i in to_resolve:
+        sb.table("issue").update({"status": "resolved", "resolved_at": now}).eq("id", i["id"]).execute()
+
+
+def _process_one_due_project() -> dict | None:
+    """Reclama ed esegue l'audit del prossimo progetto con next_scan_at scaduto.
+    Ritorna None se nessun progetto è in scadenza."""
+    res = (sb.table("project")
+             .select("id,user_id,domain,scan_frequency,next_scan_at")
+             .lte("next_scan_at", _now())
+             .order("next_scan_at")
+             .limit(1)
+             .execute())
+    if not res.data:
+        return None
+
+    project = res.data[0]
+    project_id = project["id"]
+    frequency = project.get("scan_frequency") or "weekly"
+
+    # Claim atomico: sposta subito next_scan_at in avanti (stesso valore che
+    # verrebbe scritto a fine corsa) così un'altra invocazione concorrente del
+    # cron non pesca lo stesso progetto mentre questo è in corso.
+    claim = (sb.table("project")
+               .update({"next_scan_at": _next_scan_at(frequency), "updated_at": _now()})
+               .eq("id", project_id)
+               .eq("next_scan_at", project["next_scan_at"])
+               .execute())
+    if not claim.data:
+        return {"status": "skipped", "reason": "already claimed", "project_id": project_id}
+
+    domain = project["domain"]
+    url = domain if domain.startswith(("http://", "https://")) else "https://" + domain
+
+    try:
+        result = geo_audit.run_audit(url, max_pages=6, render=False, respect_robots=False)
+        audit_row = sb.table("audits").insert({
+            "user_id": project["user_id"], "project_id": project_id, "url": url,
+            "status": "done", "domain": result.get("domain"),
+            "overall": result.get("overall"), "grade": result.get("grade"), "band": result.get("band"),
+            "pages_count": len(result.get("pages", [])), "html": result["html"],
+            "engine_version": result.get("engine_version"), "areas": result.get("areas"),
+            "site_checks": result.get("site_checks"), "pages_detail": result.get("pages"),
+            "actions": result.get("actions"), "issues_count": result.get("issues_count"),
+            "critical_count": result.get("critical_count"), "completed_at": _now(),
+        }).execute().data[0]
+
+        all_checks = list(result.get("site_checks", []))
+        for p in result.get("pages", []):
+            for c in p.get("checks", []):
+                all_checks.append({**c, "url": p.get("url")})
+        _sync_project_issues(project_id, project["user_id"], audit_row["id"], all_checks)
+
+        return {"status": "done", "project_id": project_id, "audit_id": audit_row["id"]}
+    except Exception as exc:
+        # next_scan_at è già stato spostato in avanti dal claim: il progetto
+        # verrà ritentato al prossimo ciclo normale, senza retry aggressivi.
+        return {"status": "failed", "project_id": project_id, "error": str(exc)[:200]}
+
+
+def _process_due_projects(max_projects: int = 5, time_budget_seconds: int = 45) -> dict:
+    """Processa più progetti scaduti in una singola invocazione (limitato da
+    conteggio e tempo) così anche uno scheduling poco frequente recupera il
+    ritardo accumulato nel tempo."""
+    started = time.monotonic()
+    results = []
+    while len(results) < max_projects and (time.monotonic() - started) < time_budget_seconds:
+        outcome = _process_one_due_project()
+        if outcome is None:
+            break
+        results.append(outcome)
+    return {"processed": len(results), "results": results}
+
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         # Verify CRON_SECRET (Vercel sends it as Authorization: Bearer <secret>)
@@ -367,12 +483,18 @@ class handler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = _process_next_job()
+            pending_result = _process_next_job()
         except Exception as exc:
             traceback.print_exc()
-            result = {"status": "error", "error": str(exc)[:200]}
+            pending_result = {"status": "error", "error": str(exc)[:200]}
 
-        self._respond(200, result)
+        try:
+            scan_result = _process_due_projects()
+        except Exception as exc:
+            traceback.print_exc()
+            scan_result = {"status": "error", "error": str(exc)[:200]}
+
+        self._respond(200, {"pending_queue": pending_result, "project_scans": scan_result})
 
     def _respond(self, code: int, data: dict):
         body = json.dumps(data).encode()

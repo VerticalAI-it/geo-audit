@@ -117,6 +117,24 @@ CREATE POLICY "own_issues" ON public.issue
 
 CREATE INDEX IF NOT EXISTS issue_project_status ON public.issue (project_id, status);
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- GEO Audit · Fase D — Rifai audit manuale + audit periodico via cron
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── Cadenza di audit automatico per progetto ────────────────────────────────
+ALTER TABLE public.project ADD COLUMN IF NOT EXISTS scan_frequency TEXT NOT NULL DEFAULT 'weekly';
+ALTER TABLE public.project ADD COLUMN IF NOT EXISTS next_scan_at   TIMESTAMPTZ;
+
+ALTER TABLE public.project DROP CONSTRAINT IF EXISTS project_scan_frequency_check;
+ALTER TABLE public.project ADD CONSTRAINT project_scan_frequency_check
+    CHECK (scan_frequency IN ('daily', 'weekly', 'monthly'));
+
+-- Backfill: progetti esistenti senza next_scan_at partono da adesso + 7 giorni
+UPDATE public.project SET next_scan_at = NOW() + INTERVAL '7 days' WHERE next_scan_at IS NULL;
+
+-- Indice per la query del cron worker ("prossimo progetto scaduto")
+CREATE INDEX IF NOT EXISTS project_next_scan ON public.project (next_scan_at) WHERE next_scan_at IS NOT NULL;
+
 -- IMPORTANTE: dopo aver eseguito questa migration, forza il reload dello
 -- schema cache di PostgREST — altrimenti le nuove tabelle/colonne restano
 -- invisibili all'API REST (errore PGRST205 "Could not find the table ...
