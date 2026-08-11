@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="it" data-theme="dark">
 <head>
+<script>try{var _t=localStorage.getItem('geo-theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>I tuoi report · GEO Audit · verticalai</title>
+<title>I tuoi progetti · GEO Audit · verticalai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="/static/css/design-system.css">
@@ -48,128 +49,109 @@
   .logo-ai { color:var(--brand-text) }
 
   .topbar-actions { display:flex; align-items:center; gap:var(--sp-3) }
+  .topbar-user { font-family:var(--font-mono); font-size:12px; color:var(--text-3) }
+  .topbar-logout { font-family:var(--font-mono); font-size:12px; color:var(--text-2); text-decoration:none }
+  .topbar-logout:hover { color:var(--text) }
 
   main {
-    max-width:820px;
+    max-width:1080px;
     margin:var(--sp-10) auto 0;
     padding:0 clamp(16px, 4vw, 32px);
   }
-  .page-head { margin-bottom:var(--sp-8) }
-  .page-head h1 {
-    font-size:clamp(22px, 4vw, 28px);
-    margin:0 0 var(--sp-2);
-    letter-spacing:-.02em;
-  }
+  .page-head { margin-bottom:var(--sp-6) }
+  .page-head h1 { font-size:clamp(22px, 4vw, 28px); margin:0 0 var(--sp-2); letter-spacing:-.02em }
   .page-head p { color:var(--text-2); font-size:15px }
 
-  /* Lista audit */
-  .audit-list { display:flex; flex-direction:column; gap:var(--sp-3) }
+  /* Portfolio summary */
+  .summary-row {
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
+    gap:var(--sp-3);
+    margin-bottom:var(--sp-6);
+  }
+  .summary-tile {
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg);
+    padding:var(--sp-4);
+  }
+  .summary-tile .n { font-family:var(--font-display); font-size:26px; font-weight:600; color:var(--ink) }
+  .summary-tile .l { font-size:12px; color:var(--text-3); margin-top:2px }
 
-  .audit-card {
-    display:flex;
-    align-items:center;
+  /* Ricerca e filtri */
+  .filter-row {
+    display:flex; gap:var(--sp-3); flex-wrap:wrap; margin-bottom:var(--sp-5);
+  }
+  .filter-row input[type=search] {
+    flex:1; min-width:200px;
+    background:var(--surface); border:1.5px solid var(--border-strong); border-radius:var(--r-md);
+    color:var(--text); font-size:14px; padding:10px 14px; font-family:var(--font-sans); outline:none;
+  }
+  .filter-row select {
+    background:var(--surface); border:1.5px solid var(--border-strong); border-radius:var(--r-md);
+    color:var(--text); font-size:14px; padding:10px 14px; font-family:var(--font-sans); outline:none;
+  }
+
+  /* Project cards */
+  .project-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
     gap:var(--sp-4);
-    background:var(--surface);
-    border:1px solid var(--border);
-    border-radius:var(--r-lg);
-    padding:var(--sp-4) var(--sp-5);
-    text-decoration:none;
-    color:var(--text);
+  }
+  .project-card {
+    display:flex; flex-direction:column; gap:var(--sp-3);
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg);
+    padding:var(--sp-5); text-decoration:none; color:var(--text);
     transition:border-color var(--t-fast), box-shadow var(--t-fast);
     box-shadow:var(--sh-xs);
   }
-  .audit-card:hover {
-    border-color:var(--brand);
-    box-shadow:var(--sh-sm);
-    text-decoration:none;
-  }
-  .audit-card:focus-visible {
-    outline:2px solid var(--focus);
-    outline-offset:2px;
-  }
+  .project-card:hover { border-color:var(--brand); box-shadow:var(--sh-sm); text-decoration:none }
+  .project-card:focus-visible { outline:2px solid var(--focus); outline-offset:2px }
+  .project-card-head { display:flex; align-items:flex-start; gap:var(--sp-3) }
 
-  /* Score number widget */
   .score-block {
-    width:52px; height:52px;
-    border-radius:var(--r-md);
-    display:flex; flex-direction:column;
-    align-items:center; justify-content:center;
-    flex-shrink:0;
-    border:1px solid var(--border);
+    width:56px; height:56px; border-radius:var(--r-md);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    flex-shrink:0; border:1px solid var(--border);
   }
-  .score-block .num {
-    font-family:var(--font-display);
-    font-weight:600;
-    font-size:18px;
-    line-height:1;
-  }
-  .score-block .grd {
-    font-family:var(--font-mono);
-    font-size:10px;
-    margin-top:2px;
-    color:var(--text-3);
-  }
-  .score-ottimo     { background:var(--success-bg);  border-color:var(--success-border) }
-  .score-ottimo .num    { color:var(--success) }
-  .score-migliorabile   { background:var(--warning-bg);  border-color:var(--warning-border) }
-  .score-migliorabile .num  { color:var(--warning) }
-  .score-critico    { background:var(--danger-bg);   border-color:var(--danger-border) }
-  .score-critico .num   { color:var(--danger) }
-  .score-unknown    { background:var(--surface-2);   border-color:var(--border) }
-  .score-unknown .num   { color:var(--text-3) }
+  .score-block .num { font-family:var(--font-display); font-weight:600; font-size:19px; line-height:1 }
+  .score-block .grd { font-family:var(--font-mono); font-size:10px; margin-top:2px; color:var(--text-3) }
+  .score-ottimo      { background:var(--success-bg);  border-color:var(--success-border) }
+  .score-ottimo .num     { color:var(--success) }
+  .score-migliorabile    { background:var(--warning-bg);  border-color:var(--warning-border) }
+  .score-migliorabile .num   { color:var(--warning) }
+  .score-critico     { background:var(--danger-bg);   border-color:var(--danger-border) }
+  .score-critico .num    { color:var(--danger) }
+  .score-unknown     { background:var(--surface-2);   border-color:var(--border) }
+  .score-unknown .num    { color:var(--text-3) }
 
-  .audit-info { flex:1; min-width:0 }
-  .audit-domain {
-    font-family:var(--font-display);
-    font-weight:600;
-    font-size:15px;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    color:var(--text);
+  .project-info { flex:1; min-width:0 }
+  .project-name {
+    font-family:var(--font-display); font-weight:600; font-size:16px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text);
   }
-  .audit-meta {
-    font-family:var(--font-mono);
-    font-size:11px;
-    color:var(--text-3);
-    margin-top:3px;
-  }
+  .project-domain { font-family:var(--font-mono); font-size:12px; color:var(--text-3); margin-top:2px }
 
-  /* Status badge */
-  .status-pill {
-    font-family:var(--font-mono);
-    font-size:10.5px;
-    font-weight:600;
-    letter-spacing:.06em;
-    padding:4px 10px;
-    border-radius:var(--r-pill);
-    flex-shrink:0;
-    border:1px solid transparent;
-    text-transform:uppercase;
+  .delta-pill {
+    font-family:var(--font-mono); font-size:11px; font-weight:600;
+    padding:3px 8px; border-radius:var(--r-pill); flex-shrink:0; display:inline-block;
   }
-  .s-done       { background:var(--success-bg);  color:var(--success);  border-color:var(--success-border) }
-  .s-pending,
-  .s-processing { background:var(--brand-soft);   color:var(--brand-text) }
-  .s-failed     { background:var(--danger-bg);    color:var(--danger);   border-color:var(--danger-border) }
+  .delta-up   { background:var(--success-bg); color:var(--success) }
+  .delta-down { background:var(--danger-bg);  color:var(--danger) }
+  .delta-flat { background:var(--surface-2);  color:var(--text-3) }
 
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.45} }
-  .s-pending, .s-processing { animation:blink 1.6s ease-in-out infinite }
+  .project-meta-row { display:flex; gap:var(--sp-4); flex-wrap:wrap; font-size:12.5px; color:var(--text-2) }
+  .project-meta-row b { color:var(--text); font-weight:600 }
+  .project-meta-scan { flex-basis:100% }
+
+  .project-badges { display:flex; gap:6px; flex-wrap:wrap }
+
+  .ai-not-configured { font-size:11.5px; color:var(--text-3); border-top:1px solid var(--border); padding-top:var(--sp-3) }
 
   /* Empty state */
-  .empty {
-    text-align:center;
-    padding:var(--sp-16) var(--sp-6);
-    color:var(--text-3);
-  }
-  .empty h2 {
-    font-size:22px;
-    color:var(--text);
-    margin:0 0 var(--sp-3);
-  }
+  .empty { text-align:center; padding:var(--sp-16) var(--sp-6); color:var(--text-3) }
+  .empty h2 { font-size:22px; color:var(--text); margin:0 0 var(--sp-3) }
   .empty p { font-size:15px; margin:0 0 var(--sp-6); color:var(--text-2) }
 
   @media (max-width:520px) {
-    .audit-card { flex-wrap:wrap }
     .topbar { padding:0 var(--sp-4) }
   }
 </style>
@@ -181,75 +163,151 @@
       <span><span class="logo-ai">vertical</span>ai</span>
     </a>
     <div class="topbar-actions">
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambia tema">
+        <svg class="i-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </button>
+      <span class="topbar-user" id="topbar-user"></span>
+      <a href="/auth/logout" class="topbar-logout">Esci</a>
       <a href="/audit" class="btn btn--primary btn--sm">+ Nuova analisi</a>
     </div>
   </header>
 
   <main>
     <div class="page-head">
-      <h1>I tuoi report</h1>
-      <p>Storico delle analisi GEO per i siti che hai verificato.</p>
+      <h1>I tuoi progetti</h1>
+      <p>Portfolio dei siti che hai verificato: salute, punteggio GEO e variazioni recenti.</p>
     </div>
-    <div class="audit-list" id="list" role="list" aria-label="Report GEO"></div>
+
+    <div class="summary-row" id="summary"></div>
+
+    <div class="filter-row">
+      <input type="search" id="search" placeholder="Cerca per nome o dominio…" aria-label="Cerca progetto">
+      <select id="status-filter" aria-label="Filtra per stato">
+        <option value="">Tutti gli stati</option>
+        <option value="Healthy">Healthy</option>
+        <option value="Needs attention">Needs attention</option>
+        <option value="Critical">Critical</option>
+        <option value="Audit required">Audit required</option>
+      </select>
+    </div>
+
+    <div class="project-grid" id="list" role="list" aria-label="Progetti"></div>
   </main>
 
   <script>
-    const audits = {{AUDITS_JSON}};
+    document.getElementById("theme-toggle").addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("geo-theme", next); } catch (e) {}
+    });
 
-    function scoreClass(overall, grade) {
-      if (overall == null || !grade) return "score-unknown";
+    const projects  = {{PROJECTS_JSON}};
+    const summary   = {{SUMMARY_JSON}};
+    const userEmail = {{USER_EMAIL}};
+    document.getElementById("topbar-user").textContent = userEmail || "";
+
+    document.getElementById("summary").innerHTML = `
+      <div class="summary-tile"><div class="n">${summary.total}</div><div class="l">Progetti</div></div>
+      <div class="summary-tile"><div class="n">${summary.critical}</div><div class="l">Progetti critici</div></div>
+      <div class="summary-tile"><div class="n">${summary.audits_due}</div><div class="l">Audit da aggiornare</div></div>
+      <div class="summary-tile"><div class="n">${summary.tracking_active}</div><div class="l">Tracking attivo</div></div>
+    `;
+
+    function scoreClass(overall) {
+      if (overall == null) return "score-unknown";
       if (overall >= 75) return "score-ottimo";
       if (overall >= 50) return "score-migliorabile";
       return "score-critico";
     }
 
-    function statusPill(status) {
+    function statusBadge(status) {
       const map = {
-        "done":       ["s-done",       "Completato"],
-        "pending":    ["s-pending",    "In coda"],
-        "processing": ["s-processing", "In corso"],
-        "failed":     ["s-failed",     "Errore"],
+        "Healthy":         "badge--success",
+        "Needs attention":  "badge--warning",
+        "Critical":         "badge--danger",
+        "Audit required":   "badge--neutral",
       };
-      const [cls, label] = map[status] || ["s-pending", status];
-      return `<span class="status-pill ${cls}" aria-label="stato: ${label}">${label}</span>`;
+      return `<span class="badge ${map[status] || "badge--neutral"}"><span class="dot"></span>${status}</span>`;
+    }
+
+    function deltaPill(delta) {
+      if (delta == null) return "";
+      if (delta === 0) return `<span class="delta-pill delta-flat">invariato</span>`;
+      const cls  = delta > 0 ? "delta-up" : "delta-down";
+      const sign = delta > 0 ? "+" : "";
+      return `<span class="delta-pill ${cls}">${sign}${delta}</span>`;
     }
 
     function fmtDate(iso) {
-      if (!iso) return "";
+      if (!iso) return "mai";
       const d = new Date(iso);
       return d.toLocaleDateString("it-IT", { day:"2-digit", month:"short", year:"numeric" });
     }
 
-    const list = document.getElementById("list");
-
-    if (!audits.length) {
-      list.innerHTML = `
-        <div class="empty" role="status">
-          <h2>Nessun report ancora</h2>
-          <p>Analizza il tuo primo sito per scoprire il suo punteggio GEO.</p>
-          <a href="/audit" class="btn btn--primary">Inizia l'analisi →</a>
-        </div>`;
-    } else {
-      list.innerHTML = audits.map(a => {
-        const href   = a.status === "done" ? `/r/${a.id}` : `/job/${a.id}/gate`;
-        const domain = a.domain || a.url || "—";
-        const score  = a.overall != null ? a.overall : "—";
-        const grade  = a.grade || "—";
-        const sc     = scoreClass(a.overall, a.grade);
-        return `
-          <a href="${href}" class="audit-card" role="listitem">
+    function projectCard(p) {
+      const score = p.overall != null ? p.overall : "—";
+      const grade = p.grade || "—";
+      const sc    = scoreClass(p.overall);
+      return `
+        <a href="/project/${p.id}" class="project-card" role="listitem">
+          <div class="project-card-head">
             <div class="score-block ${sc}" aria-label="Punteggio ${score}/100">
               <span class="num">${score}</span>
               <span class="grd" aria-hidden="true">${grade}</span>
             </div>
-            <div class="audit-info">
-              <div class="audit-domain">${domain}</div>
-              <div class="audit-meta">${fmtDate(a.created_at)}${a.pages_count ? " · " + a.pages_count + " pagine" : ""}</div>
+            <div class="project-info">
+              <div class="project-name">${p.name}</div>
+              <div class="project-domain">${p.domain}</div>
             </div>
-            ${statusPill(a.status)}
-          </a>`;
-      }).join("");
+            ${deltaPill(p.delta)}
+          </div>
+          <div class="project-badges">
+            ${statusBadge(p.status)}
+            <span class="badge ${p.tracking_active ? "badge--success" : "badge--neutral"}">${p.tracking}</span>
+          </div>
+          <div class="project-meta-row">
+            <span><b>${p.critical_count != null ? p.critical_count : "—"}</b> criticità</span>
+            <span><b>${p.pages_count != null ? p.pages_count : "—"}</b> pagine</span>
+            <span class="project-meta-scan">Ultimo scan <b>${fmtDate(p.last_scan)}</b></span>
+          </div>
+          <div class="ai-not-configured">${p.tracking_active ? "AI Visibility · Citations: not configured" : "AI Visibility · AI Traffic · Citations: not configured"}</div>
+        </a>`;
     }
+
+    const list = document.getElementById("list");
+    const searchInput = document.getElementById("search");
+    const statusFilter = document.getElementById("status-filter");
+
+    function render() {
+      const q = searchInput.value.trim().toLowerCase();
+      const st = statusFilter.value;
+      const filtered = projects.filter(p => {
+        const matchesQ = !q || p.name.toLowerCase().includes(q) || p.domain.toLowerCase().includes(q);
+        const matchesSt = !st || p.status === st;
+        return matchesQ && matchesSt;
+      });
+
+      if (!projects.length) {
+        list.innerHTML = `
+          <div class="empty" role="status" style="grid-column:1/-1">
+            <h2>Nessun progetto ancora</h2>
+            <p>Analizza il tuo primo sito per creare il tuo primo progetto.</p>
+            <a href="/audit" class="btn btn--primary">Inizia l'analisi →</a>
+          </div>`;
+        return;
+      }
+      if (!filtered.length) {
+        list.innerHTML = `<div class="empty" role="status" style="grid-column:1/-1"><p>Nessun progetto corrisponde alla ricerca.</p></div>`;
+        return;
+      }
+      list.innerHTML = filtered.map(projectCard).join("");
+    }
+
+    searchInput.addEventListener("input", render);
+    statusFilter.addEventListener("change", render);
+    render();
   </script>
 </body>
 </html>

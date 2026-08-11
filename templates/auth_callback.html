@@ -48,7 +48,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
-    const JOB_ID = new URLSearchParams(window.location.search).get("job_id") || "";
+    const NEXT = new URLSearchParams(window.location.search).get("next")
+                 || localStorage.getItem("geo_login_next")
+                 || "/audit";
+    localStorage.removeItem("geo_login_next");
     const sb = supabase.createClient("{{SUPABASE_URL}}", "{{SUPABASE_ANON_KEY}}");
 
     sb.auth.onAuthStateChange(async function(event, session) {
@@ -60,7 +63,7 @@
             body: JSON.stringify({
               access_token: session.access_token,
               refresh_token: session.refresh_token,
-              job_id: JOB_ID
+              next: NEXT
             })
           });
           const data = await resp.json();
