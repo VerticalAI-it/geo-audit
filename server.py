@@ -4,6 +4,7 @@ Scan sincrono → salva su Supabase via REST → report oscurato → sblocco via
 """
 import os, hmac, hashlib, json
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
 import requests as req
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -32,6 +33,7 @@ FORM_HTML     = open(os.path.join(_HERE, "templates", "form.html"),          enc
 HOME_HTML     = open(os.path.join(_HERE, "templates", "home.html"),          encoding="utf-8").read()
 PRIVACY_HTML  = open(os.path.join(_HERE, "templates", "privacy.html"),       encoding="utf-8").read()
 COOKIE_HTML   = open(os.path.join(_HERE, "templates", "cookie.html"),        encoding="utf-8").read()
+ROADMAP_HTML  = open(os.path.join(_HERE, "templates", "roadmap.html"),       encoding="utf-8").read()
 LOGIN_HTML    = open(os.path.join(_HERE, "templates", "login.html"),         encoding="utf-8").read()
 AUTH_CB_HTML  = open(os.path.join(_HERE, "templates", "auth_callback.html"), encoding="utf-8").read()
 DASHBOARD_HTML = open(os.path.join(_HERE, "templates", "dashboard.html"),    encoding="utf-8").read()
@@ -237,6 +239,55 @@ def _sb_issue_sync(project_id: str, user_id: str, audit_id: str, checks: list) -
         req.patch(f"{SUPABASE_URL}/rest/v1/issue",
                   json={"status": "resolved", "resolved_at": now},
                   headers=_SB_H, params={"id": f"eq.{i['id']}"}, timeout=10)
+
+
+# ── Tracking first-party (v1.3 · AI Traffic) ─────────────────────────────────
+
+_AI_REFERRER_DOMAINS = {
+    "chat.openai.com": "ChatGPT",
+    "chatgpt.com": "ChatGPT",
+    "perplexity.ai": "Perplexity",
+    "www.perplexity.ai": "Perplexity",
+    "gemini.google.com": "Gemini",
+    "bard.google.com": "Gemini",
+    "claude.ai": "Claude",
+    "copilot.microsoft.com": "Copilot",
+    "you.com": "You.com",
+    "meta.ai": "Meta AI",
+}
+
+
+def _detect_ai_source(referrer: str) -> str | None:
+    if not referrer:
+        return None
+    try:
+        host = urlparse(referrer).netloc.lower()
+    except Exception:
+        return None
+    return _AI_REFERRER_DOMAINS.get(host)
+
+
+def _sb_insert_tracking_event(data: dict) -> None:
+    req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", json=data, headers=_SB_H, timeout=5)
+
+
+def _sb_tracking_events(project_id: str, days: int = 30, limit: int = 5000) -> list:
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event",
+                headers=_SB_H,
+                params={"project_id": f"eq.{project_id}", "created_at": f"gte.{since}",
+                        "select": "event_name,session_id,page_url,ai_source,created_at",
+                        "order": "created_at.desc", "limit": str(limit)},
+                timeout=10)
+    return r.json() if r.ok else []
+
+
+def _sb_has_tracking(project_id: str) -> bool:
+    r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event",
+                headers=_SB_H,
+                params={"project_id": f"eq.{project_id}", "select": "id", "limit": "1"},
+                timeout=10)
+    return bool(r.json()) if r.ok else False
 
 
 # ── Token helpers ────────────────────────────────────────────────────────────
@@ -735,17 +786,29 @@ document.getElementById('geo-gate-form').addEventListener('submit', async functi
 
 
 def _with_topbar(html: str, email: str) -> str:
-    """Inietta una barra in alto con l'email dell'utente loggato e logout."""
+    """Inietta una barra in alto con toggle tema, email dell'utente loggato e logout."""
     topbar = (
         '<div id="auth-topbar" style="position:fixed;top:0;left:0;right:0;height:48px;'
-        'display:flex;align-items:center;justify-content:flex-end;gap:18px;padding:0 22px;'
+        'display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:0 22px;'
         'font-family:var(--font-mono);font-size:12px;color:var(--text-3);'
         'background:var(--canvas);border-bottom:1px solid var(--border);z-index:60;box-sizing:border-box">'
+        '<button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambia tema">'
+        '<svg class="i-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/>'
+        '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>'
+        '<svg class="i-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>'
+        '</button>'
         '<a href="/dashboard" style="color:var(--text-2);text-decoration:none">I tuoi report</a>'
         f'<span>{geo_audit.esc(email)}</span>'
         '<a href="/auth/logout" style="color:var(--text-2);text-decoration:none">Esci</a>'
         '</div>'
         '<style>body{padding-top:70px!important}</style>'
+        '<script>document.getElementById("theme-toggle").addEventListener("click",function(){'
+        'var cur=document.documentElement.getAttribute("data-theme")==="dark"?"dark":"light";'
+        'var next=cur==="dark"?"light":"dark";'
+        'document.documentElement.setAttribute("data-theme",next);'
+        'try{localStorage.setItem("geo-theme",next);}catch(e){}});</script>'
     )
     return html.replace("<body>", "<body>" + topbar, 1)
 
@@ -817,9 +880,50 @@ def cookie_policy():
     return COOKIE_HTML
 
 
+@app.get("/roadmap", response_class=HTMLResponse)
+def roadmap():
+    return ROADMAP_HTML
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/t")
+async def track(request: Request):
+    """Endpoint pubblico di ingestion per lo snippet static/js/geo-track.js.
+    Nessuna autenticazione (gira su siti di terzi): validazione minima,
+    fallisce silenziosamente per non rompere mai il sito del cliente."""
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(status_code=204)
+
+    project_id = (body.get("pid") or "").strip()
+    if not project_id:
+        return Response(status_code=204)
+
+    event_name = (body.get("event") or "pageview").strip()[:64]
+    page_url = (body.get("url") or "")[:2048]
+    referrer = (body.get("ref") or "")[:2048]
+    session_id = (body.get("sid") or "")[:128]
+    properties = body.get("props") if isinstance(body.get("props"), dict) else None
+
+    try:
+        _sb_insert_tracking_event({
+            "project_id": project_id,
+            "event_name": event_name,
+            "session_id": session_id,
+            "page_url": page_url,
+            "referrer": referrer,
+            "ai_source": _detect_ai_source(referrer),
+            "properties": properties,
+        })
+    except Exception:
+        pass
+
+    return Response(status_code=204)
 
 
 @app.post("/scan")
@@ -977,6 +1081,7 @@ def dashboard(request: Request):
         if latest and previous and latest.get("overall") is not None and previous.get("overall") is not None:
             delta = latest["overall"] - previous["overall"]
 
+        tracking_on = _sb_has_tracking(p["id"])
         cards.append({
             "id": p["id"], "name": p["name"], "domain": p["domain"],
             "overall": latest.get("overall") if latest else None,
@@ -986,7 +1091,8 @@ def dashboard(request: Request):
             "pages_count": latest.get("pages_count") if latest else None,
             "last_scan": latest.get("created_at") if latest else None,
             "status": _project_status(latest),
-            "tracking": "Tracking not installed",
+            "tracking": "Tracking attivo" if tracking_on else "Tracking not installed",
+            "tracking_active": tracking_on,
         })
     cards.sort(key=lambda c: c["last_scan"] or "", reverse=True)
 
@@ -994,7 +1100,7 @@ def dashboard(request: Request):
         "total": len(cards),
         "critical": len([c for c in cards if c["status"] == "Critical"]),
         "audits_due": len([c for c in cards if c["status"] == "Audit required"]),
-        "tracking_active": 0,  # nessun modulo di tracking ancora installabile
+        "tracking_active": len([c for c in cards if c["tracking_active"]]),
     }
 
     html = _render(DASHBOARD_HTML,
@@ -1007,14 +1113,25 @@ def dashboard(request: Request):
 
 # ── Project detail: IA definitiva a 12 tab (dati reali dove disponibili) ────
 
-_PROJECT_TABS = [
-    ("overview", "Overview"), ("audit", "Audit"), ("pages", "Pages"),
-    ("ai-visibility", "AI Visibility"), ("prompts", "Prompts & Queries"),
-    ("competitors", "Competitors"), ("citations", "Citations"),
-    ("traffic", "AI Traffic"), ("technical", "Technical GEO"),
-    ("opportunities", "Opportunities"), ("reports", "Reports"),
-    ("settings", "Settings"),
+_TAB_CATEGORIES = [
+    ("overview", "Overview", None),
+    ("audit", "Audit", [
+        ("audit", "Riepilogo"), ("pages", "Pages"),
+        ("technical", "Technical GEO"), ("opportunities", "Opportunities"),
+    ]),
+    ("ai", "AI Intelligence", [
+        ("ai-visibility", "AI Visibility"), ("prompts", "Prompts & Queries"),
+        ("competitors", "Competitors"), ("citations", "Citations"),
+    ]),
+    ("growth", "Traffic & Reports", [
+        ("traffic", "AI Traffic"), ("reports", "Reports"),
+    ]),
+    ("settings", "Settings", None),
 ]
+
+_ALL_TAB_KEYS = []
+for _cat_key, _cat_label, _children in _TAB_CATEGORIES:
+    _ALL_TAB_KEYS.extend([_cat_key] if _children is None else [k for k, _ in _children])
 
 _COMING_SOON_TABS = {
     "ai-visibility": ("AI Visibility",
@@ -1027,24 +1144,48 @@ _COMING_SOON_TABS = {
         "Non ancora configurato."),
     "citations": ("Citations",
         "Richiede l'osservazione delle citazioni nelle risposte AI. Non ancora configurato."),
-    "traffic": ("AI Traffic",
-        "Richiede l'installazione dello snippet di tracking first-party sul sito. Non ancora installato."),
     "reports": ("Reports",
         "Richiede almeno un modulo di monitoraggio attivo per generare variazioni e alert. Non ancora disponibile."),
 }
 
 _STATUS_BADGE_CLS = {"ok": "badge--success", "warn": "badge--warning", "fail": "badge--danger", "unknown": "badge--neutral"}
-_STATUS_LABEL     = {"ok": "OK", "warn": "Da migliorare", "fail": "Critico", "unknown": "N/D"}
+_STATUS_LABEL     = {"ok": "OK", "warn": "Migliorabile", "fail": "Critico", "unknown": "N/D"}
 _SEV_BADGE_CLS    = {"critical": "badge--danger", "high": "badge--danger", "medium": "badge--warning",
                       "low": "badge--neutral", "info": "badge--neutral"}
 
 
-def _tab_nav(project_id: str, active: str) -> str:
-    links = []
-    for key, label in _PROJECT_TABS:
-        cls = "tab active" if key == active else "tab"
-        links.append(f'<a href="/project/{project_id}?tab={key}" class="{cls}">{geo_audit.esc(label)}</a>')
-    return "".join(links)
+def _category_for_tab(tab: str) -> str:
+    for cat_key, _, children in _TAB_CATEGORIES:
+        if children is None:
+            if cat_key == tab:
+                return cat_key
+        elif any(k == tab for k, _ in children):
+            return cat_key
+    return "overview"
+
+
+def _tab_nav(project_id: str, active_tab: str) -> str:
+    active_cat = _category_for_tab(active_tab)
+
+    top = []
+    for cat_key, cat_label, children in _TAB_CATEGORIES:
+        target = cat_key if children is None else children[0][0]
+        soon = children is not None and all(k in _COMING_SOON_TABS for k, _ in children)
+        cls = "tab" + (" active" if cat_key == active_cat else "") + (" soon" if soon else "")
+        badge = ' <span class="tab-soon">soon</span>' if soon else ""
+        top.append(f'<a href="/project/{project_id}?tab={target}" class="{cls}">{geo_audit.esc(cat_label)}{badge}</a>')
+    html = '<div class="tabs">' + "".join(top) + '</div>'
+
+    active_children = next((c for k, _, c in _TAB_CATEGORIES if k == active_cat), None)
+    if active_children:
+        subs = []
+        for key, label in active_children:
+            soon = key in _COMING_SOON_TABS
+            cls = "subtab" + (" active" if key == active_tab else "") + (" soon" if soon else "")
+            badge = ' <span class="tab-soon">soon</span>' if soon else ""
+            subs.append(f'<a href="/project/{project_id}?tab={key}" class="{cls}">{geo_audit.esc(label)}{badge}</a>')
+        html += '<div class="subtabs">' + "".join(subs) + '</div>'
+    return html
 
 
 def _coming_soon_tab(title: str, description: str) -> str:
@@ -1125,11 +1266,78 @@ def _aggregate_page_check(pages_detail: list, check_id: str) -> dict:
             "ok": ok, "warn": warn, "fail": fail, "total": len(matches)}
 
 
-def _tab_overview(latest: dict | None, previous: dict | None, open_issues: int) -> str:
+def _section_card(project_id: str, tab_key: str, label: str, stat_num: str, stat_label: str,
+                   summary: str, soon: bool) -> str:
+    badge = '<span class="badge badge--neutral">Coming soon</span>' if soon else ''
+    cls = "card section-card" + (" coming-soon-card" if soon else "")
+    return (
+        f'<a href="/project/{project_id}?tab={tab_key}" class="{cls}">'
+        f'{badge}'
+        f'<div class="section-card-stat"><span class="section-stat-num">{geo_audit.esc(stat_num)}</span>'
+        f'<span class="section-stat-label">{geo_audit.esc(stat_label)}</span></div>'
+        f'<div class="card-title">{geo_audit.esc(label)}</div>'
+        f'<p class="card-sub">{summary}</p>'
+        '<span class="section-card-link">Apri dettaglio →</span>'
+        '</a>'
+    )
+
+
+def _overview_sections_grid(project_id: str, latest: dict | None, open_issues: int, resolved_recent: int) -> str:
+    if latest:
+        pages = latest.get("pages_detail") or []
+        pages_with_issues = len([p for p in pages if any(c.get("status") in ("warn", "fail") for c in (p.get("checks") or []))])
+        site_checks = latest.get("site_checks") or []
+        site_ok = len([c for c in site_checks if c.get("status") == "ok"])
+
+        pages_stat = str(len(pages)) if pages else "—"
+        pages_summary = f'{len(pages)} pagine analizzate, {pages_with_issues} con almeno un problema.' if pages else "Nessuna pagina analizzata."
+
+        tech_stat = f'{round(100 * site_ok / len(site_checks))}%' if site_checks else "—"
+        technical_summary = f'{site_ok}/{len(site_checks)} check di accesso e infrastruttura superati.' if site_checks else "Nessun dato tecnico disponibile."
+
+        areas = latest.get("areas") or []
+        audit_stat = str(latest.get("overall")) if latest.get("overall") is not None else "—"
+        audit_summary = (f'Punteggio {latest.get("overall", "—")}/100 su {len(areas)} aree, '
+                          f'area migliore «{geo_audit.esc(areas[-1]["key"])}».') if areas else "Nessun audit ancora eseguito."
+    else:
+        pages_stat = tech_stat = audit_stat = "—"
+        pages_summary = technical_summary = audit_summary = "Nessun audit ancora eseguito."
+
+    opportunities_summary = f'{open_issues} issue aperte' + (f', {resolved_recent} risolte di recente.' if resolved_recent else '.')
+
+    tracking_events = _sb_tracking_events(project_id, days=30, limit=5000)
+    if tracking_events:
+        ai_sessions = len({e.get("session_id") for e in tracking_events if e.get("ai_source")})
+        traffic_stat = str(ai_sessions)
+        traffic_summary = f'{ai_sessions} sessioni da assistenti AI negli ultimi 30 giorni.'
+    else:
+        traffic_stat = "—"
+        traffic_summary = "Nessun evento ricevuto: installa lo snippet di tracking per attivare questa sezione."
+
+    cards = [
+        _section_card(project_id, "audit", "Audit", audit_stat, "Punteggio GEO", audit_summary, False),
+        _section_card(project_id, "pages", "Pages", pages_stat, "pagine analizzate", pages_summary, False),
+        _section_card(project_id, "technical", "Technical GEO", tech_stat, "check superati", technical_summary, False),
+        _section_card(project_id, "opportunities", "Opportunities", str(open_issues), "issue aperte", opportunities_summary, False),
+        _section_card(project_id, "traffic", "AI Traffic", traffic_stat, "sessioni AI (30gg)", traffic_summary, False),
+    ]
+    for tab_key, (label, desc) in _COMING_SOON_TABS.items():
+        cards.append(_section_card(project_id, tab_key, label, "—", "non configurato", desc, True))
+
+    return f'<div class="card-title" style="margin:24px 0 12px">Tutte le sezioni</div><div class="section-grid">{"".join(cards)}</div>'
+
+
+def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
+                   open_issues: int, resolved_recent: int) -> str:
+    sections_html = _overview_sections_grid(project_id, latest, open_issues, resolved_recent)
+
     if not latest:
-        return ('<div class="alert alert--info"><div class="ic">i</div>'
-                '<div>Nessun audit ancora eseguito per questo progetto. '
-                '<a href="/audit">Avvia la prima analisi →</a></div></div>')
+        return (
+            '<div class="alert alert--info"><div class="ic">i</div>'
+            '<div>Nessun audit ancora eseguito per questo progetto. '
+            '<a href="/audit">Avvia la prima analisi →</a></div></div>'
+            + sections_html
+        )
 
     overall = latest.get("overall")
     delta = None
@@ -1139,13 +1347,20 @@ def _tab_overview(latest: dict | None, previous: dict | None, open_issues: int) 
     if delta is not None:
         cls = "delta-up" if delta > 0 else ("delta-down" if delta < 0 else "delta-flat")
         sign = "+" if delta > 0 else ""
-        delta_html = f'<span class="delta-pill {cls}">{sign}{delta} vs audit precedente</span>'
+        delta_html = (
+            f'<div class="delta-block"><span class="delta-pill {cls}">{sign}{delta}</span>'
+            '<span class="delta-text">vs audit precedente</span></div>'
+        )
 
     areas = latest.get("areas") or []
     worst = areas[0] if areas else None
     best = areas[-1] if areas else None
-    worst_txt = f'{geo_audit.esc(worst["key"])} ({worst["score"]}/100)' if worst else "—"
-    best_txt = f'{geo_audit.esc(best["key"])} ({best["score"]}/100)' if best else "—"
+    best_cls = _score_class(best["score"]).replace("score-", "txt-") if best else "txt-unknown"
+    worst_cls = _score_class(worst["score"]).replace("score-", "txt-") if worst else "txt-unknown"
+    best_txt = (f'<b>{geo_audit.esc(best["key"])}</b> <span class="{best_cls}">({best["score"]}/100)</span>'
+                if best else "—")
+    worst_txt = (f'<b>{geo_audit.esc(worst["key"])}</b> <span class="{worst_cls}">({worst["score"]}/100)</span>'
+                 if worst else "—")
 
     issues_count = latest.get("issues_count")
     critical_count = latest.get("critical_count")
@@ -1153,6 +1368,15 @@ def _tab_overview(latest: dict | None, previous: dict | None, open_issues: int) 
                   f'all\'audit del {_fmt_date(previous.get("created_at"))}.'
                   if previous and previous.get("overall") is not None
                   else "Ancora nessun audit precedente per calcolare una variazione.")
+
+    def _count_cls(value, critical):
+        if value is None:
+            return "stat-neutral"
+        if critical:
+            return "stat-good" if value == 0 else "stat-bad"
+        if value == 0:
+            return "stat-good"
+        return "stat-warn" if value <= 10 else "stat-bad"
 
     sc = _score_class(overall)
     return (
@@ -1164,21 +1388,26 @@ def _tab_overview(latest: dict | None, previous: dict | None, open_issues: int) 
         f'<p class="card-sub" style="margin-top:10px">Ultimo audit: {_fmt_date(latest.get("created_at"))}</p></div>'
 
         '<div class="card"><div class="card-sub">Salute issue</div>'
-        f'<p style="margin:6px 0"><b>{issues_count if issues_count is not None else "—"}</b> problemi totali · '
-        f'<b>{critical_count if critical_count is not None else "—"}</b> critici</p>'
-        f'<p style="margin:6px 0"><b>{open_issues}</b> issue aperte in Opportunities</p></div>'
+        '<div class="mini-stat-row">'
+        f'<div class="mini-stat {_count_cls(issues_count, False)}"><span class="mini-stat-num">{issues_count if issues_count is not None else "—"}</span>'
+        '<span class="mini-stat-label">problemi totali</span></div>'
+        f'<div class="mini-stat {_count_cls(critical_count, True)}"><span class="mini-stat-num">{critical_count if critical_count is not None else "—"}</span>'
+        '<span class="mini-stat-label">critici</span></div>'
+        '</div>'
+        f'<p style="margin:10px 0 0"><b>{open_issues}</b> issue aperte in Opportunities</p></div>'
 
         '<div class="card"><div class="card-sub">Area migliore / peggiore</div>'
-        f'<p style="margin:6px 0">✓ <b>{best_txt}</b></p>'
-        f'<p style="margin:6px 0">⚠ <b>{worst_txt}</b></p></div>'
+        f'<p style="margin:6px 0">✓ {best_txt}</p>'
+        f'<p style="margin:6px 0">⚠ {worst_txt}</p></div>'
 
-        '<div class="card"><div class="card-sub">Tracking</div>'
-        '<p style="margin:6px 0"><span class="badge badge--neutral">Tracking not installed</span></p>'
-        '<p class="card-sub" style="margin-top:8px">AI Traffic diventa disponibile dopo l\'installazione dello snippet.</p></div>'
+        f'<div class="card"><div class="card-sub">Tracking</div>'
+        f'<p style="margin:6px 0">{_tracking_badge(project_id)}</p>'
+        '<p class="card-sub" style="margin-top:8px">Vedi la tab AI Traffic per sessioni, provider e landing page.</p></div>'
         '</div>'
 
         f'<div class="card" style="margin-top:16px"><div class="card-title">Ultime variazioni</div>'
         f'<p class="card-sub">{variazione}</p></div>'
+        + sections_html
     )
 
 
@@ -1321,12 +1550,115 @@ def _tab_opportunities(project_id: str) -> str:
     return out
 
 
+def _tracking_badge(project_id: str) -> str:
+    return ('<span class="badge badge--success"><span class="dot"></span>Tracking attivo</span>'
+            if _sb_has_tracking(project_id) else
+            '<span class="badge badge--neutral">Tracking not installed</span>')
+
+
+def _tracking_snippet_html(project_id: str) -> str:
+    tag = (f'&lt;script src="{SITE_URL}/static/js/geo-track.js" '
+           f'data-project="{project_id}" async&gt;&lt;/script&gt;')
+    return (
+        '<div class="card-title" style="margin-bottom:8px">Snippet di tracking</div>'
+        '<p class="card-sub" style="margin-bottom:10px">Incolla questo tag prima della chiusura di '
+        '<code>&lt;/head&gt;</code> sul tuo sito. Gli eventi compaiono qui entro pochi minuti dalla prima visita.</p>'
+        '<pre style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);'
+        f'padding:12px 14px;overflow-x:auto;font-family:var(--font-mono);font-size:12.5px;color:var(--text-2);'
+        f'margin:0">{tag}</pre>'
+        '<p class="card-sub" style="margin-top:10px">Per registrare una conversione (es. invio form, prenotazione): '
+        '<code>window.geoTrack("nome_evento")</code>.</p>'
+    )
+
+
+def _tab_traffic(project: dict) -> str:
+    events = _sb_tracking_events(project["id"], days=30, limit=5000)
+    if not events:
+        return (
+            '<div class="alert alert--info"><div class="ic">i</div>'
+            '<div>Nessun evento di tracking ancora ricevuto per questo progetto. '
+            'Installa lo snippet qui sotto per iniziare a raccogliere le sessioni.</div></div>'
+            f'<div class="card" style="margin-top:16px">{_tracking_snippet_html(project["id"])}</div>'
+        )
+
+    sessions = {}
+    for e in events:
+        sid = e.get("session_id") or e.get("created_at")
+        row = sessions.setdefault(sid, {"ai_source": None, "landing": e.get("page_url"), "first_at": e.get("created_at")})
+        if e.get("ai_source"):
+            row["ai_source"] = e["ai_source"]
+        created = e.get("created_at") or ""
+        if created and created < (row["first_at"] or ""):
+            row["landing"] = e.get("page_url")
+            row["first_at"] = created
+
+    total_sessions = len(sessions)
+    ai_sessions = [s for s in sessions.values() if s["ai_source"]]
+    ai_count = len(ai_sessions)
+    ai_pct = round(100 * ai_count / total_sessions) if total_sessions else 0
+
+    by_source: dict = {}
+    for s in ai_sessions:
+        by_source[s["ai_source"]] = by_source.get(s["ai_source"], 0) + 1
+    source_rows = "".join(
+        f'<tr><td data-label="Provider"><b>{geo_audit.esc(k)}</b></td><td data-label="Sessioni">{v}</td></tr>'
+        for k, v in sorted(by_source.items(), key=lambda x: -x[1])
+    ) or '<tr><td colspan="2" class="card-sub">Nessuna sessione da AI nel periodo.</td></tr>'
+
+    by_landing: dict = {}
+    for s in ai_sessions:
+        url = s["landing"] or "—"
+        by_landing[url] = by_landing.get(url, 0) + 1
+    landing_rows = "".join(
+        f'<tr><td data-label="Pagina">{geo_audit.esc(k)}</td><td data-label="Sessioni">{v}</td></tr>'
+        for k, v in sorted(by_landing.items(), key=lambda x: -x[1])[:10]
+    ) or '<tr><td colspan="2" class="card-sub">Nessuna landing page da AI nel periodo.</td></tr>'
+
+    daily: dict = {}
+    for e in events:
+        if not e.get("ai_source"):
+            continue
+        day = (e.get("created_at") or "")[:10]
+        if day:
+            daily[day] = daily.get(day, 0) + 1
+    trend_rows = "".join(
+        f'<tr><td data-label="Data">{_fmt_date(day)}</td><td data-label="Eventi AI">{count}</td></tr>'
+        for day, count in sorted(daily.items(), reverse=True)[:14]
+    ) or '<tr><td colspan="2" class="card-sub">Nessun evento AI negli ultimi 14 giorni.</td></tr>'
+
+    return (
+        '<div class="mini-stat-row">'
+        f'<div class="mini-stat"><span class="mini-stat-num">{total_sessions}</span><span class="mini-stat-label">sessioni (30gg)</span></div>'
+        f'<div class="mini-stat stat-good"><span class="mini-stat-num">{ai_count}</span><span class="mini-stat-label">sessioni da AI</span></div>'
+        f'<div class="mini-stat"><span class="mini-stat-num">{ai_pct}%</span><span class="mini-stat-label">quota AI</span></div>'
+        '</div>'
+
+        '<div class="card-title" style="margin:20px 0 10px">Per provider</div>'
+        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Provider</th><th>Sessioni</th></tr></thead>'
+        f'<tbody>{source_rows}</tbody></table></div>'
+
+        '<div class="card-title" style="margin:20px 0 10px">Landing page più visitate da AI</div>'
+        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Pagina</th><th>Sessioni</th></tr></thead>'
+        f'<tbody>{landing_rows}</tbody></table></div>'
+
+        '<div class="card-title" style="margin:20px 0 10px">Andamento (ultimi 14 giorni)</div>'
+        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Data</th><th>Eventi AI</th></tr></thead>'
+        f'<tbody>{trend_rows}</tbody></table></div>'
+
+        f'<div class="card" style="margin-top:20px">{_tracking_snippet_html(project["id"])}</div>'
+    )
+
+
 def _tab_settings(project: dict) -> str:
     freq = project.get("scan_frequency") or "weekly"
     freq_options = "".join(
         f'<option value="{key}"{" selected" if key == freq else ""}>{label}</option>'
         for key, label in _SCAN_FREQUENCY_LABELS.items()
     )
+    tracking_installed = _sb_has_tracking(project["id"])
+    tracking_status = ('<span class="badge badge--success"><span class="dot"></span>Installato</span>'
+                        if tracking_installed else
+                        '<span class="badge badge--neutral">Non ancora rilevato</span>')
     return (
         '<div class="card"><div class="card-title">Informazioni progetto</div>'
         f'<form method="post" action="/project/{project["id"]}/settings" class="settings-form">'
@@ -1343,11 +1675,16 @@ def _tab_settings(project: dict) -> str:
         '<button type="submit" class="btn btn--primary" style="margin-top:8px">Salva</button>'
         '</form></div>'
 
+        f'<div class="card" style="margin-top:16px">'
+        f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+        f'<span class="card-title" style="margin:0">Tracking</span>{tracking_status}</div>'
+        f'{_tracking_snippet_html(project["id"])}</div>'
+
         '<div class="card coming-soon-card" style="margin-top:16px">'
         '<span class="badge badge--neutral"><span class="dot"></span>Coming soon</span>'
-        '<h2 class="card-title" style="margin-top:12px">Snippet di tracking</h2>'
-        '<p class="card-sub">Stato installazione snippet e conversion event configurabili non ancora '
-        'disponibili per questo progetto.</p></div>'
+        '<h2 class="card-title" style="margin-top:12px">Conversion event personalizzati</h2>'
+        '<p class="card-sub">Configurazione guidata degli eventi di conversione (oggi disponibile solo via '
+        '<code>window.geoTrack()</code> lato codice) non ancora disponibile da qui.</p></div>'
     )
 
 
@@ -1382,7 +1719,7 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
             status_code=404,
         )
 
-    valid_tabs = {k for k, _ in _PROJECT_TABS}
+    valid_tabs = set(_ALL_TAB_KEYS)
     if tab not in valid_tabs:
         tab = "overview"
 
@@ -1393,8 +1730,10 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
         runs = _sb_audits_by_project(project_id, limit=2, full=True)
         latest = runs[0] if runs else None
         previous = runs[1] if len(runs) > 1 else None
-        open_issues = len(_sb_issues_by_project(project_id, status="open"))
-        body = _tab_overview(latest, previous, open_issues)
+        all_issues = _sb_issues_by_project(project_id)
+        open_issues = len([i for i in all_issues if i["status"] == "open"])
+        resolved_recent = len([i for i in all_issues if i["status"] == "resolved"])
+        body = _tab_overview(project_id, latest, previous, open_issues, resolved_recent)
     elif tab == "audit":
         history = _sb_audits_by_project(project_id, limit=50, full=False)
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
@@ -1410,6 +1749,8 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
         body = _tab_technical(latest_full[0] if latest_full else None)
     elif tab == "opportunities":
         body = _tab_opportunities(project_id)
+    elif tab == "traffic":
+        body = _tab_traffic(project)
     elif tab == "settings":
         body = _tab_settings(project)
     else:

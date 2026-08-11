@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="it" data-theme="dark">
 <head>
+<script>try{var _t=localStorage.getItem('geo-theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{PROJECT_NAME}} · GEO Audit · verticalai</title>
@@ -43,7 +44,26 @@
   .project-actions .next-scan-note { font-size:12px; color:var(--text-3); margin:0; text-align:right }
   @media (max-width:520px) { .project-head { flex-direction:column } .project-actions { align-items:flex-start } .project-actions .next-scan-note { text-align:left } }
 
-  nav.tabs { margin-bottom:var(--sp-6) }
+  .tabs { margin-bottom:0 }
+  .tab-soon {
+    font-size:9px; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em;
+    background:var(--surface-2); color:var(--text-3); padding:1px 5px; border-radius:999px;
+    margin-left:4px; vertical-align:middle;
+  }
+  .tab.active .tab-soon, .subtab.active .tab-soon { color:var(--brand-text) }
+  .tab.soon:not(.active), .subtab.soon:not(.active) { color:var(--text-3) }
+
+  .subtabs {
+    display:flex; gap:2px; overflow-x:auto;
+    border-bottom:1px solid var(--border); margin-bottom:var(--sp-6);
+  }
+  .subtab {
+    font-size:13px; font-weight:600; color:var(--text-2); padding:9px 12px;
+    border:none; background:none; cursor:pointer; text-decoration:none;
+    border-bottom:2px solid transparent; white-space:nowrap;
+  }
+  .subtab:hover { color:var(--text) }
+  .subtab.active { color:var(--brand-text); border-bottom-color:var(--brand) }
 
   .tab-body .card + .card { margin-top:0 }
 
@@ -66,13 +86,58 @@
   .score-unknown     { background:var(--surface-2);   border-color:var(--border) }
   .score-unknown .num    { color:var(--text-3) }
 
-  .delta-pill { font-family:var(--font-mono); font-size:11px; font-weight:600; padding:3px 8px; border-radius:var(--r-pill) }
+  .delta-block { display:flex; flex-direction:column; align-items:flex-start; gap:6px }
+  .delta-pill { font-family:var(--font-mono); font-size:16px; font-weight:700; padding:5px 12px; border-radius:var(--r-pill); line-height:1 }
   .delta-up   { background:var(--success-bg); color:var(--success) }
   .delta-down { background:var(--danger-bg);  color:var(--danger) }
   .delta-flat { background:var(--surface-2);  color:var(--text-3) }
+  .delta-text { font-size:12px; color:var(--text-3) }
+
+  /* Numeri colorati per soglia (score aree, senza box) */
+  .txt-ottimo       { color:var(--success) }
+  .txt-migliorabile { color:var(--warning) }
+  .txt-critico      { color:var(--danger) }
+  .txt-unknown      { color:var(--text-3) }
+
+  /* Mini stat box (Salute issue) */
+  .mini-stat-row { display:flex; gap:10px }
+  .mini-stat {
+    flex:1; border-radius:var(--r-md); border:1px solid var(--border); background:var(--surface-2);
+    padding:10px 12px; text-align:center;
+  }
+  .mini-stat-num { display:block; font-family:var(--font-display); font-weight:600; font-size:22px; line-height:1; color:var(--ink) }
+  .mini-stat-label { display:block; font-family:var(--font-mono); font-size:10.5px; color:var(--text-3); margin-top:5px; text-transform:uppercase; letter-spacing:.03em }
+  .mini-stat.stat-good  { background:var(--success-bg); border-color:var(--success-border) }
+  .mini-stat.stat-good .mini-stat-num  { color:var(--success) }
+  .mini-stat.stat-warn  { background:var(--warning-bg); border-color:var(--warning-border) }
+  .mini-stat.stat-warn .mini-stat-num  { color:var(--warning) }
+  .mini-stat.stat-bad   { background:var(--danger-bg);  border-color:var(--danger-border) }
+  .mini-stat.stat-bad .mini-stat-num   { color:var(--danger) }
+  .mini-stat.stat-neutral .mini-stat-num { color:var(--text-3) }
 
   /* Coming soon */
   .coming-soon-card { opacity:.72 }
+
+  /* Griglia riepilogo sezioni (Overview) */
+  .section-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:var(--sp-3) }
+  .section-card {
+    display:block; text-decoration:none; color:inherit;
+    transition:border-color var(--t-fast), box-shadow var(--t-fast);
+  }
+  .section-card:hover { border-color:var(--brand); box-shadow:var(--sh-sm); text-decoration:none }
+  .section-card-stat { margin-bottom:10px }
+  .section-stat-num {
+    display:block; font-family:var(--font-display); font-weight:600;
+    font-size:32px; line-height:1; color:var(--ink); letter-spacing:-.02em;
+  }
+  .section-stat-label {
+    display:block; font-family:var(--font-mono); font-size:11px; color:var(--text-3);
+    text-transform:uppercase; letter-spacing:.04em; margin-top:5px;
+  }
+  .coming-soon-card .section-stat-num { color:var(--text-3) }
+  .section-card-link {
+    display:block; margin-top:10px; font-size:12.5px; font-weight:600; color:var(--brand-text);
+  }
 
   /* Area score bars */
   .area-row { display:flex; align-items:center; gap:var(--sp-3); padding:8px 0 }
@@ -102,6 +167,10 @@
       <span><span class="logo-ai">vertical</span>ai</span>
     </a>
     <div class="topbar-actions">
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Cambia tema">
+        <svg class="i-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </button>
       <span class="topbar-user" id="topbar-user"></span>
       <a href="/auth/logout" class="topbar-logout">Esci</a>
       <a href="/audit" class="btn btn--primary btn--sm">+ Nuova analisi</a>
@@ -118,13 +187,19 @@
       {{PROJECT_ACTIONS}}
     </div>
 
-    <nav class="tabs" aria-label="Sezioni progetto">{{TABS_NAV}}</nav>
+    <nav aria-label="Sezioni progetto">{{TABS_NAV}}</nav>
 
     <div class="tab-body">{{TAB_BODY}}</div>
   </main>
 
   <script>
     document.getElementById("topbar-user").textContent = {{USER_EMAIL}} || "";
+    document.getElementById("theme-toggle").addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      var next = cur === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("geo-theme", next); } catch (e) {}
+    });
   </script>
 </body>
 </html>
