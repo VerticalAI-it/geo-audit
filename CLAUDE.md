@@ -8,6 +8,35 @@
 - `geo_audit.py` — logica di analisi GEO
 - `templates/` — file HTML caricati a memoria da `server.py`
 - `design_system/` — fonte di verità per font, token, componenti
+- `docs/` — documentazione completa (architettura, check, dati, deploy, roadmap)
+
+## Documentazione
+
+Prima di un intervento non banale, leggi il documento pertinente in `docs/`:
+
+| Ambito | Doc |
+|---|---|
+| Architettura, deploy, flussi | `docs/02-architettura.md` |
+| Motore di audit e catalogo check | `docs/03-audit-engine.md` |
+| Schema Supabase e ciclo issue | `docs/04-data-model.md` |
+| Route, auth, dashboard, tracking | `docs/05-applicazione-web.md` |
+| Email transazionali | `docs/06-email.md` |
+| Limiti noti e debito tecnico | `docs/10-stato-e-debito-tecnico.md` |
+| Backlog e priorità | `docs/11-next-steps.md` |
+
+Se una modifica invalida quanto scritto lì, aggiorna il documento nello stesso
+commit.
+
+## Invarianti da non rompere
+
+- **Autorizzazione**: ogni route che accede a dati di progetto deve verificare
+  `project["user_id"] == user["id"]` — la service role key bypassa le RLS.
+- **Sessione**: ogni route protetta deve applicare `_apply_refresh(resp, refreshed)`,
+  altrimenti la sessione scade dopo un'ora invece che dopo 30 giorni.
+- **`check_id`**: rinominarli in `geo_audit.py` spezza il fingerprint delle issue e
+  quindi la continuità dello storico. Serve una migrazione dedicata.
+- **Email**: header, footer e `_score_band` sono duplicati in `server.py` e
+  `api/cron.py`. Ogni modifica va replicata in entrambi.
 
 ## Route e template
 

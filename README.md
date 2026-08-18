@@ -1,93 +1,100 @@
-# GEO Audit — verticalai
+# GEO Audit — Vertical AI
 
-Strumento che analizza quanto un sito è **leggibile e citabile dalle AI**
-(ChatGPT, Gemini, Perplexity e principali LLM) e produce un report con punteggio,
-infografiche e interventi prioritari, in HTML e PDF.
-
-Questo repository è la **Fase A**: un servizio web con una pagina in cui inserisci
-un URL e ottieni il report. Il motore usa un browser headless (Chromium) per leggere
-anche i contenuti caricati via JavaScript.
-
-## Cosa c'è dentro
-
-| File | Cosa fa |
-|------|---------|
-| `geo_audit.py` | Il motore: crawl, controlli GEO, scoring, report HTML/PDF. Usabile anche da terminale. |
-| `server.py` | Il servizio web (FastAPI): form → audit → report. |
-| `templates/form.html` | La pagina d'ingresso con il campo URL. |
-| `Dockerfile` | Immagine pronta al deploy (include Chromium e le librerie per il PDF). |
-
-## ⚠️ Dove gira
-
-Il browser headless **non funziona su hosting serverless** (es. Vercel/Netlify
-functions). Serve un **host a container sempre attivo**: Railway, Render o Fly.io.
-Tutti e tre leggono il `Dockerfile` automaticamente.
+Piattaforma di **Generative Engine Optimization**: analizza quanto un sito è
+leggibile, citabile e consigliabile dagli assistenti AI (ChatGPT, Gemini, Claude,
+Perplexity), produce un report con punteggio e interventi prioritari, e monitora
+nel tempo l'andamento del progetto.
 
 ---
 
-## Uso da terminale (il motore, senza web)
+## 📚 Documentazione
+
+**La documentazione completa è in [`docs/`](docs/README.md)** — architettura,
+catalogo dei check, modello dati, deploy, debito tecnico e roadmap.
+
+| Se devi… | Leggi |
+|---|---|
+| Capire cos'è il prodotto | [docs/01-prodotto.md](docs/01-prodotto.md) |
+| Mettere le mani nel codice | [docs/02-architettura.md](docs/02-architettura.md) |
+| Far girare tutto in locale | [docs/08-setup-e-deploy.md](docs/08-setup-e-deploy.md) |
+| Sapere dove sono le mine | [docs/10-stato-e-debito-tecnico.md](docs/10-stato-e-debito-tecnico.md) |
+| Pianificare il prossimo lavoro | [docs/11-next-steps.md](docs/11-next-steps.md) |
+| Toccare HTML, CSS o email | [design_system/DESIGN_SYSTEM.md](design_system/DESIGN_SYSTEM.md) |
+
+Regole operative vincolanti per chi modifica il repo: [CLAUDE.md](CLAUDE.md).
+
+---
+
+## Avvio rapido
 
 ```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-playwright install chromium
-python geo_audit.py www.esempio.it --out report.html
-```
 
-## Avvio locale del servizio web
+cp .env.example .env      # compila almeno SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY
+set -a && source .env && set +a
 
-```bash
-pip install -r requirements.txt
-playwright install chromium
 uvicorn server:app --reload
-# apri http://localhost:8000
+# → http://localhost:8000
 ```
 
-## Con Docker (identico alla produzione)
+Setup completo (database, auth, rendering JS, PDF, Docker):
+[docs/08-setup-e-deploy.md](docs/08-setup-e-deploy.md).
+
+### Solo il motore, da riga di comando
+
+Non richiede Supabase né variabili d'ambiente:
 
 ```bash
-docker build -t geo-audit .
-docker run -p 8000:8000 geo-audit
-# apri http://localhost:8000
+python geo_audit.py www.esempio.it --max-pages 20 --out report.html --json report.json
 ```
 
----
-
-## Deploy in produzione
-
-### Railway (consigliato, più semplice)
-1. Vai su railway.app → **New Project → Deploy from GitHub repo**.
-2. Seleziona questo repository. Railway rileva il `Dockerfile` e fa la build.
-3. In **Settings → Networking** genera un dominio pubblico. Fatto.
-
-### Render
-1. render.com → **New → Web Service** → collega il repo.
-2. Environment: **Docker**. Render usa il `Dockerfile`.
-3. Deploy → ottieni l'URL pubblico.
-
-> La prima build installa Chromium: richiede qualche minuto. Le richieste di scan
-> sono sincrone (Fase A): per siti grandi tieni le pagine sotto ~20 per evitare
-> timeout. In **Fase B** passeremo a una coda + worker asincrono.
+È anche l'unico modo per ottenere il PDF e per avere il check `render.parity`
+calcolato davvero — vedi [docs/03-audit-engine.md](docs/03-audit-engine.md#uso-da-cli).
 
 ---
 
-## Endpoints
+## Struttura
 
-- `GET /` — pagina con il form
-- `POST /scan` — esegue l'audit (campi: `url`, `max_pages`)
-- `GET /r/{id}` — report HTML
-- `GET /r/{id}.pdf` — report PDF
-- `GET /health` — stato del servizio
-
----
-
-## Roadmap
-
-- **Fase A (questo repo):** servizio web on-demand. ✅
-- **Fase B:** coda + worker asincrono, salvataggio persistente su **Supabase**,
-  imbuto email (cattura lead, double opt-in, follow-up), analytics.
-- **Fase 2 (contenuti):** analisi semantica via LLM e presenza off-site
-  (Wikipedia/Wikidata, citazioni di terzi, visibilità reale nelle risposte AI).
+| Percorso | Contenuto |
+|---|---|
+| [`server.py`](server.py) | App FastAPI: route, auth, dashboard, email, helper Supabase |
+| [`geo_audit.py`](geo_audit.py) | Motore di audit: crawl, 31 check, scoring, report HTML/PDF |
+| [`api/index.py`](api/index.py) | Entry point Vercel (importa `server.app`) |
+| [`api/cron.py`](api/cron.py) | Worker cron: audit periodici |
+| [`templates/`](templates/) | Pagine HTML, caricate a memoria da `server.py` |
+| [`static/`](static/) | CSS del design system, snippet di tracking |
+| [`design_system/`](design_system/) | Fonte di verità visiva: token, componenti, email |
+| [`docs/`](docs/) | Documentazione completa |
+| [`supabase_setup.sql`](supabase_setup.sql) | Migrazione dello schema (idempotente) |
 
 ---
 
-© verticalai.it
+## Deploy
+
+Produzione su **Vercel**, zero-config: `api/index.py` è servita come funzione ASGI
+nativa, `api/cron.py` come funzione indipendente.
+
+> ⚠️ **Non aggiungere `rewrites` a [`vercel.json`](vercel.json).** Un catch-all va
+> in conflitto con il routing FastAPI nativo e restituisce `{"detail":"Not Found"}`
+> su ogni pagina — build verde, produzione rotta. Le nuove route statiche vanno
+> aggiunte come endpoint FastAPI in `server.py`.
+
+Il [`Dockerfile`](Dockerfile) resta valido per un deploy a container
+(Railway/Render/Fly), dove funzionano anche il rendering headless e il PDF.
+
+---
+
+## Stato
+
+Disponibile oggi: motore di audit, account con magic link, progetti con storico,
+dashboard portfolio, dettaglio progetto, ciclo di vita delle issue, tracking
+first-party con tab AI Traffic, audit periodici automatici.
+
+In arrivo: monitoraggio delle citazioni reali sui provider AI, competitor e share
+of voice, presenza off-site. Vedi [docs/11-next-steps.md](docs/11-next-steps.md)
+e la [roadmap pubblica](https://geo-audit.vercel.app/roadmap).
+
+---
+
+© [verticalai.it](https://verticalai.it)
