@@ -2,7 +2,7 @@
 GEO Audit — servizio web
 Scan sincrono → salva su Supabase via REST → report oscurato → sblocco via email.
 """
-import os, hmac, hashlib, json
+import os, time, hmac, hashlib, json
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 import requests as req
@@ -255,6 +255,121 @@ _AI_REFERRER_DOMAINS = {
     "you.com": "You.com",
     "meta.ai": "Meta AI",
 }
+
+
+# ── Cron: audit periodici dei progetti ──────────────────────────────────────
+#
+# La route vive qui dentro l'app FastAPI e NON in una function separata: con la
+# detection zero-config Vercel serve l'intero deployment come singola function
+# FastAPI, quindi un file `api/cron.py` non viene mai costruito come function a
+# sé e ogni chiamata a /api/cron finisce comunque nel router di questa app.
+# Stessa ragione per cui /robots.txt è un endpoint FastAPI. Vedi CLAUDE.md.
+
+_CRON_SECRET = os.environ.get("CRON_SECRET", "")
+
+# Il claim scrive una lease breve, non l'intervallo pieno: se la function viene
+# uccisa dal timeout a metà audit il progetto torna disponibile al giro dopo
+# invece di sparire per una settimana intera senza lasciare traccia.
+_SCAN_LEASE = timedelta(minutes=20)
+
+# Finestra entro cui una singola invocazione può *avviare* nuovi audit. Non
+# limita l'audit già partito, quindi la durata massima dell'invocazione è
+# _CRON_TIME_BUDGET + (durata del singolo audit più lento).
+#
+# Un audit fa ~10 richieste HTTP con geo_audit.TIMEOUT = 20s: normalmente dura
+# 10-20s, ma su un sito che non risponde può avvicinarsi a 200s. Il vincolo da
+# rispettare è quindi:
+#
+#     _CRON_TIME_BUDGET + 200s  <=  maxDuration della function
+#
+# Con maxDuration a 300s (massimo del piano Pro, impostato dal dashboard Vercel
+# — non da vercel.json, vedi CLAUDE.md) 60s lascia il margine giusto.
+_CRON_TIME_BUDGET = 60.0
+
+
+def _sb_project_claim_due() -> dict | None:
+    """Rivendica il prossimo progetto con next_scan_at scaduto scrivendoci una
+    lease breve. Ritorna None se non c'è nulla da fare o se un'altra invocazione
+    concorrente ha vinto la corsa."""
+    now = datetime.now(timezone.utc).isoformat()
+    r = req.get(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=10,
+                params={"next_scan_at": f"lte.{now}",
+                        "select": "id,user_id,domain,scan_frequency,next_scan_at",
+                        "order": "next_scan_at.asc", "limit": "1"})
+    rows = r.json() if r.ok else []
+    if not rows:
+        return None
+
+    project = rows[0]
+    lease = (datetime.now(timezone.utc) + _SCAN_LEASE).isoformat()
+    # Il predicato del claim è `next_scan_at <= now`, non l'uguaglianza col
+    # valore appena letto: Postgres rivaluta la WHERE sulla riga bloccata, quindi
+    # la seconda invocazione concorrente non trova più nulla da aggiornare (il
+    # primo claim ha già spostato next_scan_at nel futuro) e riceve [].
+    # Rispetto al compare-and-swap sul valore esatto non dipende dalla fedeltà
+    # del round-trip del timestamp attraverso PostgREST.
+    claim = req.patch(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=10,
+                      json={"next_scan_at": lease},
+                      params={"id": f"eq.{project['id']}",
+                              "next_scan_at": f"lte.{now}"})
+    if not claim.ok or not claim.json():
+        return None
+    return project
+
+
+async def _run_project_scan(project: dict) -> dict:
+    """Esegue l'audit di un progetto già rivendicato e ne salva il risultato.
+    Stessa pipeline di /project/{id}/rerun, senza contesto utente."""
+    project_id = project["id"]
+    frequency  = project.get("scan_frequency") or "weekly"
+    domain     = project["domain"]
+    url = domain if domain.startswith(("http://", "https://")) else "https://" + domain
+
+    try:
+        res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
+
+        row = _sb_insert({
+            "user_id":    project["user_id"],
+            "project_id": project_id,
+            "url":        url,
+            "status":     "done",
+            "domain":     res.get("domain"),
+            "overall":    res.get("overall"),
+            "grade":      res.get("grade"),
+            "band":       res.get("band"),
+            "pages_count": len(res.get("pages", [])),
+            "html":       res["html"],
+            "engine_version": res.get("engine_version"),
+            "areas":       res.get("areas"),
+            "site_checks": res.get("site_checks"),
+            "pages_detail": res.get("pages"),
+            "actions":      res.get("actions"),
+            "issues_count":    res.get("issues_count"),
+            "critical_count":  res.get("critical_count"),
+        })
+
+        all_checks = list(res.get("site_checks", []))
+        for pg in res.get("pages", []):
+            for c in pg.get("checks", []):
+                all_checks.append({**c, "url": pg.get("url")})
+        _sb_issue_sync(project_id, project["user_id"], row["id"], all_checks)
+
+        _sb_project_bump_scan(project_id, frequency)
+        return {"status": "done", "project_id": project_id,
+                "domain": domain, "audit_id": row["id"], "overall": res.get("overall")}
+
+    except Exception as e:
+        # Errore esplicito (sito irraggiungibile, Supabase KO): niente retry
+        # aggressivo, si riparte dall'intervallo pieno. Solo il caso "function
+        # uccisa" resta con la lease breve e viene ritentato al giro dopo.
+        body = getattr(getattr(e, "response", None), "text", "")
+        print(f"[/api/cron] audit periodico fallito per {domain}: {e!r} {body}".strip())
+        try:
+            _sb_project_bump_scan(project_id, frequency)
+        except Exception:
+            pass
+        return {"status": "failed", "project_id": project_id,
+                "domain": domain, "error": str(e)[:200]}
 
 
 def _detect_ai_source(referrer: str) -> str | None:
@@ -928,6 +1043,36 @@ def llms_txt():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/cron")
+async def api_cron(request: Request, max_projects: int = 3):
+    """Invocata da Vercel Cron (vedi `crons` in vercel.json). Rivendica ed
+    esegue gli audit periodici dei progetti scaduti, uno alla volta, finché non
+    esaurisce il budget di tempo o il numero massimo per invocazione.
+
+    Vercel manda automaticamente `Authorization: Bearer $CRON_SECRET` quando la
+    variabile CRON_SECRET è impostata sul progetto: senza quella variabile
+    l'endpoint resta pubblico.
+
+    `max_projects` è sovrascrivibile via query string per smaltire a mano un
+    backlog accumulato: GET /api/cron?max_projects=10."""
+    if _CRON_SECRET and request.headers.get("Authorization") != f"Bearer {_CRON_SECRET}":
+        return Response(json.dumps({"error": "unauthorized"}),
+                        status_code=401, media_type="application/json")
+
+    limit = max(1, min(max_projects, 20))
+    started = time.monotonic()
+    results = []
+    while len(results) < limit and (time.monotonic() - started) < _CRON_TIME_BUDGET:
+        project = _sb_project_claim_due()
+        if project is None:
+            break
+        results.append(await _run_project_scan(project))
+
+    return {"processed": len(results),
+            "elapsed": round(time.monotonic() - started, 1),
+            "results": results}
 
 
 @app.post("/t")
