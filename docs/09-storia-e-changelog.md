@@ -70,7 +70,11 @@ storia del progetto:
 3. La colonna `audits.status` e la coda `pending` sono **residui vestigiali** della
    coda mai completata ([doc 10](10-stato-e-debito-tecnico.md#la-coda-pending-è-vestigiale))
 4. `api/cron.py`, nato per consumare quella coda, è sopravvissuto e nel 2026-08 ha
-   trovato un secondo scopo: gli audit periodici
+   trovato un secondo scopo — gli audit periodici — salvo poi scoprire che **non
+   era mai stato deployato**: Vercel non lo costruiva come function e ogni
+   `GET /api/cron` prendeva un 404 dal router FastAPI. Il cron è stato riscritto
+   come route in `server.py` e il file rimosso
+   ([02 · Architettura](02-architettura.md#una-sola-function-apicron-incluso))
 
 > La lezione, se serve un giudizio: il tentativo asincrono è fallito non per il
 > design ma per l'ambiente. Su un host a container sarebbe passato al primo colpo.

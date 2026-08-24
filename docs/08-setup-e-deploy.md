@@ -8,8 +8,8 @@ Riferimento: [.env.example](../.env.example).
 
 | Variabile | Obbligatoria | Usata da | Note |
 |---|---|---|---|
-| `SUPABASE_URL` | ✅ | `server.py`, `api/cron.py` | |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | `server.py`, `api/cron.py` | **Bypassa RLS — mai lato client** |
+| `SUPABASE_URL` | ✅ | `server.py` | |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | `server.py` | **Bypassa RLS — mai lato client** |
 | `SUPABASE_ANON_KEY` | ⚠️ di fatto sì | `server.py` | Iniettata nelle pagine di login: senza, l'auth non funziona |
 | `RESEND_API_KEY` | ❌ | email | Senza, le email non partono (nessun errore) |
 | `FROM_EMAIL` | ❌ | email | Dominio verificato su Resend |
@@ -33,9 +33,9 @@ _SECRET       = os.environ.get("CRON_SECRET", "fallback-secret").encode()
 
 > ⚠️ **`CRON_SECRET` ha un default `"fallback-secret"`.** Serve per due cose
 > diverse:
-> 1. proteggere `/api/cron` — qui il default è innocuo perché in `cron.py` la
->    variabile non ha fallback, e con `CRON_SECRET` vuoto il controllo di
->    autorizzazione viene semplicemente saltato;
+> 1. proteggere `/api/cron` — qui il default è innocuo perché la route legge
+>    `_CRON_SECRET` senza fallback, e con `CRON_SECRET` vuoto il controllo di
+>    autorizzazione viene semplicemente saltato (endpoint pubblico);
 > 2. **firmare i token HMAC di accesso ai report** in `server.py`.
 >
 > In produzione **deve essere valorizzata con una stringa casuale di almeno 32
@@ -184,25 +184,65 @@ troppo.
 ### Il cron
 
 ```json
-{ "crons": [ { "path": "/api/cron", "schedule": "0 3 * * *" } ] }
+{ "crons": [ { "path": "/api/cron", "schedule": "0 * * * *" } ] }
 ```
 
-Una volta al giorno alle 03:00 UTC. Vercel invia `Authorization: Bearer
-$CRON_SECRET`; senza il secret corretto la function risponde 401.
+Ogni ora, allo scoccare. Vercel invia `Authorization: Bearer $CRON_SECRET`;
+senza il secret corretto la route risponde 401.
 
-La cadenza è **deliberatamente conservativa** (commit `1ccb850`): era oraria, è
-stata portata a giornaliera per essere compatibile con qualsiasi piano Vercel ed
-escludere che la configurazione del cron potesse far fallire il deploy. Per
-compensare la minore frequenza, ogni invocazione processa fino a **3 progetti**
-scaduti con un budget di **20 secondi** per l'avvio di nuove iterazioni — così
-anche uno scheduling raro recupera il ritardo accumulato.
+La cadenza oraria richiede il piano **Pro** — su Hobby i cron girano al massimo
+una volta al giorno, che non basta oltre una manciata di progetti settimanali.
+
+`/api/cron` è una **route FastAPI in `server.py`**, non un file in `api/`: con la
+detection zero-config Vercel costruisce una sola function e nessun altro file in
+`api/` diventa un endpoint. Il `api/cron.py` precedente non è mai stato deployato
+e il cron ha ricevuto 404 per due settimane
+([02 · Architettura](02-architettura.md#una-sola-function-apicron-incluso)).
+
+Ogni invocazione processa fino a `max_projects` progetti scaduti (default **3**)
+entro `_CRON_TIME_BUDGET` secondi per l'avvio di nuove iterazioni. In regime
+normale ne trova 0 o 1: 24 invocazioni al giorno contro ~3 audit al giorno
+necessari per 21 progetti settimanali.
+
+#### Il vincolo fra budget e `maxDuration`
+
+Il budget limita l'**avvio** di nuove iterazioni, non l'audit già partito. La
+durata massima di un'invocazione è quindi:
+
+```
+_CRON_TIME_BUDGET + durata del singolo audit più lento
+```
+
+Un audit fa ~10 richieste HTTP con `geo_audit.TIMEOUT = 20s`: normalmente dura
+10–20s, ma su un sito che non risponde può avvicinarsi a **200s**. Con
+`_CRON_TIME_BUDGET = 60` serve quindi un `maxDuration` di almeno 260s.
+
+> **`maxDuration` si imposta dal dashboard Vercel**, non da `vercel.json`:
+> *Project Settings → Functions → Function Max Duration*. Il piano Pro arriva a
+> 300s. Non aggiungere una chiave `functions` a `vercel.json` per ottenerlo — è
+> esattamente il tipo di modifica che ha già rotto la produzione una volta
+> (commit `910ef87`), e il dashboard fa la stessa cosa a rischio zero.
+>
+> Il valore vale per **tutta** l'app, non solo per il cron: alzarlo protegge
+> anche `/scan` e `/project/{id}/rerun`, che eseguono lo stesso audit sincrono.
 
 Test manuale:
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" https://tuo-dominio/api/cron
-# → {"pending_queue": {...}, "project_scans": {"processed": N, "results": [...]}}
+# → {"processed": N, "elapsed": 12.4, "results": [...]}
+# "processed": 0 con la lista vuota = nessun progetto scaduto, non un errore
 ```
+
+Il parametro è sovrascrivibile per un recupero manuale del backlog:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" 'https://tuo-dominio/api/cron?max_projects=10'
+```
+
+Con la cadenza oraria il margine è ampio: 24 invocazioni al giorno × fino a 3
+progetti = 72 audit/giorno di capacità contro i ~3 necessari. Il ritardo
+accumulato si smaltisce da solo.
 
 ### Limiti da conoscere su Vercel
 
@@ -211,7 +251,8 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://tuo-dominio/api/cron
 | Niente Chromium | `render.parity` sempre `unknown` → `render=False` ovunque |
 | Niente WeasyPrint | Nessun endpoint PDF |
 | Timeout della function | `max_pages=6` sugli audit sincroni |
-| Cron 1×/giorno (Hobby) | Cadenza giornaliera + recupero a 3 progetti per invocazione |
+| Cron 1×/giorno su **Hobby** | Non sufficiente oltre ~7 progetti settimanali. Su **Pro** la cadenza è oraria |
+| `maxDuration` default del piano | Va alzato dal dashboard: il default non copre un audit su un sito lento |
 
 ---
 
@@ -237,7 +278,7 @@ Non ci sono test automatici ([doc 10](10-stato-e-debito-tecnico.md#nessun-test-a
 Il minimo sindacale:
 
 ```bash
-python3 -m py_compile server.py api/cron.py geo_audit.py
+python3 -m py_compile server.py api/index.py geo_audit.py
 python3 -c "import json; json.load(open('vercel.json'))"
 python3 geo_audit.py example.com --no-pdf --max-pages 3   # smoke test dell'engine
 ```
@@ -249,6 +290,5 @@ Checklist manuale per una modifica alla UI:
 - [ ] Tema chiaro **e** scuro
 - [ ] Mobile (le tabelle usano `data-label`)
 - [ ] Se hai toccato un template: il processo è ripartito?
-- [ ] Se hai toccato un'email: replicata in `server.py` **e** `api/cron.py`?
 - [ ] Se hai toccato l'engine: `check_id` invariati? (altrimenti si spezza lo
       storico delle issue — vedi [04](04-data-model.md#il-fingerprint-è-un-contratto))

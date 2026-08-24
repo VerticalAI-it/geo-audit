@@ -175,8 +175,9 @@ email. Vedi [06 · Email](06-email.md).
 3. Il componente esiste già in `design-system.css`? Riusalo invece di reinventarlo.
 4. Funziona in **entrambi** i temi?
 5. Se hai toccato il report, hai verificato che gli stili restino inline?
-6. Se hai toccato un'email, hai replicato la modifica in **`server.py` e
-   `api/cron.py`**?
+6. Se hai toccato un'email, ricorda che il codice eseguito è in **`server.py`**:
+   i file in `design_system/ds_components/` sono la fonte di verità visiva, non
+   quella eseguita.
 
 ---
 

@@ -14,20 +14,22 @@ Notifiche interne: `geo@verticalai.it`, `info@verticalai.it`
 | Email | Funzione | File | Trigger | Stato |
 |---|---|---|---|---|
 | Report pronto (sblocco) | `_send_unlock_email()` | [server.py:560](../server.py#L560) | `POST /unlock/{job_id}` | ✅ attiva |
-| Report pronto (async) | `_send_report_email()` | [api/cron.py:134](../api/cron.py#L134) | Cron, a completamento job | ⚠️ attiva ma irraggiungibile ¹ |
 | I miei report | `_send_my_reports_email()` | [server.py:2206](../server.py#L2206) | `POST /miei-report` | ✅ attiva |
 | Notifica contatto (interna) | `_send_contact_notif()` | [server.py:484](../server.py#L484) | `POST /contact/{job_id}` | ✅ attiva |
 | Richiesta audit — team | `_send_report_request_admin()` | [server.py:2491](../server.py#L2491) | `POST /richiedi-audit` | ✅ attiva |
 | Richiesta audit — utente | `_send_report_request_user()` | [server.py:2521](../server.py#L2521) | `POST /richiedi-audit` | ✅ attiva |
-| Conferma audit ricevuto | `_send_conferma_audit()` | [api/cron.py:227](../api/cron.py#L227) | **nessuno** | 🔌 orfana |
 | Analisi completa (follow-up) | `_send_analisi_completa()` | [server.py:2289](../server.py#L2289) | **nessuno** | 🔌 orfana |
 | Report mensile / monitoraggio | `_send_report_mensile()` | [server.py:2346](../server.py#L2346) | **nessuno** | 🔌 orfana |
 
-¹ Vive dentro `_process_next_job()`, che consuma la coda `audits status='pending'`
-— coda in cui nessuno inserisce più nulla ([doc 10](10-stato-e-debito-tecnico.md#la-coda-pending-è-vestigiale)).
+Fino ad agosto 2026 l'inventario contava anche `_send_report_email()` e
+`_send_conferma_audit()`, definite in `api/cron.py`. Entrambe erano irraggiungibili
+— vivevano nel consumatore della coda `audits status='pending'`, in cui nessuno
+inserisce più nulla ([doc 10](10-stato-e-debito-tecnico.md#la-coda-pending-è-vestigiale))
+— e sono state rimosse insieme al file. I template visivi corrispondenti restano
+in `design_system/ds_components/`.
 
-**Cinque email realmente in funzione, quattro no**: tre non hanno un trigger e una
-(`_send_report_email`) ne ha uno che non scatta più. Sono tutte lavoro già fatto:
+**Cinque email realmente in funzione, due no**: entrambe le orfane non hanno un
+trigger. Sono lavoro già fatto:
 manca solo il wiring, che è più una decisione di prodotto che un problema tecnico.
 
 ---
@@ -71,7 +73,7 @@ termini di infrastruttura di scheduling.
 Le email sono **HTML costruito in Python** con f-string, tabelle annidate e stili
 inline — il pattern classico per la compatibilità con i client di posta.
 
-Componenti condivisi, duplicati sia in `server.py` che in `api/cron.py`:
+Componenti condivisi, tutti in `server.py`:
 
 | Componente | Cosa fa |
 |---|---|
@@ -103,8 +105,7 @@ I template email di riferimento visivo sono in
 
 ## Soglie di punteggio nelle email
 
-`_score_band()` ([server.py:466](../server.py#L466), duplicata in
-[api/cron.py:115](../api/cron.py#L115)):
+`_score_band()` ([server.py](../server.py)):
 
 | Punteggio | Label | Sfondo | Colore |
 |---|---:|---|---|
@@ -146,13 +147,13 @@ l'app funziona senza credenziali email.
 
 ---
 
-## Duplicazione fra `server.py` e `api/cron.py`
+## Un solo posto da modificare
 
-Header, footer, logo, `_score_band`, `_EMAIL_HEAD` esistono **in entrambi i file**,
-identici. La ragione è strutturale: sono due Vercel Function separate e `cron.py`
-non importa `server.py` (importerebbe l'intera app FastAPI e tutte le sue
-variabili d'ambiente obbligatorie).
+Header, footer, logo, `_score_band`, `_EMAIL_HEAD` sono definiti **una volta
+sola**, in `server.py`.
 
-**Ogni modifica al layout email va replicata in due posti.** Estrarre un
-`email_kit.py` condiviso — importabile da entrambi senza tirarsi dietro FastAPI —
-è un intervento pulito e a basso rischio ([11 · Next steps](11-next-steps.md)).
+Fino ad agosto 2026 esistevano identici anche in `api/cron.py`, nell'assunto che
+fossero due Vercel Function separate. L'assunto era falso — `api/cron.py` non
+veniva mai deployato ([02 · Architettura](02-architettura.md#una-sola-function-apicron-incluso))
+— e il file è stato rimosso. Non c'è più niente da replicare, e l'idea di
+estrarre un `email_kit.py` condiviso non serve più.

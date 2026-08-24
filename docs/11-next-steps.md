@@ -73,13 +73,18 @@ Una dependency FastAPI `require_project_owner(project_id)` che risolva progetto 
 proprietà in un punto solo, al posto del controllo copiato in ogni route.
 Elimina la classe di bug "nuova route esposta per dimenticanza".
 
-### 1.3 · Deduplicare issue-sync ed email-kit 🟡 · M
+### 1.3 · Deduplicare issue-sync ed email-kit ✅ · fatto
 
-- `issues.py` condiviso fra `server.py` e `api/cron.py`
-- `email_kit.py` con header, footer, logo, `_score_band`
+Non serve più. La duplicazione esisteva perché `api/cron.py` era ritenuto una
+Vercel Function separata che non poteva importare `server.py`. Non lo era mai
+stato: il file non veniva costruito affatto
+([02 · Architettura](02-architettura.md#una-sola-function-apicron-incluso)).
 
-Vincolo: nessuno dei due deve importare l'app FastAPI, altrimenti `cron.py` si
-tira dietro tutte le variabili d'ambiente obbligatorie.
+Il cron è diventato la route `/api/cron` in `server.py`, il file è stato rimosso,
+e `_sb_issue_sync()` e i componenti email hanno di nuovo una sola copia.
+
+**Subentra al suo posto:** dare al cron una cadenza che copra il portafoglio
+([10 · Debito tecnico](10-stato-e-debito-tecnico.md#il-cron-giornaliero-non-copre-il-portafoglio)).
 
 ### 1.4 · Decidere il destino della coda asincrona 🟡 · S (decisione) + M (esecuzione)
 

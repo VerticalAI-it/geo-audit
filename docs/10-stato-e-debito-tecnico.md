@@ -16,8 +16,8 @@ a chi pianifica per sapere cosa costa non sistemare.
 | 2 | [`CRON_SECRET` con default `"fallback-secret"`](#cron_secret-ha-un-default-pericoloso) | 🔴 | Minimo |
 | 3 | [Autorizzazione non centralizzata](#lautorizzazione-è-copiata-in-ogni-route) | 🔴 | Medio |
 | 4 | [Nessun test automatico](#nessun-test-automatico) | 🔴 | Medio |
-| 5 | [Duplicazione della logica issue](#duplicazione-della-logica-issue) | 🟡 | Medio |
-| 6 | [Duplicazione dei componenti email](#duplicazione-dei-componenti-email) | 🟡 | Basso |
+| 5 | [Duplicazione della logica issue](#duplicazione-della-logica-issue) | ✅ risolto | — |
+| 6 | [Duplicazione dei componenti email](#duplicazione-dei-componenti-email) | ✅ risolto | — |
 | 7 | [La coda `pending` è vestigiale](#la-coda-pending-è-vestigiale) | 🟡 | Basso |
 | 8 | [`audits.html` fa crescere la tabella](#auditshtml-fa-crescere-la-tabella-senza-limiti) | 🟡 | Medio |
 | 9 | [AI Traffic aggrega in Python con tetto a 5000](#ai-traffic-non-scala) | 🟡 | Medio |
@@ -28,6 +28,7 @@ a chi pianifica per sapere cosa costa non sistemare.
 | 14 | [Default del tema incoerente](#default-del-tema-incoerente) | 🟢 | Minimo |
 | 15 | [Template orfani](#template-orfani) | 🟢 | Minimo |
 | 16 | [`engine_version` scritto ma mai letto](#engine_version-è-scritto-ma-mai-letto) | 🟢 | — |
+| 17 | [Il cron giornaliero non copre il portafoglio](#il-cron-giornaliero-non-copre-il-portafoglio) | ✅ risolto | — |
 | 17 | [Lo scoring diluisce i check di sito](#lo-scoring-diluisce-i-check-di-sito) | 🟡 | Alto |
 | 18 | [`server.py` a 2588 righe](#serverpy-concentra-tutto) | 🟡 | Medio |
 
@@ -107,7 +108,7 @@ che risolva progetto e proprietà in un punto solo.
 Zero file di test nel repository. Nessun CI. Le verifiche sono:
 
 ```bash
-python3 -m py_compile server.py api/cron.py geo_audit.py
+python3 -m py_compile server.py api/index.py geo_audit.py
 ```
 
 che controlla solo la sintassi.
@@ -134,53 +135,52 @@ esattamente il cambiamento che spezza silenziosamente lo storico delle issue.
 
 ## Duplicazione della logica issue
 
-La stessa logica esiste in due implementazioni:
+**✅ Risolto in agosto 2026.**
 
-| Funzione | File | Client Supabase |
-|---|---|---|
-| `_sb_issue_sync()` | [server.py:207](../server.py#L207) | REST via `requests` |
-| `_sync_project_issues()` | [api/cron.py:371](../api/cron.py#L371) | `supabase-py` |
+Esistevano due implementazioni equivalenti — `_sb_issue_sync()` in `server.py`
+(REST via `requests`) e `_sync_project_issues()` in `api/cron.py`
+(`supabase-py`) — perché si riteneva che il cron girasse in una function
+separata che non poteva importare `server.py`.
 
-Sono funzionalmente equivalenti oggi. Un cambiamento applicato a una sola delle
-due produce **audit manuali e audit automatici che si comportano diversamente** —
-un bug difficile da notare perché richiede di confrontare due percorsi.
-
-**Perché esistono separate:** `cron.py` non può importare `server.py` senza
-tirarsi dietro l'intera app FastAPI e le sue variabili d'ambiente obbligatorie.
-
-**Azione:** estrarre un modulo `issues.py` che riceva un client astratto, oppure
-far usare a entrambi la stessa REST diretta.
+Quella premessa era falsa: `api/cron.py` non veniva mai costruito come function
+(vedi [02 · Architettura](02-architettura.md#una-sola-function-apicron-incluso)).
+Il cron è ora la route `/api/cron` dentro `server.py` e chiama direttamente
+`_sb_issue_sync()`. Il file duplicato è stato rimosso.
 
 ---
 
 ## Duplicazione dei componenti email
 
-`_EMAIL_HEAD`, `_EMAIL_FONTS`, `_email_logo_row()`, `_email_footer()`,
-`_score_band()` sono identici in `server.py` e `api/cron.py`.
+**✅ Risolto in agosto 2026,** per la stessa ragione del punto precedente.
 
-Ogni modifica al layout va replicata in due posti. Stessa causa strutturale del
-punto precedente.
+`_EMAIL_HEAD`, `_EMAIL_FONTS`, `_email_logo_row()`, `_email_footer()` e
+`_score_band()` erano identici in `server.py` e `api/cron.py`. Rimosso
+`api/cron.py`, `server.py` è l'unica copia e non c'è più niente da replicare.
 
-**Azione:** un `email_kit.py` importabile da entrambi senza dipendere da FastAPI.
-Intervento pulito, rischio basso.
+Le copie in `api/cron.py` erano comunque tutte irraggiungibili: alimentavano solo
+le email della coda `pending`, che nessun percorso riempie (punto successivo).
 
-📄 [06 · Email](06-email.md#duplicazione-fra-serverpy-e-apicronpy)
+📄 [06 · Email](06-email.md)
 
 ---
 
 ## La coda `pending` è vestigiale
 
-Residuo della Fase B. `audits.status` ha default `'pending'` e `api/cron.py`
-espone `_process_next_job()` che consuma la coda — ma **nessun percorso inserisce
-più righe `pending`**: `/scan`, `/rerun` e il cron scrivono direttamente `'done'`.
+Residuo della Fase B. `audits.status` ha ancora default `'pending'`, ma
+**nessun percorso inserisce righe `pending`**: `/scan`, `/rerun` e l'audit
+periodico scrivono direttamente `'done'`.
 
-Conseguenze:
+Il consumatore della coda (`_process_next_job()` in `api/cron.py`) è stato
+rimosso in agosto 2026 insieme al resto del file, quindi oggi **la coda non ha né
+produttori né consumatori**.
 
-- `_process_next_job()` gira ad ogni invocazione del cron e non trova mai nulla
-- `_send_report_email()` in `cron.py` è **irraggiungibile**
-- `_send_conferma_audit()` è orfana per lo stesso motivo
-- `audits.started_at` e `audits.error` non vengono mai valorizzati dal flusso attuale
+Conseguenze residue:
+
+- `_send_report_email()` e `_send_conferma_audit()` sono spariti col file
+- `audits.started_at` e `audits.error` non vengono mai valorizzati
+  (verificabile: ogni riga in produzione ha `started_at IS NULL`)
 - `templates/waiting.html` (schermata di attesa) è orfano
+- la colonna `status` è di fatto una costante `'done'`
 
 **Due strade opposte, entrambe legittime:**
 
@@ -387,3 +387,31 @@ Per evitare che qualcuno li "sistemi":
 | **`try/except: pass` sulle email** | Deliberato — manca il log, non il `pass` |
 | **Migration in un unico file idempotente** | Funziona, è riproducibile, non richiede un tool |
 | **Tab "coming soon" espliciti** | Scelta di prodotto, non pigrizia: mai dati simulati |
+
+---
+
+## Il cron giornaliero non copre il portafoglio
+
+**✅ Risolto in agosto 2026,** passando alla cadenza oraria sul piano Pro.
+
+`vercel.json` schedulava `/api/cron` a `0 3 * * *`, una volta al giorno, con al
+massimo `max_projects=3` progetti per invocazione. Con 21 progetti tutti a
+cadenza `weekly` servono **3 audit al giorno** solo per stare in pari: il
+margine era zero nel caso migliore, e un singolo giorno di cron saltato non
+veniva mai recuperato.
+
+La cadenza è ora `0 * * * *`. 24 invocazioni al giorno contro ~3 audit
+necessari: in regime normale ogni invocazione trova 0 o 1 progetti scaduti, e un
+eventuale arretrato si smaltisce in poche ore.
+
+### Quel che resta da sorvegliare
+
+Il rapporto capacità/fabbisogno degrada linearmente col numero di progetti. Il
+tetto attuale è 24 × `max_projects` audit al giorno; con `max_projects=3` sono
+72/giorno, cioè **~500 progetti settimanali** prima di tornare in sofferenza.
+Ben oltre l'orizzonte attuale, ma non infinito.
+
+Il vincolo più stretto è `maxDuration`, che non è dichiarato in `vercel.json` e
+vale quindi il default del piano. Va alzato dal dashboard Vercel — vedi
+[08 · Setup e deploy](08-setup-e-deploy.md#il-vincolo-fra-budget-e-maxduration)
+per il calcolo e la ragione per cui non va messo in `vercel.json`.

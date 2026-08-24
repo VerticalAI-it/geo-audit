@@ -6,10 +6,10 @@
 |---|---|---|
 | Backend | Python 3.12 · FastAPI | [server.py](../server.py) |
 | Motore di audit | Python (requests + BeautifulSoup + lxml) | [geo_audit.py](../geo_audit.py) |
-| Worker cron | `BaseHTTPRequestHandler` + `supabase-py` | [api/cron.py](../api/cron.py) |
+| Worker cron | Route FastAPI `/api/cron` | [server.py](../server.py) |
 | Entry point serverless | Import ASGI | [api/index.py](../api/index.py) |
 | Database + Auth | Supabase (Postgres + Auth magic link) | [supabase_setup.sql](../supabase_setup.sql) |
-| Email | Resend (API REST) | funzioni `_send_*` in `server.py` / `api/cron.py` |
+| Email | Resend (API REST) | funzioni `_send_*` in [server.py](../server.py) |
 | Frontend | HTML statici + string injection, vanilla JS | [templates/](../templates/) |
 | CSS | Token condivisi | [static/css/design-system.css](../static/css/design-system.css) |
 | Hosting | Vercel (serverless) | [vercel.json](../vercel.json) |
@@ -77,7 +77,7 @@ Le parti dinamiche più complesse (dashboard, tab di progetto, report) sono
 [vercel.json](../vercel.json) contiene **solo** la definizione del cron:
 
 ```json
-{ "crons": [ { "path": "/api/cron", "schedule": "0 3 * * *" } ] }
+{ "crons": [ { "path": "/api/cron", "schedule": "0 * * * *" } ] }
 ```
 
 Nessun `builds`, nessun `routes`, nessun `rewrites`. È il risultato di un bug di
@@ -94,30 +94,40 @@ Il bug era particolarmente insidioso: **build verde, produzione completamente
 rotta**. Non aggiungere `rewrites`. Le nuove route statiche (es. `/robots.txt`)
 vanno aggiunte come endpoint FastAPI in `server.py`, non come rewrite.
 
-### Due function indipendenti
+### Una sola function, `/api/cron` incluso
 
 ```
 ┌──────────────────────────────────────────────────────┐
 │ api/index.py  →  from server import app              │
 │   Vercel Function ASGI: TUTTE le route dell'app      │
 │   /, /audit, /scan, /r/{id}, /dashboard, /project/…  │
+│   /robots.txt, /sitemap.xml, /llms.txt, /api/cron    │
 │   + /static/* servito da FastAPI StaticFiles         │
-└──────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────┐
-│ api/cron.py  →  class handler(BaseHTTPRequestHandler)│
-│   Vercel Function separata su /api/cron              │
-│   NON è FastAPI: per questo resta indipendente       │
-│   invocata dal cron Vercel, protetta da CRON_SECRET  │
 └──────────────────────────────────────────────────────┘
 ```
 
-`api/cron.py` non definisce un'app FastAPI (usa `BaseHTTPRequestHandler`): è
-proprio per questo che sopravvive come function autonoma e non viene assorbita
-dal routing nativo della prima.
+`api/index.py` fa `sys.path.insert(0, <repo root>)` per poter importare
+`geo_audit` e `server` dalla radice.
 
-Entrambe fanno `sys.path.insert(0, <repo root>)` per poter importare `geo_audit`
-e `server` dalla radice.
+**Non esistono function separate.** Fino ad agosto 2026 il repo conteneva un
+`api/cron.py` basato su `BaseHTTPRequestHandler`, nell'assunto che non essendo
+FastAPI sopravvivesse come function autonoma. **L'assunto era falso**: con la
+detection zero-config Vercel serve l'intero deployment come singola function
+FastAPI, quindi quel file non veniva mai costruito e ogni `GET /api/cron`
+finiva nel router di `server.py`, che non aveva quella route:
+
+```
+$ curl -s https://geo.verticalai.it/api/cron
+{"detail":"Not Found"}          ← FastAPI, non Vercel
+```
+
+Vercel Cron ha quindi ricevuto un 404 a ogni invocazione dall'11 agosto 2026
+(commit `1ccb850`) fino al fix. È la stessa trappola di `/robots.txt`, con la
+differenza che qui nessuno se ne accorgeva: il fallimento era di un job
+automatico, non di una pagina visitata.
+
+**Regola:** qualsiasi endpoint, cron incluso, va aggiunto come route FastAPI in
+`server.py`. Un file in `api/` che non sia `index.py` non diventa una function.
 
 ### Il Dockerfile è un percorso alternativo, non morto
 
@@ -161,27 +171,36 @@ silenziosamente sul flusso legacy.
 ### Audit periodico (`GET /api/cron`)
 
 ```
-Vercel Cron (0 3 * * *) → GET /api/cron
+Vercel Cron → GET /api/cron   (route FastAPI in server.py)
   │  Authorization: Bearer $CRON_SECRET  → 401 se non combacia
+  │  (nessun controllo se CRON_SECRET non è impostata)
   │
-  ├─ _process_next_job()      ← coda `audits` status='pending' (vestigiale, vedi doc 10)
-  │
-  └─ _process_due_projects(max_projects=3, time_budget_seconds=20)
+  └─ finché processed < max_projects e elapsed < _CRON_TIME_BUDGET:
         │
-        └─ per ogni progetto con next_scan_at <= now, in ordine:
-             ├─ CLAIM ATOMICO: update next_scan_at
-             │    WHERE id = ? AND next_scan_at = <valore letto>
-             │    → se 0 righe aggiornate, un'altra invocazione l'ha già preso
+        ├─ _sb_project_claim_due()
+        │    SELECT il primo progetto con next_scan_at <= now
+        │    UPDATE next_scan_at = now + _SCAN_LEASE (20 min)
+        │      WHERE id = ? AND next_scan_at <= now
+        │    → se 0 righe aggiornate, un'altra invocazione l'ha già preso
+        │
+        └─ _run_project_scan()
              ├─ run_audit(url, max_pages=6, render=False)
-             ├─ insert audits + _sync_project_issues()
-             └─ in caso di errore: nessun retry aggressivo
-                  (next_scan_at è già avanti, si riprova al ciclo normale)
+             ├─ insert audits + _sb_issue_sync()
+             └─ _sb_project_bump_scan() → next_scan_at = now + intervallo pieno
 ```
 
-Riferimento: [api/cron.py:406-478](../api/cron.py#L406-L478).
+Riferimento: `_sb_project_claim_due`, `_run_project_scan` e la route `/api/cron`
+in [server.py](../server.py).
 
-Il claim atomico usa il **compare-and-swap su `next_scan_at`**: è ciò che rende
-sicura l'esecuzione concorrente senza lock né tabelle di stato aggiuntive.
+**Il claim scrive una lease breve, non l'intervallo pieno.** È la differenza che
+rende il sistema resistente ai timeout: se la function viene uccisa a metà audit,
+`next_scan_at` resta a `now + 20 min` e il progetto viene ritentato al giro
+successivo. Con il claim a intervallo pieno un timeout faceva sparire il progetto
+per una settimana intera, senza errore e senza traccia.
+
+Un errore **esplicito** (sito irraggiungibile, Supabase KO) sposta invece
+`next_scan_at` all'intervallo pieno: niente retry aggressivi su un sito rotto.
+Solo il caso "processo ucciso" resta sulla lease breve.
 
 ### Tracking first-party (`POST /t`)
 
@@ -225,12 +244,12 @@ sincrono di `supabase-py` bloccava l'event loop, e la sua dipendenza `httpx`
 risultò incompatibile con il runtime Vercel dell'epoca (commit `1877536`,
 `cfb7f41`, `4dd13e7`). La REST diretta ha risolto entrambi i problemi.
 
-**Conseguenza da conoscere:** `api/cron.py` usa invece `supabase-py`
-(`create_client`) perché gira in una function separata dove il vincolo non si
-applica. Il risultato è che **la stessa logica di sincronizzazione delle issue
-esiste in due implementazioni** — `_sb_issue_sync` in `server.py` e
-`_sync_project_issues` in `api/cron.py`. Sono equivalenti ma vanno tenute
-allineate a mano. È debito tecnico noto ([doc 10](10-stato-e-debito-tecnico.md#duplicazione-della-logica-issue)).
+Fino ad agosto 2026 `api/cron.py` usava invece `supabase-py`, nell'assunto che
+girasse in una function separata dove il vincolo non si applicava, e questo
+duplicava la sincronizzazione delle issue in due implementazioni equivalenti da
+tenere allineate a mano. Con il cron diventato una route FastAPI il file è stato
+rimosso: `_sb_issue_sync` in `server.py` è ora l'unica implementazione, e vale
+la regola sopra anche per il codice del cron — **REST diretta, non `supabase-py`**.
 
 ### La service role key bypassa RLS — l'autorizzazione è nel codice
 
@@ -260,7 +279,7 @@ in produzione passano `render=False`:
 |---|---|
 | `POST /scan` | `run_audit(url, 6, False, False)` |
 | `POST /project/{id}/rerun` | `run_audit(url, 6, False, False)` |
-| `api/cron.py` | `run_audit(url, max_pages=6, render=False, …)` |
+| `GET /api/cron` (audit periodico) | `run_audit(url, 6, False, False)` |
 | CLI (`python geo_audit.py`) | `render=True` di default |
 
 Quando `render=False`, il check `render.parity` restituisce stato `unknown` con
@@ -297,8 +316,7 @@ geo-audit/
 ├── geo_audit.py                 1004 righe — motore di audit + report HTML/PDF
 │                                usabile anche standalone da CLI
 ├── api/
-│   ├── index.py                 4 righe — import ASGI per Vercel
-│   └── cron.py                  511 righe — worker cron (coda + audit periodici)
+│   └── index.py                 4 righe — import ASGI per Vercel
 ├── templates/                   HTML letti a memoria all'avvio
 │   ├── home.html                1535 righe — landing marketing
 │   ├── form.html                inserimento URL

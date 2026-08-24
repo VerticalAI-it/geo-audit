@@ -155,17 +155,16 @@ nuovo.
    altrimenti `https://x.it/pagina` e `https://x.it/pagina/` generano due issue
    distinte. `norm()` in `geo_audit.py` se ne occupa a monte.
 
-### La duplicazione
+### Un'unica implementazione
 
-La stessa logica esiste due volte:
+`_sb_issue_sync()` in [server.py](../server.py) è l'unico punto in cui le issue
+vengono sincronizzate: la chiamano `/scan`, `/project/{id}/rerun` e l'audit
+periodico `/api/cron`.
 
-| Implementazione | File | Client |
-|---|---|---|
-| `_sb_issue_sync()` | [server.py:207](../server.py#L207) | REST diretta (`requests`) |
-| `_sync_project_issues()` | [api/cron.py:371](../api/cron.py#L371) | `supabase-py` |
-
-Sono funzionalmente equivalenti e **vanno tenute allineate a mano**. È il debito
-tecnico più concreto del progetto ([doc 10](10-stato-e-debito-tecnico.md#duplicazione-della-logica-issue)).
+Fino ad agosto 2026 esisteva un secondo `_sync_project_issues()` in
+`api/cron.py`, scritto con `supabase-py` invece che con la REST diretta, da
+tenere allineato a mano. Con il cron diventato una route FastAPI il file è stato
+rimosso e la duplicazione è sparita.
 
 Indice: `issue_project_status (project_id, status)`.
 
@@ -247,34 +246,46 @@ RLS è **abilitata su tutte le tabelle**. Le policy:
 
 ---
 
-## Il claim atomico
+## Il claim con lease
 
 Il cron può essere invocato in modo concorrente (retry Vercel, invocazioni
-manuali). Il claim usa un **compare-and-swap su `next_scan_at`**
-([api/cron.py:424-435](../api/cron.py#L424-L435)):
+manuali). Il claim è un `UPDATE` condizionale in `_sb_project_claim_due()`
+([server.py](../server.py)):
 
 ```python
+now = datetime.now(timezone.utc).isoformat()
+
 # 1. leggi il prossimo progetto scaduto
-res = sb.table("project").select(...).lte("next_scan_at", _now()).order("next_scan_at").limit(1)
+GET /project?next_scan_at=lte.{now}&order=next_scan_at.asc&limit=1
 
-# 2. rivendicalo: sposta next_scan_at avanti SOLO se non è cambiato nel frattempo
-claim = (sb.table("project")
-           .update({"next_scan_at": _next_scan_at(frequency), "updated_at": _now()})
-           .eq("id", project_id)
-           .eq("next_scan_at", project["next_scan_at"])   # ← il compare-and-swap
-           .execute())
+# 2. rivendicalo con una LEASE BREVE, solo se è ancora scaduto
+PATCH /project?id=eq.{id}&next_scan_at=lte.{now}
+  { "next_scan_at": now + 20 minuti }
 
-if not claim.data:
-    return {"status": "skipped", "reason": "already claimed"}
+# risposta [] → un'altra invocazione l'ha già preso, questa si sfila
 ```
 
-Se un'altra invocazione ha già rivendicato il progetto, `next_scan_at` è cambiato,
-l'`UPDATE` tocca 0 righe e questa invocazione si sfila.
+Il predicato è `next_scan_at <= now`, **non** l'uguaglianza con il valore appena
+letto. Postgres rivaluta la `WHERE` sulla riga bloccata, quindi la seconda
+invocazione concorrente non trova più nulla da aggiornare (il primo claim ha già
+spostato `next_scan_at` nel futuro) e riceve `[]`. Rispetto al compare-and-swap
+sul valore esatto non dipende dalla fedeltà del round-trip del timestamp
+attraverso PostgREST.
 
-Il valore scritto dal claim è **lo stesso** che verrebbe scritto a fine corsa:
-così, se l'audit fallisce, non serve rollback — il progetto verrà ripreso al ciclo
-normale successivo, senza retry aggressivi che rischiano di martellare un sito
-irraggiungibile.
+### Perché una lease breve e non l'intervallo pieno
+
+Fino ad agosto 2026 il claim scriveva direttamente `now + intervallo`, con la
+motivazione che così un audit fallito non richiedeva rollback. Il problema è il
+caso che quella logica non copre: **la function uccisa dal timeout a metà audit**.
+Lì nessun codice applicativo gira, `next_scan_at` è già una settimana avanti, e
+il progetto sparisce per sette giorni senza errore e senza traccia.
+
+Con la lease a 20 minuti quel caso si autoripara: il progetto torna scaduto e
+viene ritentato al giro successivo del cron.
+
+Il caso "errore esplicito" (sito irraggiungibile, Supabase KO) resta invece
+gestito come prima — `_sb_project_bump_scan()` porta `next_scan_at`
+all'intervallo pieno, così un sito rotto non viene martellato a ogni ciclo.
 
 ---
 

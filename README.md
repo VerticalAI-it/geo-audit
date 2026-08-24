@@ -61,7 +61,6 @@ calcolato davvero — vedi [docs/03-audit-engine.md](docs/03-audit-engine.md#uso
 | [`server.py`](server.py) | App FastAPI: route, auth, dashboard, email, helper Supabase |
 | [`geo_audit.py`](geo_audit.py) | Motore di audit: crawl, 31 check, scoring, report HTML/PDF |
 | [`api/index.py`](api/index.py) | Entry point Vercel (importa `server.app`) |
-| [`api/cron.py`](api/cron.py) | Worker cron: audit periodici |
 | [`templates/`](templates/) | Pagine HTML, caricate a memoria da `server.py` |
 | [`static/`](static/) | CSS del design system, snippet di tracking |
 | [`design_system/`](design_system/) | Fonte di verità visiva: token, componenti, email |
@@ -73,12 +72,17 @@ calcolato davvero — vedi [docs/03-audit-engine.md](docs/03-audit-engine.md#uso
 ## Deploy
 
 Produzione su **Vercel**, zero-config: `api/index.py` è servita come funzione ASGI
-nativa, `api/cron.py` come funzione indipendente.
+nativa, ed è **l'unica funzione del deployment**.
 
 > ⚠️ **Non aggiungere `rewrites` a [`vercel.json`](vercel.json).** Un catch-all va
 > in conflitto con il routing FastAPI nativo e restituisce `{"detail":"Not Found"}`
-> su ogni pagina — build verde, produzione rotta. Le nuove route statiche vanno
-> aggiunte come endpoint FastAPI in `server.py`.
+> su ogni pagina — build verde, produzione rotta.
+
+> ⚠️ **Non aggiungere file in `api/`.** Solo `index.py` diventa una funzione: ogni
+> altro file lì dentro non viene costruito e le sue richieste finiscono nel router
+> FastAPI. È così che il cron è rimasto morto per due settimane. Qualsiasi nuovo
+> endpoint — pagina statica, cron, webhook — va aggiunto come route FastAPI in
+> `server.py`.
 
 Il [`Dockerfile`](Dockerfile) resta valido per un deploy a container
 (Railway/Render/Fly), dove funzionano anche il rendering headless e il PDF.
