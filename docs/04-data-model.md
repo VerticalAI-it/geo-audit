@@ -97,6 +97,28 @@ Aggiunte per non dover ri-parsare l'HTML per popolare la dashboard:
 | `actions` | JSONB | Interventi aggregati con URL interessate |
 | `issues_count` | INTEGER | Check `warn` + `fail` |
 | `critical_count` | INTEGER | Check `fail` |
+| `source` | TEXT | `'manual'` (`/scan`, `/rerun`) o `'auto'` (`/api/cron`) — vedi sotto |
+
+### `source` — chi ha lanciato il run
+
+Distingue gli audit lanciati da una persona da quelli prodotti dal cron. Senza
+questa colonna non è possibile rispondere alla domanda "il monitoraggio
+automatico sta girando?", che è esattamente ciò che il riquadro **Ultimi run** in
+home mostra ([05 · Applicazione web](05-applicazione-web.md)).
+
+| Valore | Scritto da |
+|---|---|
+| `'manual'` | `POST /scan`, `POST /project/{id}/rerun` |
+| `'auto'` | `GET /api/cron` (`_run_project_scan`) |
+| `NULL` | Run precedenti all'introduzione della colonna, resi come `n.d.` |
+
+Il backfill ha marcato tutto lo storico come `'manual'`: prima di agosto 2026 il
+cron non aveva mai prodotto un audit, perché girava a vuoto
+([02 · Architettura](02-architettura.md#una-sola-function-apicron-incluso)).
+
+Vincolo: `CHECK (source IN ('manual','auto'))`. Il `NULL` resta ammesso apposta,
+per non invalidare le righe storiche.
+Indice: `audits_user_created (user_id, created_at DESC)` per la query del riquadro.
 
 `engine_version` è la chiave per interpretare correttamente lo storico: se il
 catalogo dei check cambia, un confronto fra punteggi prodotti da versioni diverse

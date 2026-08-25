@@ -41,7 +41,7 @@ commit.
 
 | Route | Template |
 |---|---|
-| `/` | `templates/home.html` — landing marketing |
+| `/` | `templates/home.html` — landing marketing; `{{ULTIMI_RUN}}` iniettato da `server.py` solo se loggato |
 | `/audit` | `templates/form.html` — form inserimento URL |
 | `/r/{job_id}` | HTML report da Supabase + overlay iniettato via Python |
 | `/miei-report` | String inline in `server.py` |

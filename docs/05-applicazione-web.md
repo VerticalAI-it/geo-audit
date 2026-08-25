@@ -11,13 +11,28 @@ generazione email e costruzione HTML di dashboard e tab.
 
 | Route | Metodo | Risposta | Auth |
 |---|---|---|---|
-| `/` | GET | `templates/home.html` — landing marketing | — |
+| `/` | GET | `templates/home.html` — landing marketing, + riquadro «Ultimi run» se loggato | — ¹ |
 | `/privacy` | GET | `templates/privacy.html` | — |
 | `/cookie-policy` | GET | `templates/cookie.html` | — |
 | `/roadmap` | GET | `templates/roadmap.html` — roadmap pubblica | — |
 | `/robots.txt` | GET | `text/plain` generato | — |
 | `/sitemap.xml` | GET | `application/xml` generato | — |
 | `/llms.txt` | GET | `text/plain` generato | — |
+
+¹ `/` è pubblica, ma legge la sessione se c'è: a utente loggato inietta in fondo
+il riquadro **Ultimi run** al posto del placeholder `{{ULTIMI_RUN}}`, a visitatore
+anonimo lo sostituisce con stringa vuota e la landing resta identica a prima.
+Essendo una route che legge la sessione applica `_apply_refresh`.
+
+**Il riquadro non può far fallire la home.** `_ultimi_run_section()` cattura
+qualunque eccezione e ritorna stringa vuota: la landing è la pagina più esposta
+del sito e non deve dipendere dalla disponibilità di Supabase per rendersi.
+
+Mostra gli ultimi 10 run dell'utente — data e ora in fuso italiano, origine
+(manuale o automatico), sito, punteggio — filtrati per `user_id`, che è
+l'autorizzazione: la service role key bypassa le RLS. Sotto la tabella una riga
+dice quando è avvenuto l'ultimo audit automatico, che è l'informazione per cui il
+riquadro esiste.
 | `/health` | GET | `{"status": "ok"}` | — |
 | `/t` | POST | 204 sempre | — (endpoint pubblico di ingestion) |
 | `/richiedi-audit` | POST | Richiesta audit dalla landing | — |
