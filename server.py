@@ -196,6 +196,18 @@ def _sb_audits_without_project(user_id: str) -> list:
 
 # ── Issue lifecycle helpers ───────────────────────────────────────────────────
 
+def _sb_recent_audits_by_user(user_id: str, limit: int = 10) -> list:
+    """Ultimi run dell'utente, di qualsiasi progetto, manuali e automatici.
+    Il filtro su user_id è l'autorizzazione: la service role key bypassa le RLS."""
+    r = req.get(f"{SUPABASE_URL}/rest/v1/audits",
+                headers=_SB_H,
+                params={"user_id": f"eq.{user_id}",
+                        "select": "id,domain,url,overall,grade,status,source,created_at",
+                        "order": "created_at.desc", "limit": str(limit)},
+                timeout=10)
+    return r.json() if r.ok else []
+
+
 def _sb_issues_by_project(project_id: str, status: str | None = None) -> list:
     params = {"project_id": f"eq.{project_id}", "select": "*", "order": "severity.asc,last_seen_at.desc"}
     if status:
@@ -333,6 +345,7 @@ async def _run_project_scan(project: dict) -> dict:
             "project_id": project_id,
             "url":        url,
             "status":     "done",
+            "source":     "auto",
             "domain":     res.get("domain"),
             "overall":    res.get("overall"),
             "grade":      res.get("grade"),
@@ -930,9 +943,113 @@ def _with_topbar(html: str, email: str) -> str:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+# ── Riquadro "Ultimi run" in home ────────────────────────────────────────────
+
+_MESI = ("gen", "feb", "mar", "apr", "mag", "giu",
+         "lug", "ago", "set", "ott", "nov", "dic")
+
+try:
+    from zoneinfo import ZoneInfo
+    _TZ_IT = ZoneInfo("Europe/Rome")
+except Exception:   # tzdata assente nel runtime: si degrada su UTC
+    _TZ_IT = timezone.utc
+
+
+def _fmt_datetime(iso: str | None) -> str:
+    """Data e ora in fuso italiano. Su Supabase i timestamp sono in UTC, ma qui
+    serve l'ora locale: il riquadro esiste per rispondere a "sta girando?", e
+    un orario spostato di due ore rende la risposta difficile da leggere."""
+    if not iso:
+        return "—"
+    try:
+        d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        d = d.astimezone(_TZ_IT)
+        return f"{d.day} {_MESI[d.month - 1]} {d.year}, {d:%H:%M}"
+    except Exception:
+        return iso
+
+
+def _run_origin_badge(source: str | None) -> str:
+    if source == "auto":
+        return '<span class="badge badge--brand"><span class="dot"></span>Automatico</span>'
+    if source == "manual":
+        return '<span class="badge badge--neutral">Manuale</span>'
+    # Run precedenti all'introduzione della colonna `source`
+    return '<span class="badge badge--neutral">n.d.</span>'
+
+
+def _run_score_cell(audit: dict) -> str:
+    overall = audit.get("overall")
+    if overall is None:
+        status = audit.get("status") or "—"
+        cls = "badge--danger" if status == "failed" else "badge--neutral"
+        return f'<span class="badge {cls}">{geo_audit.esc(status)}</span>'
+    cls = {"score-ottimo": "score-badge--ottimo",
+           "score-migliorabile": "score-badge--migliorabile",
+           "score-critico": "score-badge--critico"}.get(_score_class(overall), "")
+    grade = audit.get("grade") or ""
+    suffix = f'<span style="opacity:.65">&#183;&#8239;{geo_audit.esc(grade)}</span>' if grade else ""
+    return f'<span class="score-badge {cls}">{overall}{suffix}</span>'
+
+
+def _ultimi_run_section(user_id: str) -> str:
+    """Riquadro in fondo alla home con gli ultimi run dell'utente, manuali e
+    automatici, per vedere a colpo d'occhio se l'automazione sta girando.
+
+    Ritorna stringa vuota per i visitatori anonimi e in caso di errore: la home
+    è la landing pubblica e non deve poter fallire per colpa di questo blocco."""
+    try:
+        runs = _sb_recent_audits_by_user(user_id, limit=10)
+    except Exception as e:
+        print(f"[/] riquadro ultimi run non disponibile: {e!r}")
+        return ""
+    if not runs:
+        return ""
+
+    rows = "".join(
+        "<tr>"
+        f'<td data-label="Data e ora"><b>{geo_audit.esc(_fmt_datetime(a.get("created_at")))}</b></td>'
+        f'<td data-label="Origine">{_run_origin_badge(a.get("source"))}</td>'
+        f'<td data-label="Sito"><a href="/r/{geo_audit.esc(str(a.get("id")))}">'
+        f'{geo_audit.esc(a.get("domain") or a.get("url") or "—")}</a></td>'
+        f'<td data-label="Punteggio">{_run_score_cell(a)}</td>'
+        "</tr>"
+        for a in runs
+    )
+
+    ultimo_auto = next((a for a in runs if a.get("source") == "auto"), None)
+    if ultimo_auto:
+        stato = ("Ultimo audit automatico: "
+                 f'<b>{geo_audit.esc(_fmt_datetime(ultimo_auto.get("created_at")))}</b>.')
+    else:
+        stato = ("Nessun audit automatico fra questi run: al momento vedi solo "
+                 "analisi lanciate a mano.")
+
+    return (
+        '<section class="section section--compact section--lav1" id="ultimi-run" '
+        'aria-labelledby="ultimi-run-title">'
+        '<div class="container">'
+        '<div class="section-head">'
+        '<h2 class="h2" id="ultimi-run-title">Ultimi run</h2>'
+        "<p>Le analisi pi&#249; recenti sui tuoi siti, lanciate a mano o dal "
+        "monitoraggio automatico settimanale.</p>"
+        "</div>"
+        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr>'
+        "<th>Data e ora</th><th>Origine</th><th>Sito</th><th>Punteggio</th>"
+        "</tr></thead><tbody>" + rows + "</tbody></table></div>"
+        f'<p style="margin-top:14px;font-size:.86rem;color:var(--text-2)">{stato}</p>'
+        "</div></section>"
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
-def index():
-    return HOME_HTML
+def index(request: Request):
+    user, refreshed = _current_user(request)
+    ultimi_run = _ultimi_run_section(user["id"]) if user else ""
+    resp = HTMLResponse(_render(HOME_HTML, ULTIMI_RUN=ultimi_run))
+    return _apply_refresh(resp, refreshed)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1145,6 +1262,7 @@ async def scan(request: Request, url: str = Form(...)):
             "project_id": project["id"],
             "url":        url,
             "status":     "done",
+            "source":     "manual",
             "domain":     res.get("domain"),
             "overall":    res.get("overall"),
             "grade":      res.get("grade"),
@@ -2189,6 +2307,7 @@ async def project_rerun(project_id: str, request: Request):
             "project_id": project["id"],
             "url":        url,
             "status":     "done",
+            "source":     "manual",
             "domain":     res.get("domain"),
             "overall":    res.get("overall"),
             "grade":      res.get("grade"),

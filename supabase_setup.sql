@@ -169,3 +169,27 @@ CREATE INDEX IF NOT EXISTS project_next_scan ON public.project (next_scan_at) WH
 -- invisibili all'API REST (errore PGRST205 "Could not find the table ...
 -- in the schema cache") finché Supabase non lo ricarica da sé:
 NOTIFY pgrst, 'reload schema';
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- GEO Audit · Origine del run (manuale vs automatico)
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- Distingue gli audit lanciati da una persona (/scan, /project/{id}/rerun) da
+-- quelli prodotti dal cron (/api/cron). Serve al riquadro "Ultimi run" in home,
+-- che senza questo dato non può dire se l'automazione sta girando.
+ALTER TABLE public.audits ADD COLUMN IF NOT EXISTS source TEXT;
+
+ALTER TABLE public.audits DROP CONSTRAINT IF EXISTS audits_source_check;
+ALTER TABLE public.audits ADD CONSTRAINT audits_source_check
+    CHECK (source IN ('manual', 'auto'));
+
+-- Backfill: prima di questa colonna il cron non aveva mai prodotto un audit
+-- (girava a vuoto, vedi doc 02), quindi tutto lo storico è manuale.
+UPDATE public.audits SET source = 'manual' WHERE source IS NULL;
+
+-- Indice per la query del riquadro "Ultimi run"
+CREATE INDEX IF NOT EXISTS audits_user_created ON public.audits (user_id, created_at DESC);
+
+-- IMPORTANTE: come sopra, senza questo reload PostgREST continua a rispondere
+-- PGRST204 sulla colonna nuova finché non ricarica lo schema da sé.
+NOTIFY pgrst, 'reload schema';
