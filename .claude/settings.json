@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.ilmioposizionamento.it)",
+      "Bash(python3 -m py_compile server.py)",
+      "Bash(python3 -m py_compile api/cron.py)",
+      "Bash(python3 -m py_compile server.py api/cron.py geo_audit.py)",
+      "Bash(python3 -c \"import json; json.load\\(open\\('vercel.json'\\)\\)\")",
+      "Bash(git fetch *)",
+      "Bash(grep -rn *)"
+    ]
+  }
+}
