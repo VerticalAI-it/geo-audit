@@ -2361,8 +2361,8 @@ def unlock(job_id: str, email: str = Form(...)):
 
     try:
         _send_unlock_email(email, job_id, domain, overall, grade)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[/unlock] invio email di sblocco fallito per {email}: {e!r}")
 
     return Response(status_code=200)
 
@@ -2698,8 +2698,8 @@ def miei_report_send(email: str = Form(...)):
 
     try:
         _send_my_reports_email(email, jobs)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[/miei-report] invio elenco report fallito per {email}: {e!r}")
 
     return HTMLResponse(_MIEI_REPORT_SENT)
 
@@ -2740,8 +2740,8 @@ def contact(job_id: str,
 
     try:
         _send_contact_notif(job_id, domain, overall, grade, email, phone, preference)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[/contact] notifica di contatto NON inviata al team per {email}: {e!r}")
 
     return Response(status_code=200)
 
@@ -2843,10 +2843,10 @@ async def richiedi_audit(
         return Response(status_code=400)
     try:
         await run_in_threadpool(_send_report_request_admin, nome, email, sito)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[/richiedi-audit] notifica al team NON inviata per {email}: {e!r}")
     try:
         await run_in_threadpool(_send_report_request_user, nome, email)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[/richiedi-audit] conferma all'utente non inviata a {email}: {e!r}")
     return Response(content='{"ok":true}', media_type="application/json", status_code=200)
