@@ -310,9 +310,10 @@ ottiene solo da CLI. Il README alla radice afferma il contrario ed è obsoleto.
 
 ```
 geo-audit/
-├── server.py                    2588 righe — TUTTA l'app web
-│                                route, helper Supabase, auth, email,
-│                                costruzione HTML di dashboard e tab
+├── server.py                    ~1670 righe — route, auth, email, cron
+├── config.py                    variabili d'ambiente condivise
+├── db.py                        ~314 righe — accesso Supabase (tutti gli _sb_*)
+├── views.py                     ~926 righe — HTML di dashboard e tab di progetto
 ├── geo_audit.py                 1004 righe — motore di audit + report HTML/PDF
 │                                usabile anche standalone da CLI
 ├── api/
@@ -345,7 +346,12 @@ geo-audit/
 └── README.md                    ⚠️ obsoleto (descrive la Fase A)
 ```
 
-**`server.py` a 2588 righe è il punto di concentrazione del rischio.** Contiene
-route, accesso ai dati, auth, generazione email e costruzione HTML. Non è un
-problema oggi (l'app è piccola e coesa) ma è la prima cosa da spezzare se il team
-cresce. Un taglio naturale sarebbe `db.py` / `auth.py` / `emails.py` / `views.py`.
+**La separazione in quattro moduli è stata fatta in settembre 2026**, prima del
+redesign UI/UX: quel lavoro riscrive tutte le funzioni `_tab_*` e avrebbe
+raddoppiato un file già da 2588 righe. Il codice non è stato riscritto, solo
+spostato per intervalli di riga.
+
+La direzione degli import è a senso unico — `server.py` → `views.py` → `db.py` →
+`config.py` — ed è un'invariante: `db.py` e `views.py` non importano `server.py`.
+Auth ed email sono rimaste in `server.py` perché strettamente legate a
+`Request`/`Response`; `emails.py` resta il prossimo taglio naturale se cresceranno.

@@ -2,7 +2,10 @@
 
 ## Struttura del progetto
 
-- `server.py` — app FastAPI principale (route, email, Supabase helpers)
+- `server.py` — app FastAPI: route, auth, email, cron
+- `config.py` — variabili d'ambiente condivise
+- `db.py` — accesso Supabase (tutti gli `_sb_*`); **importabile senza toccare `server.py`**
+- `views.py` — costruzione HTML di dashboard e tab di progetto
 - `api/index.py` — entry point Vercel (importa `server.app`)
 - `geo_audit.py` — logica di analisi GEO
 - `templates/` — file HTML caricati a memoria da `server.py`
@@ -28,6 +31,10 @@ commit.
 
 ## Invarianti da non rompere
 
+- **Direzione degli import**: `server.py` → `views.py` → `db.py` → `config.py`.
+  Mai il contrario: `db.py` e `views.py` non devono importare `server.py`, o si
+  crea un ciclo. Se una funzione di `views.py` ha bisogno di un dato, lo riceve
+  come parametro o lo chiede a `db.py`.
 - **Autorizzazione**: ogni route che accede a dati di progetto deve verificare
   `project["user_id"] == user["id"]` — la service role key bypassa le RLS.
 - **Sessione**: ogni route protetta deve applicare `_apply_refresh(resp, refreshed)`,

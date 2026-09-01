@@ -360,17 +360,32 @@ discontinuità nel grafico storico.
 
 ## `server.py` concentra tutto
 
-2588 righe con route, accesso ai dati, autenticazione, generazione email e
-costruzione HTML. Non è un problema oggi — l'app è piccola e coesa, e il file è
-ordinato per sezioni — ma:
+**✅ Risolto in settembre 2026,** prima del redesign UI/UX: quel lavoro riscrive
+tutte le funzioni `_tab_*` e avrebbe raddoppiato un file già da 2588 righe.
 
-- ogni modifica tocca lo stesso file → conflitti di merge garantiti se il team cresce
-- la superficie da tenere a mente per un cambiamento è tutto il file
-- rende difficile testare le parti in isolamento
+Il taglio applicato è quello che questo documento raccomandava, meno `auth.py` e
+`emails.py` (auth ed email restano in `server.py`: sono strettamente legate a
+`Request`/`Response` e alla configurazione di Resend, e spostarle avrebbe dato
+poco in cambio del rischio):
 
-**Taglio naturale:** `db.py` (helper Supabase) · `auth.py` · `emails.py` ·
-`views.py` (costruzione HTML dei tab). Da fare **prima** di aggiungere il secondo
-sviluppatore, non dopo.
+| File | Contenuto | Righe |
+|---|---|---:|
+| `config.py` | Variabili d'ambiente condivise | ~17 |
+| `db.py` | Tutti gli helper Supabase (`_sb_*`), `_next_scan_at`, `_detect_ai_source` | ~314 |
+| `views.py` | Costruzione HTML di dashboard e tab di progetto | ~926 |
+| `server.py` | Route, auth, email, cron, template | ~1672 |
+
+Lo spostamento è stato fatto **per intervalli di riga, senza riscrivere il
+codice**: il testo delle funzioni è identico a prima. Verificato che le 152
+definizioni top-level siano tutte ancora presenti e raggiungibili, e che le
+pagine pubbliche rispondano con lo stesso identico numero di byte.
+
+**Dipendenze:** `views.py` importa da `db.py` e `config.py`, `db.py` da
+`config.py`. Mai il contrario — `db.py` e `views.py` non devono importare
+`server.py`, altrimenti si crea un ciclo.
+
+**Quel che resta:** le funzioni `_send_*` sono ancora in `server.py` insieme alle
+route. Se un domani le email crescono, `emails.py` è il prossimo taglio naturale.
 
 ---
 
