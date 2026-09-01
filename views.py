@@ -923,3 +923,115 @@ def _project_actions(project: dict) -> str:
         f'<p class="next-scan-note">{geo_audit.esc(next_txt)}</p>'
         '</div>'
     )
+
+
+# ── Dashboard: sintesi automatica e sparkline di portfolio ───────────────────
+#
+# Il documento funzionale lascia aperta la scelta fra una sintesi generata da
+# regole e una scritta da un modello linguistico (§5.4). Qui è a regole: legge
+# solo dati già presenti, non costa nulla e non può inventare. Se un domani si
+# vorrà passare a un modello, il punto di innesto è questa sola funzione.
+
+def _giorni_da(iso: str | None) -> int | None:
+    if not iso:
+        return None
+    try:
+        d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return max(0, (datetime.now(timezone.utc) - d).days)
+    except Exception:
+        return None
+
+
+def _dashboard_summary_banner(cards: list) -> str:
+    """Banner di sintesi in cima alla dashboard, costruito sui dati reali."""
+    if not cards:
+        return ""
+
+    tot = len(cards)
+    con_critici = [c for c in cards if (c.get("critical_count") or 0) > 0]
+    con_score = [c for c in cards if c.get("overall") is not None]
+    da_rifare = [c for c in cards if c.get("status") == "Audit required"]
+
+    frasi = []
+    plurale = "progetti monitorati" if tot != 1 else "progetto monitorato"
+
+    if con_critici:
+        peggiore = min(con_critici,
+                       key=lambda c: c["overall"] if c.get("overall") is not None else 999)
+        quanti = len(con_critici)
+        verbo = "ha" if quanti == 1 else "hanno"
+        testa = (f'Su <b>{tot} {plurale}</b>, '
+                 f'<span class="critical">{quanti} {verbo} almeno una criticità</span> aperta')
+        if peggiore.get("overall") is not None:
+            testa += (f' — il più urgente è <b>{geo_audit.esc(peggiore["domain"])}</b>'
+                      f' (score {peggiore["overall"]}, {peggiore.get("critical_count")} criticità).')
+        else:
+            testa += "."
+        frasi.append(testa)
+    else:
+        frasi.append(f'Su <b>{tot} {plurale}</b>, '
+                     f'<span class="good">nessuna criticità aperta</span>.')
+
+    if len(con_score) >= 2:
+        migliori = sorted(con_score, key=lambda c: c["overall"], reverse=True)[:2]
+        nomi = " e ".join(f'<b>{geo_audit.esc(m["domain"])}</b>' for m in migliori)
+        punteggi = " e ".join(str(m["overall"]) for m in migliori)
+        frasi.append(f'{nomi} restano i migliori del portfolio ({punteggi}).')
+
+    if da_rifare:
+        vecchio = min(da_rifare, key=lambda c: c.get("last_scan") or "")
+        giorni = _giorni_da(vecchio.get("last_scan"))
+        if giorni is not None:
+            frasi.append(f'Nessun nuovo audit per <b>{geo_audit.esc(vecchio["domain"])}</b> '
+                         f'da {giorni} giorni.')
+        else:
+            frasi.append(f'<b>{geo_audit.esc(vecchio["domain"])}</b> non è mai stato analizzato.')
+
+    return (
+        '<div class="ai-summary">'
+        '<div class="ai-summary-icon">'
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" '
+        'stroke-width="2" aria-hidden="true">'
+        '<path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>'
+        '</div>'
+        '<div class="ai-summary-body">'
+        '<div class="ai-summary-label">Sintesi automatica</div>'
+        f'<div class="ai-summary-text">{" ".join(frasi)}</div>'
+        '</div></div>'
+    )
+
+
+def _portfolio_sparkline(projects: list) -> str:
+    """Crescita del numero di progetti negli ultimi 6 mesi.
+
+    E' l'unico dei quattro KPI di portfolio per cui esiste uno storico reale
+    (le date di creazione dei progetti). Gli altri tre — critici, audit da
+    rifare, tracking attivo — descrivono lo stato di oggi e non sono
+    ricostruibili all'indietro: restano senza sparkline invece di riceverne una
+    inventata.
+    """
+    date = []
+    for p in projects:
+        try:
+            date.append(datetime.fromisoformat((p.get("created_at") or "").replace("Z", "+00:00")))
+        except Exception:
+            continue
+    if len(date) < 2:
+        return ""
+
+    oggi = datetime.now(timezone.utc)
+    tappe = [oggi - timedelta(days=30 * i) for i in range(5, -1, -1)]
+    conteggi = [len([d for d in date if d <= t]) for t in tappe]
+    if conteggi[0] == conteggi[-1]:
+        return ""
+
+    W, H, PAD = 70, 28, 3
+    lo, hi = min(conteggi), max(conteggi)
+    span = (hi - lo) or 1
+    punti = " ".join(
+        f'{i / (len(conteggi) - 1) * W:.1f},{H - PAD - (v - lo) / span * (H - PAD * 2):.1f}'
+        for i, v in enumerate(conteggi)
+    )
+    return (f'<svg class="kpi-spark" viewBox="0 0 {W} {H}" aria-hidden="true">'
+            f'<polyline points="{punti}" fill="none" stroke="var(--text-muted)" '
+            f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')

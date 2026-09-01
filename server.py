@@ -21,7 +21,8 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_issue_sync, _sb_issues_by_project, _sb_patch, _sb_project_bump_scan, \
     _sb_project_claim_due, _sb_project_get, _sb_project_patch, _sb_project_upsert, \
     _sb_projects_by_user
-from views import _COMING_SOON_TABS, _TAB_CATEGORIES, _coming_soon_tab, _project_actions, \
+from views import _COMING_SOON_TABS, _TAB_CATEGORIES, _coming_soon_tab, \
+    _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
     _project_status, _tab_audit, _tab_nav, _tab_opportunities, _tab_overview, _tab_pages, \
     _tab_settings, _tab_technical, _tab_traffic, _ultimi_run_section
 
@@ -972,14 +973,20 @@ def dashboard(request: Request):
 
     _backfill_projects(user["id"])
 
+    projects = _sb_projects_by_user(user["id"])
     cards = []
-    for p in _sb_projects_by_user(user["id"]):
-        runs = _sb_audits_by_project(p["id"], limit=2, full=False)
+    for p in projects:
+        # 8 run invece di 2: i primi due servono a punteggio e delta come prima,
+        # tutti e otto alimentano la sparkline sulla card. Nessuna query in piu'.
+        runs = _sb_audits_by_project(p["id"], limit=8, full=False)
         latest = runs[0] if runs else None
         previous = runs[1] if len(runs) > 1 else None
         delta = None
         if latest and previous and latest.get("overall") is not None and previous.get("overall") is not None:
             delta = latest["overall"] - previous["overall"]
+
+        # dal piu' vecchio al piu' recente, solo i run con un punteggio
+        history = [r["overall"] for r in reversed(runs) if r.get("overall") is not None]
 
         tracking_on = _sb_has_tracking(p["id"])
         cards.append({
@@ -987,6 +994,7 @@ def dashboard(request: Request):
             "overall": latest.get("overall") if latest else None,
             "grade": latest.get("grade") if latest else None,
             "delta": delta,
+            "history": history,
             "critical_count": latest.get("critical_count") if latest else None,
             "pages_count": latest.get("pages_count") if latest else None,
             "last_scan": latest.get("created_at") if latest else None,
@@ -996,16 +1004,27 @@ def dashboard(request: Request):
         })
     cards.sort(key=lambda c: c["last_scan"] or "", reverse=True)
 
+    _inizio_mese = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0,
+                                                      second=0, microsecond=0).isoformat()
+    da_rifare = [c for c in cards if c["status"] == "Audit required"]
+    piu_vecchio = min(da_rifare, key=lambda c: c.get("last_scan") or "") if da_rifare else None
+
     summary = {
         "total": len(cards),
         "critical": len([c for c in cards if c["status"] == "Critical"]),
-        "audits_due": len([c for c in cards if c["status"] == "Audit required"]),
+        "audits_due": len(da_rifare),
         "tracking_active": len([c for c in cards if c["tracking_active"]]),
+        "new_this_month": len([p for p in projects if (p.get("created_at") or "") >= _inizio_mese]),
+        "oldest_due": (f'{piu_vecchio["domain"]} — {_fmt_date(piu_vecchio["last_scan"])}'
+                       if piu_vecchio and piu_vecchio.get("last_scan") else
+                       (f'{piu_vecchio["domain"]} — mai analizzato' if piu_vecchio else "")),
     }
 
     html = _render(DASHBOARD_HTML,
                     PROJECTS_JSON=json.dumps(cards),
                     SUMMARY_JSON=json.dumps(summary),
+                    SUMMARY_BANNER=_dashboard_summary_banner(cards),
+                    PORTFOLIO_SPARK=_portfolio_sparkline(projects),
                     USER_EMAIL=json.dumps(user.get("email", "")))
     resp = HTMLResponse(html)
     return _apply_refresh(resp, refreshed)
