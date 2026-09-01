@@ -991,31 +991,187 @@ def _tab_technical(latest: dict | None) -> str:
 
 
 def _tab_opportunities(project_id: str) -> str:
+    """Criticità del progetto: filtri, raggruppamento e paginazione reale.
+
+    Manca l'azione "Segna risolto" prevista dal redesign: richiede un terzo
+    stato nel modello dati delle issue (aperta / risolta a mano / risolta
+    dall'audit) e la logica che, al riscontro successivo, faccia vincere
+    l'audit sullo stato manuale. È una modifica al database, quindi attende
+    una decisione esplicita.
+    """
     issues = _sb_issues_by_project(project_id)
     if not issues:
-        return '<p class="card-sub">Nessuna issue registrata: esegui un audit per popolare questa sezione.</p>'
+        return ('<div class="data-card"><div class="no-rows">Nessuna criticità registrata: '
+                'esegui un audit per popolare questa sezione.</div></div>')
 
-    open_issues = [i for i in issues if i["status"] == "open"]
-    resolved_issues = [i for i in issues if i["status"] != "open"]
+    dati = []
+    for i in issues:
+        dati.append({
+            "titolo": i.get("title") or i.get("check_id") or "",
+            "check": i.get("check_id") or "",
+            "sev": i.get("severity") or "",
+            "url": i.get("url") or "",
+            "stato": "aperta" if i.get("status") == "open" else "risolta",
+            "prima": _fmt_date(i.get("first_seen_at")),
+            "ultima": _fmt_date(i.get("last_seen_at")),
+        })
 
-    def row(i):
-        return (f'<tr><td data-label="Check"><b>{geo_audit.esc(i.get("title") or i.get("check_id"))}</b></td>'
-                f'<td data-label="Severità">{_sev_badge(i.get("severity"))}</td>'
-                f'<td data-label="URL">{geo_audit.esc(i.get("url") or "sito")}</td>'
-                f'<td data-label="Prima vista">{_fmt_date(i.get("first_seen_at"))}</td>'
-                f'<td data-label="Ultima vista">{_fmt_date(i.get("last_seen_at"))}</td>'
-                f'<td data-label="Stato">{_status_badge("fail" if i["status"] == "open" else "ok")}</td></tr>')
+    aperte = len([d for d in dati if d["stato"] == "aperta"])
+    risolte = len(dati) - aperte
 
-    thead = '<thead><tr><th>Check</th><th>Severità</th><th>URL</th><th>Prima vista</th><th>Ultima vista</th><th>Stato</th></tr></thead>'
-    open_html = "".join(row(i) for i in open_issues) or '<tr><td colspan="6" class="card-sub">Nessuna issue aperta 🎉</td></tr>'
-    out = (f'<div class="card-title" style="margin-bottom:10px">Issue aperte ({len(open_issues)})</div>'
-           f'<div class="tbl-wrap"><table class="tbl tbl-responsive">{thead}<tbody>{open_html}</tbody></table></div>')
+    return (
+        '<div class="filter-bar">'
+        '<div class="search-mini">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+        '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+        '<input type="text" id="opCerca" placeholder="Cerca per check o URL..." '
+        'aria-label="Cerca fra le criticità">'
+        '</div>'
+        '<button class="filter-chip on" id="opAperte" aria-pressed="true">Solo aperte</button>'
+        '<button class="filter-chip" id="opCritiche" aria-pressed="false">Solo gravi</button>'
+        '<div class="filter-spacer"></div>'
+        '<div class="group-toggle" role="group" aria-label="Raggruppamento">'
+        '<button id="opPerPagina" class="active">Per pagina</button>'
+        '<button id="opPerCheck">Per check</button>'
+        '</div>'
+        '</div>'
 
-    if resolved_issues:
-        resolved_html = "".join(row(i) for i in resolved_issues[:20])
-        out += (f'<div class="card-title" style="margin:20px 0 10px">Risolte di recente ({len(resolved_issues)})</div>'
-                f'<div class="tbl-wrap"><table class="tbl tbl-responsive">{thead}<tbody>{resolved_html}</tbody></table></div>')
-    return out
+        f'<div class="score-summary" style="padding:14px 18px">'
+        '<div class="score-summary-text">'
+        f'<div class="headline"><span class="crit">{aperte}</span> apert{"a" if aperte == 1 else "e"} '
+        f'\u00b7 {risolte} risolt{"a" if risolte == 1 else "e"}</div>'
+        '<div class="score-summary-meta">Una criticità risolta si chiude da sola al primo audit '
+        'che non la rileva più.</div>'
+        '</div></div>'
+
+        '<div id="opGruppi"></div>'
+
+        '<script>'
+        f'const OP_DATI = {json.dumps(dati)};'
+        r"""
+        (function(){
+          const PER_PAGINA = 12;
+          let soloAperte = true, soloGravi = false, perPagina = true;
+          const pagine = {};   // indice di pagina per ciascun gruppo
+
+          const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+            c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+          const sevCls = s => ({critical:"high", high:"high", medium:"medium"}[s] || "low");
+
+          function filtrate(){
+            const q = document.getElementById("opCerca").value.trim().toLowerCase();
+            return OP_DATI.filter(d => {
+              if (soloAperte && d.stato !== "aperta") return false;
+              if (soloGravi && !["critical","high"].includes(d.sev)) return false;
+              if (q && !d.titolo.toLowerCase().includes(q) && !d.url.toLowerCase().includes(q)
+                    && !d.check.toLowerCase().includes(q)) return false;
+              return true;
+            });
+          }
+
+          function raggruppa(righe){
+            const m = new Map();
+            righe.forEach(d => {
+              const k = perPagina ? (d.url || "Livello sito") : (d.titolo || d.check);
+              if (!m.has(k)) m.set(k, []);
+              m.get(k).push(d);
+            });
+            // i gruppi piu' popolosi per primi: si vede subito dove si concentra il problema
+            return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
+          }
+
+          function tabella(righe){
+            const corpo = righe.map(d => '<tr>'
+              + '<td class="check-name">' + esc(d.titolo) + '</td>'
+              + (perPagina ? '' : '<td class="detail-text">' + esc(d.url || "livello sito") + '</td>')
+              + '<td><span class="badge ' + sevCls(d.sev) + '">' + esc(d.sev || "n.d.") + '</span></td>'
+              + '<td class="date-muted">' + esc(d.prima) + '</td>'
+              + '<td class="date-muted">' + esc(d.ultima) + '</td>'
+              + '<td><span class="badge ' + d.stato + '">' + (d.stato === "aperta" ? "Aperta" : "Risolta") + '</span></td>'
+              + '</tr>').join("");
+            return '<div class="table-scroll"><table class="data-grid"><thead><tr>'
+              + '<th>Check</th>' + (perPagina ? '' : '<th>Pagina</th>')
+              + '<th>Severità</th><th>Prima vista</th><th>Ultima vista</th><th>Stato</th>'
+              + '</tr></thead><tbody>' + corpo + '</tbody></table></div>';
+          }
+
+          function paginazione(chiave, totale, pagina, nPagine){
+            if (nPagine <= 1) return '';
+            let btns = '<button class="pager-btn" data-g="' + esc(chiave) + '" data-p="'
+                     + (pagina - 1) + '"' + (pagina === 0 ? ' disabled' : '') + '>‹</button>';
+            for (let i = 0; i < nPagine; i++){
+              if (nPagine > 7 && i > 2 && i < nPagine - 2 && Math.abs(i - pagina) > 1) {
+                if (i === 3) btns += '<span class="pager-info">…</span>';
+                continue;
+              }
+              btns += '<button class="pager-btn' + (i === pagina ? ' active' : '') + '" data-g="'
+                    + esc(chiave) + '" data-p="' + i + '">' + (i + 1) + '</button>';
+            }
+            btns += '<button class="pager-btn" data-g="' + esc(chiave) + '" data-p="'
+                  + (pagina + 1) + '"' + (pagina === nPagine - 1 ? ' disabled' : '') + '>›</button>';
+            const da = pagina * PER_PAGINA + 1, a = Math.min((pagina + 1) * PER_PAGINA, totale);
+            return '<div class="pager"><span class="pager-info">' + da + '–' + a
+                 + ' di ' + totale + '</span><div class="pager-btns">' + btns + '</div></div>';
+          }
+
+          function disegna(){
+            const gruppi = raggruppa(filtrate());
+            const cont = document.getElementById("opGruppi");
+            if (!gruppi.length){
+              cont.innerHTML = '<div class="data-card"><div class="no-rows">'
+                + 'Nessuna criticità corrisponde ai filtri.</div></div>';
+              return;
+            }
+            cont.innerHTML = gruppi.map(([chiave, righe]) => {
+              const nPagine = Math.ceil(righe.length / PER_PAGINA);
+              let p = pagine[chiave] || 0;
+              if (p >= nPagine) p = pagine[chiave] = 0;
+              const fetta = righe.slice(p * PER_PAGINA, (p + 1) * PER_PAGINA);
+              return '<div class="data-card gruppo">'
+                + '<div class="section-header"><div class="gruppo-title">' + esc(chiave)
+                + ' <span class="n">— ' + righe.length
+                + (righe.length === 1 ? ' criticità' : ' criticità') + '</span></div></div>'
+                + tabella(fetta)
+                + paginazione(chiave, righe.length, p, nPagine)
+                + '</div>';
+            }).join("");
+
+            cont.querySelectorAll(".pager-btn[data-p]").forEach(b => {
+              b.addEventListener("click", () => {
+                pagine[b.dataset.g] = parseInt(b.dataset.p, 10);
+                disegna();
+              });
+            });
+          }
+
+          function interruttore(id, leggi, scrivi){
+            const b = document.getElementById(id);
+            b.addEventListener("click", () => {
+              scrivi(!leggi());
+              b.classList.toggle("on", leggi());
+              b.setAttribute("aria-pressed", leggi() ? "true" : "false");
+              disegna();
+            });
+          }
+          interruttore("opAperte", () => soloAperte, v => soloAperte = v);
+          interruttore("opCritiche", () => soloGravi, v => soloGravi = v);
+
+          document.getElementById("opCerca").addEventListener("input", disegna);
+          document.getElementById("opPerPagina").addEventListener("click", function(){
+            perPagina = true; this.classList.add("active");
+            document.getElementById("opPerCheck").classList.remove("active"); disegna();
+          });
+          document.getElementById("opPerCheck").addEventListener("click", function(){
+            perPagina = false; this.classList.add("active");
+            document.getElementById("opPerPagina").classList.remove("active"); disegna();
+          });
+
+          disegna();
+        })();
+        """
+        '</script>'
+    )
+
 
 
 def _tracking_badge(project_id: str) -> str:
