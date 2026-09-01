@@ -55,6 +55,25 @@ commit.
 
 ## Design System — regola fondamentale
 
+> ⚠️ **Redesign in corso (settembre 2026).** Convivono due design system:
+>
+> | Foglio | Usato da | Token |
+> |---|---|---|
+> | `static/css/geo-ds.css` | schermate già ridisegnate | `--bg-canvas`, `--accent-primary`, `--state-good`… |
+> | `static/css/design-system.css` | pagine non ancora migrate | `--canvas`, `--brand`, `--success`… |
+> | `static/css/ponte-legacy.css` | ponte fra i due | rimappa i vecchi nomi sui nuovi |
+>
+> **Le schermate nuove si scrivono con i token di `geo-ds.css`.** Il ponte
+> esiste solo per non dover riscrivere tutti i tab in un colpo solo, e va
+> **eliminato** quando l'ultimo tab sarà migrato. Non aggiungerci nulla.
+>
+> Riferimenti del redesign, fuori dal repo:
+> `Vertical AI/progetti/_specifiche-geo-audit/` — documento funzionale,
+> design system e le 16 pagine HTML del prototipo (fonte di verità visiva).
+>
+> Il tema di default è **chiaro**; la preferenza sta in `localStorage` sulla
+> chiave `geo-theme`, condivisa con il report generato.
+
 **Ogni modifica a UX/UI deve rispettare `design_system/DESIGN_SYSTEM.md`.**
 
 Leggi sempre quel file prima di toccare HTML, CSS o email. I punti chiave:
