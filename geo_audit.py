@@ -470,7 +470,7 @@ SHORT = {"Dati strutturati":"Dati", "Contenuti & answerability":"Contenuti",
 MONTHS = ["","gennaio","febbraio","marzo","aprile","maggio","giugno","luglio",
           "agosto","settembre","ottobre","novembre","dicembre"]
 def esc(s): return H.escape(str(s))
-def barcol(s): return "#0E9F6E" if s>=75 else ("#C77700" if s>=55 else "#D92D34")
+def barcol(s): return "#0E9F6E" if s>=75 else ("#C77700" if s>=50 else "#D92D34")
 def fmt_date(): d = datetime.now(); return f"{d.day} {MONTHS[d.month]} {d.year}"
 
 def gauge(score):
@@ -707,9 +707,9 @@ def render_report(domain, site, pages, render_used, respect_robots):
     worst = min(cats, key=lambda x: x[1]) if cats else ("—", 0)
     repeated = [a for a in acts if a[4] > 1]
 
-    theme_init = ("<script>try{var _t=localStorage.getItem('geo-theme')||'dark';"
+    theme_init = ("<script>try{var _t=localStorage.getItem('geo-theme')||'light';"
       "document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>")
-    head = ('<!doctype html><html lang="it" data-theme="dark"><head>'+theme_init+'<meta charset="utf-8">'
+    head = ('<!doctype html><html lang="it" data-theme="light"><head>'+theme_init+'<meta charset="utf-8">'
       '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — '+esc(domain)+'</title>'
       '<link rel="preconnect" href="https://fonts.googleapis.com">'
       '<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800'
