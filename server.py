@@ -23,8 +23,8 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_projects_by_user
 from views import _COMING_SOON_TABS, _TAB_CATEGORIES, _coming_soon_tab, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
-    _project_status, _tab_audit, _tab_nav, _tab_opportunities, _tab_overview, _tab_pages, \
-    _tab_settings, _tab_technical, _tab_traffic, _ultimi_run_section
+    _project_status, _sidebar, _subtabs, _tab_audit, _tab_opportunities, _tab_overview, \
+    _tab_pages, _tab_settings, _tab_technical, _tab_traffic, _ultimi_run_section
 
 
 app = FastAPI(title="GEO Audit · verticalai")
@@ -1055,6 +1055,12 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
     if tab not in valid_tabs:
         tab = "overview"
 
+    # Il menu laterale mostra il punteggio del progetto e il numero di
+    # criticita' aperte: servono su ogni tab, non solo sull'overview.
+    _ultimo = _sb_audits_by_project(project_id, limit=1, full=False)
+    latest_light = _ultimo[0] if _ultimo else None
+    aperte = len([i for i in _sb_issues_by_project(project_id, status="open")])
+
     if tab in _COMING_SOON_TABS:
         title, desc = _COMING_SOON_TABS[tab]
         body = _coming_soon_tab(title, desc)
@@ -1089,11 +1095,17 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
     else:
         body = ""
 
+    # conteggi mostrati sulle sotto-linguette dell'Audit
+    conteggi = {"opportunities": aperte}
+    if latest_light and latest_light.get("pages_count"):
+        conteggi["pages"] = latest_light["pages_count"]
+
     html = _render(PROJECT_HTML,
                     PROJECT_NAME=geo_audit.esc(project.get("name") or project.get("domain")),
                     PROJECT_DOMAIN=geo_audit.esc(project.get("domain") or ""),
                     PROJECT_ACTIONS=_project_actions(project),
-                    TABS_NAV=_tab_nav(project_id, tab),
+                    SIDEBAR=_sidebar(project, latest_light, aperte, tab, user.get("email", "")),
+                    SUBTABS=_subtabs(project_id, tab, conteggi),
                     TAB_BODY=body,
                     USER_EMAIL=json.dumps(user.get("email", "")))
     resp = HTMLResponse(html)

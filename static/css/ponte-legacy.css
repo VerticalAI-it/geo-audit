@@ -1,0 +1,149 @@
+/* ============================================================================
+   PONTE TEMPORANEO — vecchi token → nuovi token
+
+   I contenuti dei tab di progetto (costruiti in views.py) usano ancora i nomi
+   di variabile del design system precedente. Questo foglio li rimappa sui
+   token di geo-ds.css, così le sezioni non ancora ridisegnate continuano a
+   rendersi correttamente dentro la shell nuova, invece di perdere tutti i
+   colori.
+
+   NON aggiungere niente qui e non usarlo in pagine nuove: si scrive con i
+   token di geo-ds.css. Questo file va ELIMINATO quando tutti i tab saranno
+   migrati — a quel punto non lo linkerà più nessuno.
+
+   Va caricato DOPO geo-ds.css.
+   ========================================================================= */
+
+:root{
+  /* superfici e bordi */
+  --canvas:         var(--bg-canvas);
+  --surface:        var(--bg-surface);
+  --surface-2:      var(--bg-surface-raised);
+  --surface-3:      var(--bg-surface-hover);
+  --border:         var(--border-subtle);
+  --border-strong:  var(--border-medium);
+
+  /* brand */
+  --brand:          var(--accent-primary);
+  --brand-hover:    var(--accent-primary-hover);
+  --brand-soft:     var(--accent-primary-dim);
+  --brand-text:     var(--accent-primary);
+  --focus:          var(--accent-primary);
+
+  /* testo */
+  --ink:            var(--text-primary);
+  --text:           var(--text-primary);
+  --text-2:         var(--text-secondary);
+  --text-3:         var(--text-muted);
+  --text-on-brand:  #fff;
+
+  /* stati */
+  --success:        var(--state-good);
+  --success-bg:     var(--state-good-dim);
+  --success-border: var(--state-good-dim);
+  --warning:        var(--state-warn);
+  --warning-bg:     var(--state-warn-dim);
+  --warning-border: var(--state-warn-dim);
+  --danger:         var(--state-critical);
+  --danger-bg:      var(--state-critical-dim);
+  --danger-border:  var(--state-critical-dim);
+  --info:           var(--accent-primary);
+
+  /* raggi */
+  --r-sm:  var(--radius-sm);
+  --r-md:  var(--radius-md);
+  --r-lg:  var(--radius-lg);
+  --r-xl:  var(--radius-lg);
+  --r-2xl: var(--radius-lg);
+  --r-pill: 999px;
+
+  /* spaziature (scala a 4px, identica alla precedente) */
+  --sp-1:4px;  --sp-2:8px;   --sp-3:12px;  --sp-4:16px;
+  --sp-5:20px; --sp-6:24px;  --sp-8:32px;  --sp-10:40px;
+  --sp-12:48px; --sp-16:64px; --sp-20:80px; --sp-24:96px;
+
+  /* ombre */
+  --sh-xs: var(--card-shadow);
+  --sh-sm: var(--card-shadow);
+  --sh-md: var(--card-shadow);
+  --sh-lg: var(--card-shadow);
+  --sh-brand: 0 2px 12px var(--accent-primary-dim);
+
+  /* motion */
+  --t-fast: 120ms;
+  --t-base: 200ms;
+  --t-slow: 320ms;
+  --ease-out: cubic-bezier(.2,.8,.2,1);
+
+  /* font: --font-display e --font-mono hanno lo stesso nome nei due sistemi
+     e non vanno rimappati. Manca solo l'alias del corpo. */
+  --font-sans: var(--font-body);
+}
+
+/* I componenti del vecchio DS usati dai tab: card, badge, tabelle, bottoni.
+   Ridefiniti qui in forma minima perché design-system.css non è più caricato. */
+.card{
+  background:var(--bg-surface); border:1px solid var(--border-subtle);
+  border-radius:var(--radius-md); padding:20px; box-shadow:var(--card-shadow);
+  margin-bottom:16px;
+}
+.card-title{font-family:var(--font-display); font-size:15px; font-weight:600; margin-bottom:4px;}
+.card-sub{font-size:12.5px; color:var(--text-muted); line-height:1.5;}
+
+.badge--success{background:var(--state-good-dim); color:var(--state-good);}
+.badge--warning{background:var(--state-warn-dim); color:var(--state-warn);}
+.badge--danger{background:var(--state-critical-dim); color:var(--state-critical);}
+.badge--neutral{background:var(--bg-surface-raised); color:var(--text-muted);}
+.badge .dot{width:5px; height:5px; border-radius:50%; background:currentColor;}
+.badge--success::before, .badge--warning::before,
+.badge--danger::before, .badge--neutral::before{content:none;}
+
+.btn--primary{background:var(--accent-primary); border-color:var(--accent-primary); color:#fff;}
+.btn--primary:hover{background:var(--accent-primary-hover);}
+.btn--secondary{background:var(--bg-surface); color:var(--text-primary);}
+.btn--sm{font-size:12px; padding:7px 12px;}
+
+.tbl-wrap{overflow-x:auto; border:1px solid var(--border-subtle); border-radius:var(--radius-md);}
+.tbl{border-collapse:collapse; width:100%; font-size:13px; background:var(--bg-surface);}
+.tbl th{
+  font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--text-muted); text-align:left;
+  padding:11px 13px; border-bottom:1px solid var(--border-medium); white-space:nowrap;
+}
+.tbl td{padding:10px 13px; border-bottom:1px solid var(--border-subtle); vertical-align:top;}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tbody tr:hover{background:var(--bg-surface-raised);}
+
+.input, .settings-form input, .settings-form select{
+  background:var(--bg-surface-raised); border:1px solid var(--border-subtle);
+  border-radius:var(--radius-sm); padding:10px 12px; color:var(--text-primary);
+  font-family:var(--font-body); font-size:13.5px; width:100%;
+}
+.input:focus, .settings-form input:focus, .settings-form select:focus{
+  outline:none; border-color:var(--accent-primary);
+  box-shadow:0 0 0 3px var(--accent-primary-dim);
+}
+.field label{
+  display:block; font-family:var(--font-mono); font-size:11px; color:var(--text-muted);
+  text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px;
+}
+.hint{font-size:12px; color:var(--text-muted); margin-top:6px;}
+
+.alert{
+  border-radius:var(--radius-sm); padding:12px 14px; font-size:13px;
+  border:1px solid var(--border-subtle); background:var(--bg-surface-raised);
+  margin-bottom:14px;
+}
+.alert--danger{background:var(--state-critical-dim); border-color:var(--state-critical-dim); color:var(--state-critical);}
+.alert--success{background:var(--state-good-dim); border-color:var(--state-good-dim); color:var(--state-good);}
+
+/* tabelle responsive: su schermo stretto ogni cella mostra la sua intestazione */
+@media (max-width:700px){
+  .tbl-responsive thead{display:none;}
+  .tbl-responsive tr{display:block; border-bottom:1px solid var(--border-subtle); padding:8px 0;}
+  .tbl-responsive td{display:flex; justify-content:space-between; gap:12px; border:none; padding:5px 13px;}
+  .tbl-responsive td::before{
+    content:attr(data-label); font-family:var(--font-mono); font-size:10.5px;
+    text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); flex:none;
+  }
+}

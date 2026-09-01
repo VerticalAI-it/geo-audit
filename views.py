@@ -192,30 +192,6 @@ def _category_for_tab(tab: str) -> str:
     return "overview"
 
 
-def _tab_nav(project_id: str, active_tab: str) -> str:
-    active_cat = _category_for_tab(active_tab)
-
-    top = []
-    for cat_key, cat_label, children in _TAB_CATEGORIES:
-        target = cat_key if children is None else children[0][0]
-        soon = children is not None and all(k in _COMING_SOON_TABS for k, _ in children)
-        cls = "tab" + (" active" if cat_key == active_cat else "") + (" soon" if soon else "")
-        badge = ' <span class="tab-soon">soon</span>' if soon else ""
-        top.append(f'<a href="/project/{project_id}?tab={target}" class="{cls}">{geo_audit.esc(cat_label)}{badge}</a>')
-    html = '<div class="tabs">' + "".join(top) + '</div>'
-
-    active_children = next((c for k, _, c in _TAB_CATEGORIES if k == active_cat), None)
-    if active_children:
-        subs = []
-        for key, label in active_children:
-            soon = key in _COMING_SOON_TABS
-            cls = "subtab" + (" active" if key == active_tab else "") + (" soon" if soon else "")
-            badge = ' <span class="tab-soon">soon</span>' if soon else ""
-            subs.append(f'<a href="/project/{project_id}?tab={key}" class="{cls}">{geo_audit.esc(label)}{badge}</a>')
-        html += '<div class="subtabs">' + "".join(subs) + '</div>'
-    return html
-
-
 def _coming_soon_tab(title: str, description: str) -> str:
     return (
         '<div class="card coming-soon-card">'
@@ -551,83 +527,97 @@ def _score_history_chart(project_id: str, history: list) -> str:
     )
 
 
-def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
-                   open_issues: int, resolved_recent: int, history: list | None = None) -> str:
-    sections_html = _overview_sections_grid(project_id, latest, open_issues, resolved_recent)
+def _ring_punteggio(overall, grade, delta) -> str:
+    """L'anello del punteggio: elemento firma della pagina di progetto."""
+    if overall is None:
+        return ('<div class="hero-card"><div class="chart-empty">'
+                'Nessun audit ancora eseguito per questo progetto.</div></div>')
 
-    if not latest:
-        return (
-            '<div class="alert alert--info"><div class="ic">i</div>'
-            '<div>Nessun audit ancora eseguito per questo progetto. '
-            '<a href="/audit">Avvia la prima analisi →</a></div></div>'
-            + sections_html
-        )
+    cls = {"score-ottimo": "good", "score-migliorabile": "warn",
+           "score-critico": "critical"}.get(_score_class(overall), "unknown")
+    circonferenza = 452.0
+    offset = circonferenza * (1 - overall / 100)
 
-    overall = latest.get("overall")
-    delta = None
-    if previous and previous.get("overall") is not None and overall is not None:
-        delta = overall - previous["overall"]
-    delta_html = ""
-    if delta is not None:
-        cls = "delta-up" if delta > 0 else ("delta-down" if delta < 0 else "delta-flat")
-        sign = "+" if delta > 0 else ""
-        delta_html = (
-            f'<div class="delta-block"><span class="delta-pill {cls}">{sign}{delta}</span>'
-            '<span class="delta-text">vs audit precedente</span></div>'
-        )
+    if delta is None:
+        pill = '<span class="hero-delta flat">primo audit</span>'
+    elif delta > 0:
+        pill = f'<span class="hero-delta up">\u2191 +{delta} rispetto al precedente</span>'
+    elif delta < 0:
+        pill = f'<span class="hero-delta down">\u2193 {delta} rispetto al precedente</span>'
+    else:
+        pill = '<span class="hero-delta flat">\u2014 invariato</span>'
 
-    areas = latest.get("areas") or []
-    worst = areas[0] if areas else None
-    best = areas[-1] if areas else None
-    best_cls = _score_class(best["score"]).replace("score-", "txt-") if best else "txt-unknown"
-    worst_cls = _score_class(worst["score"]).replace("score-", "txt-") if worst else "txt-unknown"
-    best_txt = (f'<b>{geo_audit.esc(best["key"])}</b> <span class="{best_cls}">({best["score"]}/100)</span>'
-                if best else "—")
-    worst_txt = (f'<b>{geo_audit.esc(worst["key"])}</b> <span class="{worst_cls}">({worst["score"]}/100)</span>'
-                 if worst else "—")
+    colore = {"good": "var(--state-good)", "warn": "var(--state-warn)",
+              "critical": "var(--state-critical)"}.get(cls, "var(--text-muted)")
 
-    issues_count = latest.get("issues_count")
-    critical_count = latest.get("critical_count")
-
-    def _count_cls(value, critical):
-        if value is None:
-            return "stat-neutral"
-        if critical:
-            return "stat-good" if value == 0 else "stat-bad"
-        if value == 0:
-            return "stat-good"
-        return "stat-warn" if value <= 10 else "stat-bad"
-
-    sc = _score_class(overall)
     return (
-        '<div class="ov-grid">'
-        '<div class="card"><div class="card-sub">GEO Score</div>'
-        f'<div class="ov-score-row"><div class="score-block {sc}" style="width:72px;height:72px">'
-        f'<span class="num" style="font-size:24px">{overall if overall is not None else "—"}</span>'
-        f'<span class="grd">{geo_audit.esc(latest.get("grade") or "—")}</span></div>{delta_html}</div>'
-        f'<p class="card-sub" style="margin-top:10px">Ultimo audit: {_fmt_date(latest.get("created_at"))}</p></div>'
-
-        '<div class="card"><div class="card-sub">Salute issue</div>'
-        '<div class="mini-stat-row">'
-        f'<div class="mini-stat {_count_cls(issues_count, False)}"><span class="mini-stat-num">{issues_count if issues_count is not None else "—"}</span>'
-        '<span class="mini-stat-label">problemi totali</span></div>'
-        f'<div class="mini-stat {_count_cls(critical_count, True)}"><span class="mini-stat-num">{critical_count if critical_count is not None else "—"}</span>'
-        '<span class="mini-stat-label">critici</span></div>'
-        '</div>'
-        f'<p style="margin:10px 0 0"><b>{open_issues}</b> issue aperte in Opportunities</p></div>'
-
-        '<div class="card"><div class="card-sub">Area migliore / peggiore</div>'
-        f'<p style="margin:6px 0">✓ {best_txt}</p>'
-        f'<p style="margin:6px 0">⚠ {worst_txt}</p></div>'
-
-        f'<div class="card"><div class="card-sub">Tracking</div>'
-        f'<p style="margin:6px 0">{_tracking_badge(project_id)}</p>'
-        '<p class="card-sub" style="margin-top:8px">Vedi la tab AI Traffic per sessioni, provider e landing page.</p></div>'
-        '</div>'
-
-        + _score_history_chart(project_id, history or [])
-        + sections_html
+        '<div class="hero-card">'
+        '<div class="ring-wrap">'
+        '<svg width="168" height="168" viewBox="0 0 168 168" aria-hidden="true">'
+        '<defs><linearGradient id="ringGradient" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0%" stop-color="{colore}"/>'
+        '<stop offset="100%" stop-color="var(--accent-primary)"/>'
+        '</linearGradient></defs>'
+        '<circle class="ring-track" cx="84" cy="84" r="72"/>'
+        f'<circle class="ring-fill" cx="84" cy="84" r="72" style="--offset:{offset:.1f}"/>'
+        '</svg>'
+        '<div class="ring-center">'
+        f'<div class="ring-score">{overall}</div>'
+        f'<div class="ring-grade {cls}">{geo_audit.esc(grade or "")}</div>'
+        '</div></div>'
+        '<div class="hero-caption">'
+        '<div class="label">GEO Score</div>'
+        f'{pill}'
+        '</div></div>'
     )
+
+
+def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
+                   open_issues: int, resolved_recent: int, history: list) -> str:
+    overall = latest.get("overall") if latest else None
+    grade = latest.get("grade") if latest else None
+    delta = None
+    if latest and previous and latest.get("overall") is not None and previous.get("overall") is not None:
+        delta = latest["overall"] - previous["overall"]
+
+    # riga principale: anello a sinistra, storico a destra
+    hero = ('<div class="hero-row">'
+            + _ring_punteggio(overall, grade, delta)
+            + _score_history_chart(project_id, history)
+            + '</div>')
+
+    # indicatori
+    pagine = latest.get("pages_count") if latest else None
+    critici = latest.get("critical_count") if latest else None
+    aree = (latest.get("areas") or []) if latest else []
+    peggiore = min(aree, key=lambda a: a.get("score", 100)) if aree else None
+
+    def kpi(etichetta, valore, classe, sotto):
+        return ('<div class="kpi">'
+                f'<div class="kpi-top"><span class="kpi-label">{geo_audit.esc(etichetta)}</span></div>'
+                f'<div class="kpi-value {classe}">{geo_audit.esc(valore)}</div>'
+                f'<div class="kpi-sub">{geo_audit.esc(sotto)}</div>'
+                '</div>')
+
+    cls_issue = "critical" if (critici or 0) > 0 else ("warn" if open_issues else "good")
+    kpis = ('<div class="kpi-strip">'
+            + kpi("Issue aperte", open_issues if open_issues is not None else "\u2014",
+                  cls_issue, f"{resolved_recent} risolte di recente")
+            + kpi("Criticità", critici if critici is not None else "\u2014",
+                  "critical" if (critici or 0) > 0 else "good",
+                  "check falliti nell'ultimo audit")
+            + kpi("Pagine analizzate", pagine if pagine is not None else "\u2014",
+                  "", "nell'ultimo audit")
+            + kpi("Area più debole",
+                  f'{peggiore["score"]}' if peggiore else "\u2014", "warn",
+                  peggiore["key"] if peggiore else "nessun dato per area")
+            + '</div>')
+
+    # _overview_sections_grid stampa gia' il proprio titolo
+    sezioni = _overview_sections_grid(project_id, latest, open_issues, resolved_recent)
+
+    return hero + kpis + sezioni
+
 
 
 def _tab_audit(latest: dict | None, history: list) -> str:
@@ -1035,3 +1025,122 @@ def _portfolio_sparkline(projects: list) -> str:
     return (f'<svg class="kpi-spark" viewBox="0 0 {W} {H}" aria-hidden="true">'
             f'<polyline points="{punti}" fill="none" stroke="var(--text-muted)" '
             f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+
+
+# ── Menu laterale della pagina di progetto ───────────────────────────────────
+#
+# Sostituisce le linguette orizzontali a doppio livello: le cinque categorie
+# stanno nel menu a sinistra, i sotto-livelli dell'Audit restano linguette
+# orizzontali sopra il contenuto (cosi' li vuole il prototipo).
+
+_NAV_ICONS = {
+    "overview": '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>'
+                '<rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    "audit":    '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',
+    "ai":       '<path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 6v6l4 2"/>',
+    "growth":   '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+    "settings": '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06'
+                'a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33'
+                'l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09'
+                'A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9'
+                'a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06'
+                'a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09'
+                'a1.65 1.65 0 00-1.51 1z"/>',
+}
+
+
+def _nav_icon(chiave: str) -> str:
+    return ('<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+            f'stroke-width="2" aria-hidden="true">{_NAV_ICONS.get(chiave, "")}</svg>')
+
+
+def _sidebar(project: dict, latest: dict | None, open_issues: int,
+             active_tab: str, user_email: str = "") -> str:
+    """Il menu laterale: identita', progetto corrente, sezioni, utente."""
+    pid = project["id"]
+    attiva = _category_for_tab(active_tab)
+    overall = latest.get("overall") if latest else None
+    cls = _score_class(overall).replace("score-", "")
+    cls = {"ottimo": "good", "migliorabile": "warn", "critico": "critical"}.get(cls, "unknown")
+    punteggio = overall if overall is not None else "n.d."
+
+    voci = []
+    for chiave, etichetta, figli in _TAB_CATEGORIES:
+        destinazione = chiave if figli is None else figli[0][0]
+        soon = figli is not None and all(k in _COMING_SOON_TABS for k, _ in figli)
+        classe = "nav-item" + (" active" if chiave == attiva else "")
+        coda = ""
+        if soon:
+            coda = '<span class="nav-soon">SOON</span>'
+        elif chiave == "audit" and open_issues:
+            coda = f'<span class="nav-count">{open_issues}</span>'
+        voci.append(
+            f'<a class="{classe}" href="/project/{pid}?tab={destinazione}">'
+            f'<span class="nav-item-label">{_nav_icon(chiave)}{geo_audit.esc(etichetta)}</span>'
+            f'{coda}</a>'
+        )
+
+    iniziale = geo_audit.esc((user_email or "?")[:1].upper())
+    return (
+        '<aside class="sidebar" id="sidebar">'
+        '<button class="sidebar-close" onclick="chiudiMenu()" aria-label="Chiudi il menu">'
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+        '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>'
+
+        '<a class="brand" href="/dashboard">'
+        '<div class="brand-mark">V</div>'
+        '<div class="brand-name">vertical<span>ai</span></div></a>'
+
+        '<a class="back-link" href="/dashboard">\u2190 I tuoi progetti</a>'
+
+        '<div class="project-switch">'
+        f'<div class="project-switch-badge {cls}">{geo_audit.esc(punteggio)}</div>'
+        '<div class="project-switch-text">'
+        f'<div class="project-switch-name">{geo_audit.esc(project["name"])}</div>'
+        f'<div class="project-switch-domain">{geo_audit.esc(project["domain"])}</div>'
+        '</div></div>'
+
+        '<div class="nav-group">'
+        '<div class="nav-label">Progetto</div>'
+        + "".join(voci) +
+        '</div>'
+
+        '<div class="nav-group">'
+        '<div class="nav-label">Scorciatoie</div>'
+        f'<a class="nav-item" href="/audit"><span class="nav-item-label">'
+        '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+        'aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nuova analisi</span></a>'
+        f'<a class="nav-item" href="/roadmap"><span class="nav-item-label">'
+        '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+        'aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>Roadmap prodotto</span></a>'
+        '</div>'
+
+        '<div class="sidebar-footer">'
+        f'<div class="avatar">{iniziale}</div>'
+        f'<div class="email" title="{geo_audit.esc(user_email)}">{geo_audit.esc(user_email)}</div>'
+        '<button class="theme-toggle" onclick="cambiaTema()" aria-label="Cambia tema">'
+        '<svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41'
+        'M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>'
+        '<svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></button>'
+        '</div>'
+        '</aside>'
+    )
+
+
+def _subtabs(project_id: str, active_tab: str, conteggi: dict | None = None) -> str:
+    """Sotto-linguette della categoria attiva. Vuoto se la categoria non ne ha."""
+    attiva = _category_for_tab(active_tab)
+    figli = next((f for k, _, f in _TAB_CATEGORIES if k == attiva), None)
+    if not figli:
+        return ""
+    conteggi = conteggi or {}
+    voci = []
+    for chiave, etichetta in figli:
+        classe = "subtab" + (" active" if chiave == active_tab else "")
+        n = conteggi.get(chiave)
+        badge = f'<span class="count">{n}</span>' if n else ""
+        voci.append(f'<a class="{classe}" href="/project/{project_id}?tab={chiave}">'
+                    f'{geo_audit.esc(etichetta)}{badge}</a>')
+    return '<div class="subtabs">' + "".join(voci) + '</div>'
