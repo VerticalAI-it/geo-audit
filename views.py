@@ -621,60 +621,99 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
 
 
 def _tab_audit(latest: dict | None, history: list) -> str:
+    """Riepilogo dell'audit: sintesi, punteggio per area, interventi, storico."""
     if not latest:
-        return ('<div class="alert alert--info"><div class="ic">i</div>'
-                '<div>Nessun audit ancora eseguito. <a href="/audit">Avvia la prima analisi →</a></div></div>')
+        return ('<div class="data-card"><div class="no-rows">Nessun audit ancora eseguito. '
+                '<a href="/audit">Avvia la prima analisi \u2192</a></div></div>')
 
-    areas = latest.get("areas") or []
-    area_rows = "".join(
-        f'<div class="area-row"><span class="area-label">{geo_audit.esc(a["key"])}</span>'
-        f'<div class="area-bar-track"><div class="area-bar-fill {_score_class(a["score"])}" '
-        f'style="width:{a["score"]}%"></div></div><span class="area-score">{a["score"]}</span></div>'
-        for a in areas
-    )
+    overall = latest.get("overall")
+    cls = {"score-ottimo": "good", "score-migliorabile": "warn",
+           "score-critico": "critical"}.get(_score_class(overall), "unknown")
 
-    issues_count = latest.get("issues_count")
-    critical_count = latest.get("critical_count")
-    total_checks = len(latest.get("site_checks") or []) + sum(
+    issues_count = latest.get("issues_count") or 0
+    critical_count = latest.get("critical_count") or 0
+    totale_check = len(latest.get("site_checks") or []) + sum(
         len(p.get("checks") or []) for p in (latest.get("pages_detail") or []))
-    pct_ok = round(100 * (total_checks - (issues_count or 0)) / total_checks) if total_checks else None
+    pct_ok = round(100 * (totale_check - issues_count) / totale_check) if totale_check else None
+    pagine = latest.get("pages_count")
 
-    actions = (latest.get("actions") or [])[:8]
-    actions_html = "".join(
-        f'<li class="action-row">{_sev_badge(a["severity"])} <b>{geo_audit.esc(a["title"])}</b>'
-        f'<p class="card-sub" style="margin:4px 0 0">{geo_audit.esc(a["recommendation"])} — '
-        f'{a["count"]} pagin{"a" if a["count"] == 1 else "e"} interessate</p></li>'
-        for a in actions
-    ) or '<li class="card-sub">Nessun intervento prioritario: tutti i check principali sono superati.</li>'
-
-    history_html = "".join(
-        f'<tr><td data-label="Data">{_fmt_date(h.get("created_at"))}</td>'
-        f'<td data-label="Score"><b>{h.get("overall") if h.get("overall") is not None else "—"}</b></td>'
-        f'<td data-label="Grade">{geo_audit.esc(h.get("grade") or "—")}</td>'
-        f'<td data-label="Critici">{h.get("critical_count") if h.get("critical_count") is not None else "—"}</td></tr>'
-        for h in history
-    )
-
-    sc = _score_class(latest.get("overall"))
-    return (
-        '<div class="card"><div class="audit-head-row">'
-        f'<div class="score-block {sc}" style="width:72px;height:72px">'
-        f'<span class="num" style="font-size:24px">{latest.get("overall") if latest.get("overall") is not None else "—"}</span>'
-        f'<span class="grd">{geo_audit.esc(latest.get("grade") or "—")}</span></div>'
-        f'<div><p style="margin:0"><b>{issues_count if issues_count is not None else "—"}</b> problemi · '
-        f'<b>{critical_count if critical_count is not None else "—"}</b> critici · '
-        f'<b>{pct_ok if pct_ok is not None else "—"}%</b> controlli superati</p>'
-        f'<a href="/r/{latest.get("id", "")}" class="btn btn--sm" style="margin-top:8px">Apri report completo →</a>'
+    sintesi = (
+        '<div class="score-summary">'
+        f'<div class="score-summary-badge {cls}">'
+        f'{overall if overall is not None else "n.d."}'
+        f'<span class="grade">GRADE {geo_audit.esc(latest.get("grade") or "?")}</span></div>'
+        '<div class="score-summary-text">'
+        '<div class="headline">'
+        f'<b>{issues_count}</b> problemi \u00b7 '
+        f'<span class="crit">{critical_count}</span> critici'
+        + (f' \u00b7 {pct_ok}% controlli superati' if pct_ok is not None else '') +
+        '</div>'
+        f'<div class="score-summary-meta">Ultimo audit {_fmt_date(latest.get("created_at"))}'
+        + (f' \u00b7 {pagine} pagin{"a" if pagine == 1 else "e"} analizzat{"a" if pagine == 1 else "e"}'
+           if pagine else '') +
         '</div></div></div>'
-
-        f'<div class="card" style="margin-top:16px"><div class="card-title">Punteggio per area</div>{area_rows}</div>'
-        f'<div class="card" style="margin-top:16px"><div class="card-title">Interventi prioritari</div>'
-        f'<ul class="action-list">{actions_html}</ul></div>'
-        '<div class="card" style="margin-top:16px"><div class="card-title">Storico audit</div>'
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr>'
-        f'<th>Data</th><th>Score</th><th>Grade</th><th>Critici</th></tr></thead>'
-        f'<tbody>{history_html}</tbody></table></div></div>'
     )
+
+    aree = sorted(latest.get("areas") or [], key=lambda a: a.get("score", 0))
+    righe_aree = "".join(
+        '<div class="area-line">'
+        f'<div class="area-name">{geo_audit.esc(a["key"])}</div>'
+        f'<div class="area-track"><div class="area-fill '
+        f'{ {"score-ottimo":"good","score-migliorabile":"warn","score-critico":"critical"}.get(_score_class(a["score"]), "warn") }" '
+        f'style="--w:{a["score"]}%"></div></div>'
+        f'<div class="area-value">{a["score"]}</div>'
+        '</div>'
+        for a in aree
+    ) or '<div class="no-rows">Nessun punteggio per area disponibile.</div>'
+
+    interventi = (latest.get("actions") or [])[:8]
+    sev_cls = {"critical": "high", "high": "high", "medium": "medium", "low": "low", "info": "low"}
+    righe_interventi = "".join(
+        '<div class="interv-item">'
+        f'<div class="interv-num">{i + 1:02d}</div>'
+        '<div class="interv-body"><div class="interv-top">'
+        f'<span class="interv-title">{geo_audit.esc(a["title"])}</span>'
+        f'<span class="badge {sev_cls.get(a.get("severity"), "low")}">{geo_audit.esc(a.get("severity") or "")}</span>'
+        '</div>'
+        f'<div class="interv-desc">{geo_audit.esc(a.get("recommendation") or "")} \u2014 '
+        f'{a["count"]} pagin{"a" if a["count"] == 1 else "e"} interessate</div>'
+        '</div></div>'
+        for i, a in enumerate(interventi)
+    ) or ('<div class="no-rows">Nessun intervento prioritario: '
+          'tutti i controlli principali sono superati.</div>')
+
+    righe_storico = "".join(
+        '<tr>'
+        f'<td>{_fmt_date(h.get("created_at"))}</td>'
+        f'<td><span class="score-cell { {"score-ottimo":"good","score-migliorabile":"warn","score-critico":"critical"}.get(_score_class(h.get("overall")), "unknown") }">'
+        f'{h.get("overall") if h.get("overall") is not None else "n.d."}</span></td>'
+        f'<td>{geo_audit.esc(h.get("grade") or "\u2014")}</td>'
+        f'<td><span class="score-cell {"critical" if (h.get("critical_count") or 0) else "good"}">'
+        f'{h.get("critical_count") if h.get("critical_count") is not None else "\u2014"}</span></td>'
+        f'<td>{_run_origin_badge(h.get("source"))}</td>'
+        '</tr>'
+        for h in history
+    ) or '<tr><td colspan="5" class="no-rows">Nessun audit precedente.</td></tr>'
+
+    return (
+        sintesi
+        + '<div class="data-card">'
+          '<div class="section-header"><div class="section-title">Punteggio per area</div></div>'
+          f'<div style="padding:8px 20px 16px"><div class="area-list">{righe_aree}</div></div>'
+          '</div>'
+        + '<div class="data-card">'
+          '<div class="section-header"><div class="section-title">Interventi prioritari</div>'
+          '<div class="card-desc">In ordine di impatto sul punteggio</div></div>'
+          f'<div style="padding:4px 20px 14px"><div class="interv-list">{righe_interventi}</div></div>'
+          '</div>'
+        + '<div class="data-card">'
+          '<div class="section-header"><div class="section-title">Storico audit</div></div>'
+          '<div class="table-scroll"><table class="data-grid"><thead><tr>'
+          '<th>Data</th><th>Score</th><th>Grade</th><th>Critici</th><th>Origine</th>'
+          f'</tr></thead><tbody>{righe_storico}</tbody></table></div>'
+          '</div>'
+    )
+
 
 
 def _tab_pages(latest: dict | None) -> str:
@@ -850,35 +889,105 @@ def _tab_pages(latest: dict | None) -> str:
 
 
 
+def _status_pill(stato: str) -> str:
+    """Pastiglia di stato con icona, al posto del solo testo."""
+    icone = {
+        "ok": '<polyline points="20 6 9 17 4 12"/>',
+        "warn": '<path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>',
+        "fail": '<circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>',
+        "unknown": '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+    }
+    etichette = {"ok": "OK", "warn": "DA MIGLIORARE", "fail": "CRITICO", "unknown": "N.D."}
+    classe = stato if stato in ("ok", "warn", "fail") else "na"
+    return (f'<span class="status-pill {classe}">'
+            f'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" '
+            f'aria-hidden="true">{icone.get(stato, icone["unknown"])}</svg>'
+            f'{etichette.get(stato, "N.D.")}</span>')
+
+
+def _check_table(righe: list, titolo: str, sottotitolo: str) -> str:
+    """Tabella di controlli che sotto i 700px diventa schede impilate."""
+    if not righe:
+        return ""
+    corpo = "".join(
+        '<tr>'
+        f'<td class="check-name">{geo_audit.esc(r["title"])}</td>'
+        f'<td>{_status_pill(r["status"])}</td>'
+        f'<td class="detail-text">{geo_audit.esc(r.get("detail") or "\u2014")}</td>'
+        f'<td class="reco-text">{geo_audit.esc(r.get("recommendation") or "\u2014")}</td>'
+        '</tr>'
+        for r in righe
+    )
+    schede = "".join(
+        '<div class="check-card">'
+        f'<div class="check-card-top"><span class="check-name">{geo_audit.esc(r["title"])}</span>'
+        f'{_status_pill(r["status"])}</div>'
+        f'<div class="check-card-detail">{geo_audit.esc(r.get("detail") or "")}</div>'
+        + (f'<div class="check-card-reco">{geo_audit.esc(r["recommendation"])}</div>'
+           if r.get("recommendation") else '') +
+        '</div>'
+        for r in righe
+    )
+    return (
+        '<div class="data-card">'
+        f'<div class="card-header"><div class="card-title">{geo_audit.esc(titolo)}</div>'
+        f'<div class="card-sub">{geo_audit.esc(sottotitolo)}</div></div>'
+        '<div class="table-scroll check-table"><table class="data-grid"><thead><tr>'
+        '<th>Check</th><th>Stato</th><th>Dettaglio</th><th>Raccomandazione</th>'
+        f'</tr></thead><tbody>{corpo}</tbody></table></div>'
+        f'<div class="check-cards">{schede}</div>'
+        '</div>'
+    )
+
+
 def _tab_technical(latest: dict | None) -> str:
     if not latest:
-        return '<p class="card-sub">Nessun audit ancora eseguito.</p>'
+        return '<div class="data-card"><div class="no-rows">Nessun audit ancora eseguito.</div></div>'
 
     site_checks = [c for c in (latest.get("site_checks") or []) if c.get("id", "").startswith("crawl.")]
-    rows_access = [{"title": c["title"], "status": c["status"], "detail": c.get("detail"),
-                     "recommendation": c.get("recommendation")} for c in site_checks]
+    accesso = [{"title": c["title"], "status": c["status"], "detail": c.get("detail"),
+                "recommendation": c.get("recommendation")} for c in site_checks]
 
     pages_detail = latest.get("pages_detail") or []
     for check_id in ("meta.canonical", "render.parity"):
         agg = _aggregate_page_check(pages_detail, check_id)
         if agg.get("total"):
-            rows_access.append({"title": agg["title"], "status": agg["status"],
-                                 "detail": f'{agg["ok"]}/{agg["total"]} pagine OK',
-                                 "recommendation": agg.get("recommendation")})
+            accesso.append({"title": agg["title"], "status": agg["status"],
+                            "detail": f'{agg["ok"]}/{agg["total"]} pagine OK',
+                            "recommendation": agg.get("recommendation")})
 
-    rows_structured = []
+    strutturati = []
     for check_id in ("sd.present", "sd.valid", "sd.highvalue", "sd.completeness", "sd.sameas",
-                      "trust.contact", "trust.social", "trust.author", "sem.html"):
+                     "trust.contact", "trust.social", "trust.author", "sem.html"):
         agg = _aggregate_page_check(pages_detail, check_id)
         if agg.get("total"):
-            rows_structured.append({"title": agg["title"], "status": agg["status"],
-                                     "detail": f'{agg["ok"]}/{agg["total"]} pagine OK',
-                                     "recommendation": agg.get("recommendation")})
+            strutturati.append({"title": agg["title"], "status": agg["status"],
+                                "detail": f'{agg["ok"]}/{agg["total"]} pagine OK',
+                                "recommendation": agg.get("recommendation")})
+
+    tutti = accesso + strutturati
+    superati = len([r for r in tutti if r["status"] == "ok"])
+    da_migliorare = len([r for r in tutti if r["status"] in ("warn", "fail")])
+
+    riepilogo = (
+        '<div class="tech-summary">'
+        '<div class="kpi"><div class="kpi-label">Check superati</div>'
+        f'<div class="kpi-value good">{superati} / {len(tutti)}</div></div>'
+        '<div class="kpi"><div class="kpi-label">Da migliorare</div>'
+        f'<div class="kpi-value {"warn" if da_migliorare else "good"}">{da_migliorare}</div></div>'
+        '<div class="kpi"><div class="kpi-label">Ultimo controllo</div>'
+        f'<div class="kpi-value" style="font-size:16px">{_fmt_date(latest.get("created_at"))}</div></div>'
+        '</div>'
+    )
 
     return (
-        f'<div class="card-title" style="margin-bottom:10px">Accesso crawler e infrastruttura</div>{_checks_table(rows_access)}'
-        f'<div class="card-title" style="margin:20px 0 10px">Dati strutturati ed entity signals</div>{_checks_table(rows_structured)}'
+        riepilogo
+        + _check_table(accesso, "Accesso crawler e infrastruttura",
+                       "Verifica che i crawler AI possano raggiungere e leggere il sito.")
+        + _check_table(strutturati, "Dati strutturati ed entity signals",
+                       "Quanto il sito si fa capire: schema, contatti, profili, semantica.")
     )
+
 
 
 def _tab_opportunities(project_id: str) -> str:
@@ -916,18 +1025,60 @@ def _tracking_badge(project_id: str) -> str:
 
 
 def _tracking_snippet_html(project_id: str) -> str:
-    tag = (f'&lt;script src="{SITE_URL}/static/js/geo-track.js" '
-           f'data-project="{project_id}" async&gt;&lt;/script&gt;')
-    return (
-        '<div class="card-title" style="margin-bottom:8px">Snippet di tracking</div>'
-        '<p class="card-sub" style="margin-bottom:10px">Incolla questo tag prima della chiusura di '
-        '<code>&lt;/head&gt;</code> sul tuo sito. Gli eventi compaiono qui entro pochi minuti dalla prima visita.</p>'
-        '<pre style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);'
-        f'padding:12px 14px;overflow-x:auto;font-family:var(--font-mono);font-size:12.5px;color:var(--text-2);'
-        f'margin:0">{tag}</pre>'
-        '<p class="card-sub" style="margin-top:10px">Per registrare una conversione (es. invio form, prenotazione): '
-        '<code>window.geoTrack("nome_evento")</code>.</p>'
+    """Snippet di tracking in un blocco di codice con bottone Copia."""
+    src = f"{SITE_URL}/static/js/geo-track.js" if SITE_URL else "/static/js/geo-track.js"
+    grezzo = f'<script src="{src}" data-project="{project_id}" async></script>'
+    colorato = (
+        '&lt;<span class="tag">script</span> '
+        '<span class="attr">src</span>=<span class="str">"' + geo_audit.esc(src) + '"</span> '
+        '<span class="attr">data-project</span>=<span class="str">"' + geo_audit.esc(project_id) + '"</span> '
+        '<span class="attr">async</span>&gt;&lt;/<span class="tag">script</span>&gt;'
     )
+    evento_grezzo = 'window.geoTrack("conversione", {valore: 100});'
+    evento_colorato = (
+        '<span class="tag">window</span>.geoTrack(<span class="str">"conversione"</span>, '
+        '{valore: <span class="attr">100</span>});'
+    )
+
+    def blocco(id_, etichetta, html_colorato, testo_grezzo):
+        return (
+            '<div class="code-block">'
+            '<div class="code-block-header">'
+            f'<span class="code-block-label">{etichetta}</span>'
+            f'<button class="copy-btn" data-copia="{id_}" data-testo="{geo_audit.esc(testo_grezzo)}">'
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+            '<rect x="9" y="9" width="13" height="13" rx="2"/>'
+            '<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+            '<span>Copia</span></button>'
+            '</div>'
+            f'<div class="code-content"><code id="{id_}">{html_colorato}</code></div>'
+            '</div>'
+        )
+
+    return (
+        '<p class="card-desc" style="margin-bottom:10px">Incolla questo snippet '
+        'prima della chiusura di <code>&lt;/body&gt;</code> su ogni pagina del sito:</p>'
+        + blocco("snippetTracking", "HTML", colorato, grezzo)
+        + '<p class="card-desc" style="margin:14px 0 10px">Per registrare una conversione '
+          '(invio form, prenotazione, acquisto):</p>'
+        + blocco("snippetEvento", "JavaScript", evento_colorato, evento_grezzo)
+        + """<script>
+        document.querySelectorAll('.copy-btn[data-copia]').forEach(function(b){
+          if (b.dataset.pronto) return;
+          b.dataset.pronto = "1";
+          b.addEventListener('click', function(){
+            navigator.clipboard.writeText(b.dataset.testo).then(function(){
+              const et = b.querySelector('span');
+              const prima = et.textContent;
+              et.textContent = '\u2713 Copiato';
+              b.classList.add('copied');
+              setTimeout(function(){ et.textContent = prima; b.classList.remove('copied'); }, 1800);
+            });
+          });
+        });
+        </script>"""
+    )
+
 
 
 def _tab_traffic(project: dict) -> str:
@@ -1010,41 +1161,44 @@ def _tab_traffic(project: dict) -> str:
 
 def _tab_settings(project: dict) -> str:
     freq = project.get("scan_frequency") or "weekly"
-    freq_options = "".join(
+    opzioni = "".join(
         f'<option value="{key}"{" selected" if key == freq else ""}>{label}</option>'
         for key, label in _SCAN_FREQUENCY_LABELS.items()
     )
-    tracking_installed = _sb_has_tracking(project["id"])
-    tracking_status = ('<span class="badge badge--success"><span class="dot"></span>Installato</span>'
-                        if tracking_installed else
-                        '<span class="badge badge--neutral">Non ancora rilevato</span>')
+    installato = _sb_has_tracking(project["id"])
+    stato = ('<span class="badge good">Installato</span>' if installato
+             else '<span class="badge neutral">Non ancora rilevato</span>')
+
     return (
-        '<div class="card"><div class="card-title">Informazioni progetto</div>'
-        f'<form method="post" action="/project/{project["id"]}/settings" class="settings-form">'
-        '<div class="field"><label for="name">Nome progetto</label>'
-        f'<input class="input" id="name" name="name" value="{geo_audit.esc(project.get("name") or "")}" required></div>'
-        '<div class="field"><label for="sector">Settore (opzionale)</label>'
-        f'<input class="input" id="sector" name="sector" value="{geo_audit.esc(project.get("sector") or "")}" '
-        'placeholder="es. Hospitality, Retail…"></div>'
-        '<div class="field"><label>Dominio</label>'
-        f'<input class="input" value="{geo_audit.esc(project.get("domain") or "")}" disabled></div>'
-        '<div class="field"><label for="scan_frequency">Audit automatico</label>'
-        f'<select class="input" id="scan_frequency" name="scan_frequency">{freq_options}</select>'
-        f'<span class="hint">Prossimo audit automatico: {geo_audit.esc(_fmt_date(project.get("next_scan_at")))}</span></div>'
-        '<button type="submit" class="btn btn--primary" style="margin-top:8px">Salva</button>'
+        '<div class="settings-card">'
+        '<div class="card-title">Informazioni progetto</div>'
+        f'<form method="post" action="/project/{project["id"]}/settings">'
+        '<div class="form-grid-2">'
+        '<div class="form-row"><label class="form-label" for="name">Nome progetto</label>'
+        f'<input class="form-input" id="name" name="name" '
+        f'value="{geo_audit.esc(project.get("name") or "")}" required></div>'
+        '<div class="form-row"><label class="form-label" for="sector">Settore (opzionale)</label>'
+        f'<input class="form-input" id="sector" name="sector" '
+        f'value="{geo_audit.esc(project.get("sector") or "")}" placeholder="es. Hospitality, Retail\u2026"></div>'
+        '</div>'
+        '<div class="form-grid-2">'
+        '<div class="form-row"><label class="form-label">Dominio</label>'
+        f'<input class="form-input" value="{geo_audit.esc(project.get("domain") or "")}" disabled>'
+        '<div class="form-hint">Il dominio non si cambia: analizzarne un altro significa '
+        'creare un progetto nuovo.</div></div>'
+        '<div class="form-row"><label class="form-label" for="scan_frequency">Audit automatico</label>'
+        f'<select class="form-select" id="scan_frequency" name="scan_frequency">{opzioni}</select>'
+        f'<div class="form-hint">Prossimo: {geo_audit.esc(_fmt_date(project.get("next_scan_at")))}</div></div>'
+        '</div>'
+        '<button type="submit" class="btn btn-primary" style="margin-top:6px">Salva modifiche</button>'
         '</form></div>'
 
-        f'<div class="card" style="margin-top:16px">'
-        f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
-        f'<span class="card-title" style="margin:0">Tracking</span>{tracking_status}</div>'
-        f'{_tracking_snippet_html(project["id"])}</div>'
-
-        '<div class="card coming-soon-card" style="margin-top:16px">'
-        '<span class="badge badge--neutral"><span class="dot"></span>Coming soon</span>'
-        '<h2 class="card-title" style="margin-top:12px">Conversion event personalizzati</h2>'
-        '<p class="card-sub">Configurazione guidata degli eventi di conversione (oggi disponibile solo via '
-        '<code>window.geoTrack()</code> lato codice) non ancora disponibile da qui.</p></div>'
+        '<div class="settings-card">'
+        f'<div class="settings-head"><span class="card-title" style="margin:0">Tracking del traffico AI</span>{stato}</div>'
+        f'{_tracking_snippet_html(project["id"])}'
+        '</div>'
     )
+
 
 
 def _project_actions(project: dict) -> str:

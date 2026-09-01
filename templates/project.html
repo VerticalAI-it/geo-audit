@@ -14,37 +14,6 @@
   /* Stili dei contenuti dei tab non ancora ridisegnati. Ogni volta che un tab
      passa al nuovo design system, le sue regole spariscono da qui. */
 
-  .ov-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px;}
-  .ov-score-row{display:flex; align-items:center; gap:12px; margin-top:8px;}
-
-  .score-block{
-    border-radius:var(--radius-md); display:flex; flex-direction:column;
-    align-items:center; justify-content:center; flex-shrink:0;
-    border:1px solid var(--border-subtle);
-  }
-  .score-block .num{font-family:var(--font-display); font-weight:600; line-height:1; font-variant-numeric:tabular-nums;}
-  .score-block .grd{font-family:var(--font-mono); font-size:10px; margin-top:2px; color:var(--text-muted);}
-  .score-ottimo{background:var(--state-good-dim); border-color:var(--state-good-dim);}
-  .score-ottimo .num{color:var(--state-good);}
-  .score-migliorabile{background:var(--state-warn-dim); border-color:var(--state-warn-dim);}
-  .score-migliorabile .num{color:var(--state-warn);}
-  .score-critico{background:var(--state-critical-dim); border-color:var(--state-critical-dim);}
-  .score-critico .num{color:var(--state-critical);}
-  .score-unknown{background:var(--bg-surface-raised); border-color:var(--border-subtle);}
-  .score-unknown .num{color:var(--text-muted);}
-
-  .delta-block{display:flex; flex-direction:column; align-items:flex-start; gap:6px;}
-  .delta-pill{font-family:var(--font-mono); font-size:16px; font-weight:700; padding:5px 12px; border-radius:999px; line-height:1;}
-  .delta-up{background:var(--state-good-dim); color:var(--state-good);}
-  .delta-down{background:var(--state-critical-dim); color:var(--state-critical);}
-  .delta-flat{background:var(--bg-surface-raised); color:var(--text-muted);}
-  .delta-text{font-size:12px; color:var(--text-muted);}
-
-  .txt-ottimo{color:var(--state-good);}
-  .txt-migliorabile{color:var(--state-warn);}
-  .txt-critico{color:var(--state-critical);}
-  .txt-unknown{color:var(--text-muted);}
-
   .mini-stat-row{display:flex; gap:10px; flex-wrap:wrap;}
   .mini-stat{
     flex:1; min-width:110px; border-radius:var(--radius-md);
@@ -69,21 +38,6 @@
   .section-stat-label{display:block; font-family:var(--font-mono); font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-top:5px;}
   .coming-soon-card .section-stat-num{color:var(--text-muted);}
   .section-card-link{display:block; margin-top:10px; font-size:12.5px; font-weight:600; color:var(--accent-primary);}
-
-  .area-row{display:flex; align-items:center; gap:12px; padding:8px 0;}
-  .area-label{width:180px; flex-shrink:0; font-size:13.5px; color:var(--text-secondary);}
-  .area-bar-track{flex:1; height:8px; border-radius:999px; background:var(--bg-surface-raised); overflow:hidden;}
-  .area-bar-fill{height:100%; border-radius:999px;}
-  .area-bar-fill.score-ottimo{background:var(--state-good);}
-  .area-bar-fill.score-migliorabile{background:var(--state-warn);}
-  .area-bar-fill.score-critico{background:var(--state-critical);}
-  .area-score{width:32px; text-align:right; font-family:var(--font-mono); font-size:12.5px; color:var(--text-muted);}
-
-  .audit-head-row{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
-  .action-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px;}
-  .action-row{border-bottom:1px solid var(--border-subtle); padding-bottom:12px;}
-  .action-row:last-child{border-bottom:none; padding-bottom:0;}
-  .settings-form{display:flex; flex-direction:column; gap:16px; max-width:420px;}
 
   /* grafico storico del punteggio (già interattivo, solo ricolorato) */
   .score-history-head{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px;}
@@ -117,7 +71,6 @@
   @media (max-width:560px){
     .score-history-body{flex-direction:column;}
     .score-history-current-wrap{flex-direction:row; align-items:baseline; gap:8px;}
-    .area-label{width:120px;}
   }
 </style>
 </head>
