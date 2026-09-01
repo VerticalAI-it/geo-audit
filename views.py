@@ -192,6 +192,272 @@ def _category_for_tab(tab: str) -> str:
     return "overview"
 
 
+# ── Sezioni dimostrative ─────────────────────────────────────────────────────
+#
+# Decisione di prodotto del 1 settembre 2026: le sezioni non ancora attive
+# mostrano dati realistici con un banner esplicito, invece di una scatola vuota.
+# Sostituisce la regola precedente ("mai dati simulati"), che vietava anche
+# questo. Il banner e' obbligatorio: senza, sarebbero numeri finti spacciati
+# per veri.
+#
+# I dati qui dentro sono FISSI e non provengono da nessuna misurazione. Quando
+# una sezione diventa reale, si toglie la voce da _SEZIONI_CAMPIONE e si scrive
+# la funzione vera.
+
+def _banner_campione(dominio: str, cosa_serve: str) -> str:
+    return (
+        '<div class="sample-banner">'
+        '<div class="sample-banner-left">'
+        '<div class="sample-icon">'
+        '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" '
+        'stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/>'
+        '<path d="M12 8v4l3 2"/></svg>'
+        '</div>'
+        '<div class="sample-text">'
+        '<div class="label">Report di esempio</div>'
+        f'<div class="desc">Questi sono <b>dati dimostrativi</b>, non misurazioni di '
+        f'<b>{geo_audit.esc(dominio)}</b>. {geo_audit.esc(cosa_serve)}</div>'
+        '</div></div>'
+        f'<a class="btn btn-primary" href="mailto:geo@verticalai.it'
+        f'?subject=Attivazione%20monitoraggio%20per%20{geo_audit.esc(dominio)}">'
+        'Richiedi l\'attivazione</a>'
+        '</div>'
+    )
+
+
+def _barra_semplice(valore: int, classe: str = "warn") -> str:
+    return (f'<div class="area-track"><div class="area-fill {classe}" '
+            f'style="--w:{valore}%"></div></div>')
+
+
+def _campione_ai_visibility(dominio: str) -> str:
+    motori = [("ChatGPT", 34, "warn"), ("Perplexity", 41, "warn"),
+              ("Gemini", 22, "critical"), ("Google AI Overview", 18, "critical"),
+              ("Claude", 12, "critical")]
+    righe_motori = "".join(
+        f'<div class="engine-row"><div class="engine-name">{geo_audit.esc(n)}</div>'
+        f'{_barra_semplice(v, c)}<div class="area-value">{v}%</div></div>'
+        for n, v, c in motori
+    )
+    argomenti = [("selle e accessori equitazione", 38, "+6"), ("abbigliamento da equitazione", 26, "+2"),
+                 ("cura del cavallo", 19, "-3"), ("attrezzatura scuderia", 11, "0")]
+    righe_arg = "".join(
+        f'<tr><td class="topic-name">{geo_audit.esc(t)}</td>'
+        f'<td><span class="score-cell {"warn" if v >= 25 else "critical"}">{v}%</span></td>'
+        f'<td><span class="{"trend-up" if d.startswith("+") else ("trend-down" if d.startswith("-") else "trend-flat")}">{d}</span></td></tr>'
+        for t, v, d in argomenti
+    )
+    return (
+        '<div class="hero-row">'
+        '<div class="hero-card">'
+        '<div class="gauge-wrap">'
+        '<svg viewBox="0 0 150 90" width="150" height="90" aria-hidden="true">'
+        '<defs><linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">'
+        '<stop offset="0%" stop-color="var(--state-critical)"/>'
+        '<stop offset="100%" stop-color="var(--state-warn)"/></linearGradient></defs>'
+        '<path d="M 10 85 A 65 65 0 0 1 140 85" fill="none" stroke="var(--bg-surface-raised)" '
+        'stroke-width="14" stroke-linecap="round"/>'
+        # 204 e' la lunghezza del semicerchio (pi greco per il raggio 65). Per
+        # mostrare 29 su 100 l'arco pieno deve essere il 29%: 204 * (1 - 0,29).
+        # Il prototipo aveva 169, che disegnava il 17% accanto al numero 29.
+        '<path d="M 10 85 A 65 65 0 0 1 140 85" fill="none" stroke="url(#gaugeGrad)" '
+        'stroke-width="14" stroke-linecap="round" stroke-dasharray="204" stroke-dashoffset="145"/>'
+        '</svg>'
+        '<div class="gauge-center"><div class="gauge-score">29<span class="gauge-max">/100</span></div></div>'
+        '</div>'
+        '<div class="gauge-label critical">Visibilità bassa</div>'
+        '<div class="hero-note">Citato raramente nelle risposte AI rispetto ai competitor diretti.</div>'
+        '</div>'
+        '<div class="card">'
+        '<div class="hero-side-top"><div class="hero-side-title">Andamento visibilità (6 mesi)</div></div>'
+        '<div class="chart"><svg viewBox="0 0 600 130" preserveAspectRatio="none" aria-hidden="true">'
+        '<polyline points="0,40 100,50 200,60 300,55 400,70 500,50 600,35" fill="none" '
+        'stroke="var(--state-good)" stroke-width="2.5"/>'
+        '<polyline points="0,80 100,78 200,85 300,90 400,88 500,92 600,86" fill="none" '
+        'stroke="var(--accent-primary)" stroke-width="2.5"/>'
+        '<polyline points="0,95 100,90 200,88 300,80 400,75 500,70 600,68" fill="none" '
+        'stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3"/>'
+        '</svg></div>'
+        '<div class="chart-legend">'
+        '<div class="legend-item"><span class="legend-dot" style="background:var(--state-good)"></span>Miglior competitor</div>'
+        f'<div class="legend-item"><span class="legend-dot" style="background:var(--accent-primary)"></span>{geo_audit.esc(dominio)}</div>'
+        '<div class="legend-item"><span class="legend-dot" style="background:var(--text-muted)"></span>Media di settore</div>'
+        '</div></div></div>'
+
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Distribuzione per motore AI</div>'
+        '<div class="card-desc">Quanto spesso il sito compare nelle risposte di ciascun assistente</div></div>'
+        f'<div style="padding:8px 20px 16px">{righe_motori}</div></div>'
+
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Argomenti monitorati</div></div>'
+        '<div class="table-scroll"><table class="data-grid"><thead><tr>'
+        '<th>Argomento</th><th>Visibilità</th><th>Variazione</th>'
+        f'</tr></thead><tbody>{righe_arg}</tbody></table></div></div>'
+    )
+
+
+def _campione_prompts(dominio: str) -> str:
+    righe = [("Qual è la migliore sella da dressage?", "informazionale", 41, 3, "alto"),
+             ("Dove comprare accessori per equitazione online", "transazionale", 28, 2, "alto"),
+             ("Come scegliere la taglia di una sella", "informazionale", 22, 1, "medio"),
+             ("Migliori marche di abbigliamento equestre", "comparativo", 17, 1, "medio"),
+             ("Manutenzione della sella in cuoio", "informazionale", 9, 0, "basso")]
+    corpo = "".join(
+        f'<tr><td class="topic-name">{geo_audit.esc(p)}</td>'
+        f'<td><span class="url-type">{geo_audit.esc(i)}</span></td>'
+        f'<td><span class="score-cell {"warn" if v >= 20 else "critical"}">{v}%</span></td>'
+        f'<td><span class="issue-count">{m}</span></td>'
+        f'<td><span class="url-type">{geo_audit.esc(vol)}</span></td></tr>'
+        for p, i, v, m, vol in righe
+    )
+    return (
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Prompt monitorati</div>'
+        '<div class="card-desc">Domande poste agli assistenti per verificare se il sito viene citato</div></div>'
+        '<div class="table-scroll"><table class="data-grid"><thead><tr>'
+        '<th>Prompt</th><th>Intento</th><th>Visibilità</th><th>Tue menzioni</th><th>Volume AI</th>'
+        f'</tr></thead><tbody>{corpo}</tbody></table></div></div>'
+        '<div class="data-card"><div class="section-header">'
+        '<div class="section-title">Come si scelgono i prompt</div></div>'
+        '<div style="padding:14px 20px"><p class="card-desc">Il monitoraggio usa domande '
+        '<b>non di marca</b>: chiedere «cosa vendete» darebbe sempre una citazione e non '
+        'misurerebbe nulla. Contano le domande che un cliente farebbe <i>prima</i> di '
+        'conoscervi.</p></div></div>'
+    )
+
+
+def _campione_competitors(dominio: str) -> str:
+    righe = [(dominio, 12, "neutro", 34, "0", True),
+             ("competitor-alfa.com", 31, "positivo", 88, "+7", False),
+             ("competitor-beta.it", 24, "positivo", 67, "+2", False),
+             ("competitor-gamma.eu", 19, "neutro", 52, "-4", False),
+             ("competitor-delta.com", 14, "neutro", 39, "+1", False)]
+    corpo = "".join(
+        f'<tr><td class="check-name">{geo_audit.esc(d)}'
+        + (' <span class="badge neutral">tu</span>' if tuo else '') + '</td>'
+        f'<td><span class="score-cell {"critical" if sov < 15 else "warn" if sov < 25 else "good"}">{sov}%</span></td>'
+        f'<td><span class="url-type">{geo_audit.esc(sent)}</span></td>'
+        f'<td><span class="issue-count">{men}</span></td>'
+        f'<td><span class="{"trend-up" if t.startswith("+") else ("trend-down" if t.startswith("-") else "trend-flat")}">{t}</span></td></tr>'
+        for d, sov, sent, men, t, tuo in righe
+    )
+    return (
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Insight generati</div></div>'
+        '<div style="padding:14px 20px"><p class="card-desc">Su un campione di prompt di settore, '
+        '<b>competitor-alfa.com</b> viene citato quasi tre volte più spesso. Il divario più ampio '
+        'è sulle domande comparative, dove il sito non compare mai.</p></div></div>'
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Confronto dettagliato</div></div>'
+        '<div class="table-scroll"><table class="data-grid"><thead><tr>'
+        '<th>Dominio</th><th>Share of Voice</th><th>Sentiment</th><th>Menzioni (30gg)</th><th>Trend</th>'
+        f'</tr></thead><tbody>{corpo}</tbody></table></div></div>'
+    )
+
+
+def _campione_citations(dominio: str) -> str:
+    pagine = [("/selle-dressage", 14, "ChatGPT, Perplexity"),
+              ("/guida-taglie", 9, "Perplexity"),
+              ("/", 6, "ChatGPT, Gemini"),
+              ("/manutenzione-cuoio", 3, "Perplexity")]
+    corpo_pagine = "".join(
+        f'<tr><td class="url-main">{geo_audit.esc(p)}</td>'
+        f'<td><span class="issue-count">{n}</span></td>'
+        f'<td class="detail-text">{geo_audit.esc(m)}</td></tr>'
+        for p, n, m in pagine
+    )
+    terze = [("forum-equitazione.it", 11, "positivo"),
+             ("rivista-cavalli.com", 7, "neutro"),
+             ("blog-dressage.eu", 4, "positivo")]
+    corpo_terze = "".join(
+        f'<tr><td class="url-main">{geo_audit.esc(d)}</td>'
+        f'<td><span class="issue-count">{n}</span></td>'
+        f'<td><span class="url-type">{geo_audit.esc(s)}</span></td></tr>'
+        for d, n, s in terze
+    )
+    return (
+        '<div class="kpi-strip">'
+        '<div class="kpi"><div class="kpi-top"><span class="kpi-label">Citazioni dirette (30gg)</span></div>'
+        '<div class="kpi-value">32</div><div class="kpi-sub">il sito citato come fonte</div></div>'
+        '<div class="kpi"><div class="kpi-top"><span class="kpi-label">Pagine citate</span></div>'
+        '<div class="kpi-value">4</div><div class="kpi-sub">su 6 analizzate</div></div>'
+        '<div class="kpi"><div class="kpi-top"><span class="kpi-label">Fonti terze</span></div>'
+        '<div class="kpi-value">22</div><div class="kpi-sub">menzioni su altri domini</div></div>'
+        '<div class="kpi"><div class="kpi-top"><span class="kpi-label">Sentiment medio</span></div>'
+        '<div class="kpi-value good">positivo</div><div class="kpi-sub">su 54 menzioni</div></div>'
+        '</div>'
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Citazioni dirette del sito</div>'
+        '<div class="card-desc">Quando un assistente indica una vostra pagina come fonte</div></div>'
+        '<div class="table-scroll"><table class="data-grid"><thead><tr>'
+        '<th>Pagina</th><th>Citazioni</th><th>Dove</th>'
+        f'</tr></thead><tbody>{corpo_pagine}</tbody></table></div></div>'
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Fonti terze che parlano del brand</div>'
+        '<div class="card-desc">Domini esterni citati dalle AI parlando di voi: sono due fenomeni '
+        'distinti e restano separati anche nei dati</div></div>'
+        '<div class="table-scroll"><table class="data-grid"><thead><tr>'
+        '<th>Dominio</th><th>Menzioni</th><th>Sentiment</th>'
+        f'</tr></thead><tbody>{corpo_terze}</tbody></table></div></div>'
+    )
+
+
+def _campione_reports(dominio: str) -> str:
+    avvisi = [("Variazione del punteggio", "Quando il GEO Score cambia di oltre 5 punti fra due audit."),
+              ("Nuova criticità grave", "Quando compare un problema di severità alta o critica."),
+              ("Digest settimanale", "Il lunedì mattina, il riepilogo di tutti i progetti.")]
+    righe = "".join(
+        '<div class="alert-row">'
+        f'<div class="alert-text"><b>{geo_audit.esc(t)}</b><p>{geo_audit.esc(d)}</p></div>'
+        '<div class="toggle-switch off" aria-hidden="true"></div>'
+        '</div>'
+        for t, d in avvisi
+    )
+    return (
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Digest settimanale (esempio)</div></div>'
+        '<div style="padding:16px 20px">'
+        '<div class="mail-mock">'
+        '<div class="mail-mock-head">'
+        f'<div class="mail-mock-subject">GEO Audit \u00b7 {geo_audit.esc(dominio)}: '
+        'il punto della settimana</div>'
+        '<div class="mail-mock-meta">da geo@verticalai.it \u00b7 luned\u00ec, 07:00</div>'
+        '</div>'
+        '<div class="mail-mock-body">'
+        'Il punteggio è passato da <b>78</b> a <b>82</b> (+4).<br>'
+        'Sono state risolte <b>3 criticità</b>, una nuova è comparsa su <b>/contatti</b>.<br>'
+        'Nessun calo di traffico dagli assistenti AI.<br><br>'
+        'L\'intervento con più impatto questa settimana: <b>aggiungere la meta description</b> '
+        'alle 3 pagine che ne sono prive.'
+        '</div></div></div></div>'
+        '<div class="data-card">'
+        '<div class="section-header"><div class="section-title">Avvisi configurabili</div>'
+        '<div class="card-desc">Non ancora attivabili: richiedono il sistema di notifiche</div></div>'
+        f'<div style="padding:4px 20px 14px">{righe}</div></div>'
+    )
+
+
+_SEZIONI_CAMPIONE = {
+    "ai-visibility": (_campione_ai_visibility,
+        "Serve il monitoraggio dei prompt su ChatGPT, Gemini e Perplexity per avere i numeri veri."),
+    "prompts": (_campione_prompts,
+        "Serve il monitoraggio dei prompt per sapere su quali domande il sito compare."),
+    "competitors": (_campione_competitors,
+        "Serve il monitoraggio dei prompt e l'elenco dei concorrenti da confrontare."),
+    "citations": (_campione_citations,
+        "Serve l'osservazione delle citazioni nelle risposte degli assistenti."),
+    "reports": (_campione_reports,
+        "Serve almeno un modulo di monitoraggio attivo da cui generare avvisi."),
+}
+
+
+def _tab_campione(chiave: str, dominio: str) -> str:
+    """Sezione non ancora attiva, resa con dati dimostrativi e banner esplicito."""
+    costruisci, cosa_serve = _SEZIONI_CAMPIONE[chiave]
+    return _banner_campione(dominio, cosa_serve) + costruisci(dominio)
+
+
 def _coming_soon_tab(title: str, description: str) -> str:
     return (
         '<div class="card coming-soon-card">'

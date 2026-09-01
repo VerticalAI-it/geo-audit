@@ -21,10 +21,10 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_issue_sync, _sb_issues_by_project, _sb_patch, _sb_project_bump_scan, \
     _sb_project_claim_due, _sb_project_get, _sb_project_patch, _sb_project_upsert, \
     _sb_projects_by_user
-from views import _COMING_SOON_TABS, _TAB_CATEGORIES, _coming_soon_tab, \
+from views import _COMING_SOON_TABS, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, _coming_soon_tab, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
-    _project_status, _sidebar, _subtabs, _tab_audit, _tab_opportunities, _tab_overview, \
-    _tab_pages, _tab_settings, _tab_technical, _tab_traffic, _ultimi_run_section
+    _project_status, _sidebar, _subtabs, _tab_audit, _tab_campione, _tab_opportunities, \
+    _tab_overview, _tab_pages, _tab_settings, _tab_technical, _tab_traffic, _ultimi_run_section
 
 
 app = FastAPI(title="GEO Audit · verticalai")
@@ -1061,7 +1061,10 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
     latest_light = _ultimo[0] if _ultimo else None
     aperte = len([i for i in _sb_issues_by_project(project_id, status="open")])
 
-    if tab in _COMING_SOON_TABS:
+    if tab in _SEZIONI_CAMPIONE:
+        # sezione non ancora attiva: dati dimostrativi con banner esplicito
+        body = _tab_campione(tab, project.get("domain") or project.get("name") or "")
+    elif tab in _COMING_SOON_TABS:
         title, desc = _COMING_SOON_TABS[tab]
         body = _coming_soon_tab(title, desc)
     elif tab == "overview":

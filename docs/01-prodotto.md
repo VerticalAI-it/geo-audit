@@ -127,8 +127,17 @@ Privacy policy, cookie policy con banner, `/robots.txt`, `/sitemap.xml`,
 
 ## Cosa NON è disponibile
 
-Sono tutte assenze **note e volute** — la UI le dichiara esplicitamente invece di
-mostrare dati simulati. È una scelta di prodotto: mai numeri finti.
+Sono tutte assenze **note e volute**.
+
+> **Aggiornamento 1 settembre 2026.** Fino ad allora queste sezioni mostravano
+> una scatola vuota che dichiarava cosa mancava, per la regola «mai dati
+> simulati». La regola è cambiata: ora mostrano **dati dimostrativi con un
+> banner esplicito** che dice a chiare lettere che non sono misurazioni del sito
+> in esame. Motivo: una scatola vuota non fa capire al cliente cosa otterrà
+> attivando la funzione.
+>
+> Il banner è obbligatorio, e il principio di fondo resta: **un dato mostrato
+> senza etichetta dev'essere un dato misurato.** Vedi `CLAUDE.md`.
 
 | Funzionalità | Perché non c'è | Sbloccato da |
 |---|---|---|

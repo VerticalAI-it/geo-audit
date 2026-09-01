@@ -29,6 +29,23 @@ Prima di un intervento non banale, leggi il documento pertinente in `docs/`:
 Se una modifica invalida quanto scritto lì, aggiorna il documento nello stesso
 commit.
 
+## Sezioni non ancora attive: dati dimostrativi, mai impliciti
+
+**Regola cambiata il 1 settembre 2026.** Prima: «mai dati simulati, le sezioni
+non disponibili dichiarano cosa manca». Ora: le sezioni non ancora attive
+mostrano **dati dimostrativi realistici accompagnati da un banner esplicito**
+(`_banner_campione` in `views.py`), perché una scatola vuota non fa capire cosa
+si otterrà.
+
+Il banner **non è opzionale**: senza, sarebbero numeri finti spacciati per veri.
+Le sezioni interessate stanno in `_SEZIONI_CAMPIONE`; quando una diventa reale,
+si toglie da quel dizionario e si scrive la funzione vera.
+
+Resta invece pienamente in vigore il principio da cui la vecchia regola nasceva:
+**un dato mostrato senza etichetta deve essere un dato misurato.** Dove manca
+lo storico non si inventa una linea piatta — si scrive che lo storico non c'è
+(vedi le sparkline della dashboard).
+
 ## Invarianti da non rompere
 
 - **Direzione degli import**: `server.py` → `views.py` → `db.py` → `config.py`.
