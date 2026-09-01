@@ -678,26 +678,176 @@ def _tab_audit(latest: dict | None, history: list) -> str:
 
 
 def _tab_pages(latest: dict | None) -> str:
+    """Elenco delle pagine analizzate: ricerca, filtri, ordinamento, CSV.
+
+    Ordinamento e filtri sono lato client: il dataset e' una manciata di righe
+    (in produzione l'audit analizza 6 pagine) e tenerlo in pagina evita un
+    viaggio al server per ogni clic.
+    """
     if not latest:
-        return '<p class="card-sub">Nessun audit ancora eseguito.</p>'
-    pages = latest.get("pages_detail") or []
-    rows_html = "".join(
-        f'<tr><td data-label="URL"><a href="{geo_audit.esc(p.get("url", ""))}" target="_blank" '
-        f'rel="noopener">{geo_audit.esc(p.get("url", ""))}</a></td>'
-        f'<td data-label="Tipo">{geo_audit.esc(p.get("type") or "—")}</td>'
-        f'<td data-label="Score"><b>{p.get("score") if p.get("score") is not None else "—"}</b></td>'
-        f'<td data-label="Issue">{len([c for c in (p.get("checks") or []) if c.get("status") in ("warn", "fail")])}</td>'
-        f'<td data-label="Critici">{len([c for c in (p.get("checks") or []) if c.get("status") == "fail"])}</td></tr>'
-        for p in pages
-    )
+        return '<div class="data-card"><div class="no-rows">Nessun audit ancora eseguito.</div></div>'
+
+    pagine = latest.get("pages_detail") or []
+    dati = []
+    for p in pagine:
+        checks = p.get("checks") or []
+        dati.append({
+            "url": p.get("url") or "",
+            "tipo": p.get("type") or "",
+            "score": p.get("score"),
+            "issue": len([c for c in checks if c.get("status") in ("warn", "fail")]),
+            "critici": len([c for c in checks if c.get("status") == "fail"]),
+        })
+
+    tipi = sorted({d["tipo"] for d in dati if d["tipo"]})
+    opzioni = "".join(f'<option value="{geo_audit.esc(t)}">{geo_audit.esc(t)}</option>' for t in tipi)
+
     return (
-        '<div class="card" style="margin-bottom:16px">'
-        f'<a href="/r/{latest.get("id", "")}" class="btn btn--sm">Apri report completo per il dettaglio pagina-per-pagina →</a>'
+        '<div class="data-card">'
+
+        '<div class="callout-link">'
+        '<div class="callout-link-text">Il <b>report completo</b> contiene il dettaglio '
+        'di ogni controllo, pagina per pagina.</div>'
+        f'<a href="/r/{geo_audit.esc(latest.get("id", ""))}">Apri il report \u2192</a>'
         '</div>'
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr>'
-        '<th>URL</th><th>Tipo</th><th>Score</th><th>Issue</th><th>Critici</th>'
-        f'</tr></thead><tbody>{rows_html}</tbody></table></div>'
+
+        '<div class="section-header">'
+        '<div class="section-title">Pagine analizzate</div>'
+        '<div class="section-tools">'
+        '<div class="search-mini">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+        '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+        '<input type="text" id="pgCerca" placeholder="Cerca pagina o URL..." aria-label="Cerca fra le pagine">'
+        '</div>'
+        '<label class="filter-chip" for="pgTipo">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+        '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>'
+        f'<select id="pgTipo" aria-label="Filtra per tipo"><option value="">Tipo: tutti</option>{opzioni}</select>'
+        '</label>'
+        '<button class="filter-chip" id="pgSoloCritici" aria-pressed="false">Solo con critici</button>'
+        '<button class="filter-chip" id="pgCsv">\u2193 Esporta CSV</button>'
+        '</div></div>'
+
+        '<div class="table-scroll">'
+        '<table class="data-grid">'
+        '<thead><tr>'
+        '<th data-col="url">Pagina<span class="sort-icon">\u21c5</span></th>'
+        '<th data-col="tipo">Tipo<span class="sort-icon">\u21c5</span></th>'
+        '<th data-col="score" class="sorted">Score<span class="sort-icon">\u25be</span></th>'
+        '<th data-col="issue">Issue<span class="sort-icon">\u21c5</span></th>'
+        '<th data-col="critici">Critici<span class="sort-icon">\u21c5</span></th>'
+        '<th></th>'
+        '</tr></thead>'
+        '<tbody id="pgCorpo"></tbody>'
+        '</table></div>'
+        '<div class="table-footer"><span id="pgConteggio"></span>'
+        '<span>Ordina cliccando sull\'intestazione di una colonna</span></div>'
+        '</div>'
+
+        '<script>'
+        f'const PG_DATI = {json.dumps(dati)};'
+        r"""
+        (function(){
+          let ordine = {col: "score", verso: 1};   // 1 = crescente, -1 = decrescente
+          let soloCritici = false;
+
+          const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+            c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+          const classeScore = v => v == null ? "unknown"
+            : v >= 75 ? "good" : v >= 50 ? "warn" : "critical";
+
+          function visibili(){
+            const q = document.getElementById("pgCerca").value.trim().toLowerCase();
+            const tipo = document.getElementById("pgTipo").value;
+            return PG_DATI.filter(d => {
+              if (tipo && d.tipo !== tipo) return false;
+              if (soloCritici && !d.critici) return false;
+              if (q && !d.url.toLowerCase().includes(q) && !(d.tipo||"").toLowerCase().includes(q)) return false;
+              return true;
+            }).sort((a,b) => {
+              const x = a[ordine.col], y = b[ordine.col];
+              if (x == null && y == null) return 0;
+              if (x == null) return 1;
+              if (y == null) return -1;
+              if (typeof x === "number") return (x - y) * ordine.verso;
+              return String(x).localeCompare(String(y), "it") * ordine.verso;
+            });
+          }
+
+          function disegna(){
+            const righe = visibili();
+            const corpo = document.getElementById("pgCorpo");
+            corpo.innerHTML = righe.map(d => {
+              const cls = classeScore(d.score);
+              const punteggio = d.score == null ? "n.d." : d.score;
+              const barra = d.score == null ? "" :
+                '<span class="score-bar"><span class="score-bar-fill ' + cls +
+                '" style="width:' + d.score + '%"></span></span>';
+              return '<tr>'
+                + '<td><div class="url-cell"><div class="url-main">' + esc(d.url) + '</div></div></td>'
+                + '<td><span class="url-type">' + esc(d.tipo || "\u2014") + '</span></td>'
+                + '<td><div class="score-bar-wrap"><span class="score-cell ' + cls + '">'
+                +   punteggio + '</span>' + barra + '</div></td>'
+                + '<td><span class="issue-count">' + d.issue + '</span></td>'
+                + '<td><span class="score-cell ' + (d.critici ? "critical" : "good") + '">'
+                +   d.critici + '</span></td>'
+                + '<td class="row-action"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">Apri \u2192</a></td>'
+                + '</tr>';
+            }).join("") || '<tr><td colspan="6" class="no-rows">Nessuna pagina corrisponde ai filtri.</td></tr>';
+
+            document.getElementById("pgConteggio").textContent =
+              righe.length + (righe.length === 1 ? " pagina" : " pagine")
+              + (righe.length !== PG_DATI.length ? " su " + PG_DATI.length : "");
+
+            document.querySelectorAll(".data-grid thead th[data-col]").forEach(th => {
+              const attivo = th.dataset.col === ordine.col;
+              th.classList.toggle("sorted", attivo);
+              const ic = th.querySelector(".sort-icon");
+              if (ic) ic.textContent = attivo ? (ordine.verso === 1 ? "\u25b4" : "\u25be") : "\u21c5";
+            });
+          }
+
+          document.querySelectorAll(".data-grid thead th[data-col]").forEach(th => {
+            th.addEventListener("click", () => {
+              const col = th.dataset.col;
+              if (ordine.col === col) ordine.verso = -ordine.verso;
+              else ordine = {col: col, verso: col === "url" || col === "tipo" ? 1 : -1};
+              disegna();
+            });
+          });
+
+          document.getElementById("pgCerca").addEventListener("input", disegna);
+          document.getElementById("pgTipo").addEventListener("change", disegna);
+          document.getElementById("pgSoloCritici").addEventListener("click", function(){
+            soloCritici = !soloCritici;
+            this.classList.toggle("on", soloCritici);
+            this.setAttribute("aria-pressed", soloCritici ? "true" : "false");
+            disegna();
+          });
+
+          /* CSV generato in pagina: i dati sono gia' tutti qui, un endpoint
+             dedicato non aggiungerebbe nulla. */
+          document.getElementById("pgCsv").addEventListener("click", function(){
+            const righe = visibili();
+            const csv = ["URL;Tipo;Score;Issue;Critici"].concat(
+              righe.map(d => [d.url, d.tipo, d.score == null ? "" : d.score, d.issue, d.critici]
+                .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(";"))
+            ).join("\r\n");
+            const blob = new Blob(["\ufeff" + csv], {type: "text/csv;charset=utf-8"});
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "pagine-geo-audit.csv";
+            a.click();
+            URL.revokeObjectURL(a.href);
+          });
+
+          disegna();
+        })();
+        """
+        '</script>'
     )
+
 
 
 def _tab_technical(latest: dict | None) -> str:
