@@ -10,6 +10,7 @@ applicativo, non nel database: ogni route che legge dati di progetto deve
 verificare project["user_id"] == user["id"].
 """
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 import requests as req
@@ -425,3 +426,61 @@ def _sb_roadmap_iscrivi(email: str, feature: str | None = None) -> bool:
                  json={"event_name": _ROADMAP_ISCRIZIONE,
                        "properties": {"email": email, "feature": feature}})
     return r.status_code < 300
+
+
+# ── Dashboard: letture in blocco ────────────────────────────────────────────
+#
+# La dashboard costruiva le card ciclando sui progetti e chiedendo al database
+# gli audit e lo stato del tracking di ognuno: con 18 progetti erano 38 viaggi
+# in fila, e la pagina ci metteva quasi 6 secondi. Queste due funzioni fanno
+# lo stesso lavoro in 2 viaggi.
+
+def _sb_audits_by_user_grouped(user_id: str, per_progetto: int = 8) -> dict:
+    """Ultimi N audit di OGNI progetto dell'utente, con una sola richiesta.
+
+    Gli audit sono poche decine in tutto: si prendono ordinati dal più recente
+    e si raggruppano qui. Il tetto di 1000 righe è quello di PostgREST; se un
+    giorno lo si sfiorasse, questa funzione è il punto da cui paginare.
+    """
+    r = req.get(f"{SUPABASE_URL}/rest/v1/audits", headers=_SB_H, timeout=10,
+                params={"user_id": f"eq.{user_id}",
+                        # project_id NON è in _AUDIT_LIGHT_FIELDS: senza, il
+                        # raggruppamento qui sotto non saprebbe a quale progetto
+                        # appartiene ogni audit e tornerebbe sempre vuoto
+                        "select": _AUDIT_LIGHT_FIELDS + ",project_id,source",
+                        "order": "created_at.desc", "limit": "1000"})
+    if r.status_code >= 300:
+        return {}
+    per_id: dict = {}
+    for riga in r.json():
+        pid = riga.get("project_id")
+        if not pid:
+            continue
+        elenco = per_id.setdefault(pid, [])
+        if len(elenco) < per_progetto:
+            elenco.append(riga)
+    return per_id
+
+
+def _sb_projects_with_tracking(project_ids: list) -> set:
+    """Quali progetti hanno almeno un evento di tracking.
+
+    Qui una richiesta sola non basta: gli eventi sono migliaia e PostgREST ne
+    restituisce al massimo 1000, quindi un progetto con solo eventi vecchi
+    sfuggirebbe. Si fanno tante richieste quanti i progetti, ma **in
+    parallelo**: ognuna chiede una riga sola, e il tempo totale è quello della
+    più lenta invece della somma.
+    """
+    if not project_ids:
+        return set()
+
+    def ha_eventi(pid):
+        try:
+            r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                        params={"project_id": f"eq.{pid}", "select": "id", "limit": "1"})
+            return pid if r.status_code < 300 and r.json() else None
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=min(12, len(project_ids))) as pool:
+        return {pid for pid in pool.map(ha_eventi, project_ids) if pid}

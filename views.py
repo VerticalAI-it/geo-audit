@@ -71,26 +71,27 @@ def _run_score_cell(audit: dict) -> str:
     return f'<span class="score-badge {cls}">{overall}{suffix}</span>'
 
 
-def _ultimi_run_section(user_id: str) -> str:
-    """Riquadro in fondo alla home con gli ultimi run dell'utente, manuali e
+def _ultimi_run_section(runs: list, domini: dict | None = None) -> str:
+    """Riquadro in fondo alla dashboard con gli ultimi run, manuali e
     automatici, per vedere a colpo d'occhio se l'automazione sta girando.
 
-    Ritorna stringa vuota per i visitatori anonimi e in caso di errore: la home
-    è la landing pubblica e non deve poter fallire per colpa di questo blocco."""
-    try:
-        runs = _sb_recent_audits_by_user(user_id, limit=10)
-    except Exception as e:
-        print(f"[/] riquadro ultimi run non disponibile: {e!r}")
-        return ""
+    Riceve i run già letti invece di interrogare il database: la dashboard li
+    ha già in mano, e una query in più su una pagina che ne faceva 38 sarebbe
+    stata un passo indietro. `domini` mappa project_id -> dominio, perché i
+    campi leggeri dell'audit non portano il nome del sito.
+
+    Ritorna stringa vuota se non c'è nulla da mostrare.
+    """
     if not runs:
         return ""
+    domini = domini or {}
 
-    rows = "".join(
+    righe = "".join(
         "<tr>"
         f'<td data-label="Data e ora"><b>{geo_audit.esc(_fmt_datetime(a.get("created_at")))}</b></td>'
         f'<td data-label="Origine">{_run_origin_badge(a.get("source"))}</td>'
         f'<td data-label="Sito"><a href="/r/{geo_audit.esc(str(a.get("id")))}">'
-        f'{geo_audit.esc(a.get("domain") or a.get("url") or "—")}</a></td>'
+        f'{geo_audit.esc(domini.get(a.get("project_id")) or a.get("domain") or a.get("url") or "—")}</a></td>'
         f'<td data-label="Punteggio">{_run_score_cell(a)}</td>'
         "</tr>"
         for a in runs
@@ -105,20 +106,19 @@ def _ultimi_run_section(user_id: str) -> str:
                  "analisi lanciate a mano.")
 
     return (
-        '<section class="section section--compact section--lav1" id="ultimi-run" '
-        'aria-labelledby="ultimi-run-title">'
-        '<div class="container">'
-        '<div class="section-head">'
-        '<h2 class="h2" id="ultimi-run-title">Ultimi run</h2>'
-        "<p>Le analisi pi&#249; recenti sui tuoi siti, lanciate a mano o dal "
-        "monitoraggio automatico settimanale.</p>"
-        "</div>"
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr>'
+        '<div class="data-card" id="ultimi-run" style="margin-top:28px">'
+        '<div class="section-header">'
+        '<div><div class="section-title">Ultimi run</div>'
+        '<div class="card-desc">Le analisi più recenti sui tuoi siti, lanciate a mano '
+        'o dal monitoraggio automatico.</div></div>'
+        '</div>'
+        '<div class="table-scroll"><table class="data-grid"><thead><tr>'
         "<th>Data e ora</th><th>Origine</th><th>Sito</th><th>Punteggio</th>"
-        "</tr></thead><tbody>" + rows + "</tbody></table></div>"
-        f'<p style="margin-top:14px;font-size:.86rem;color:var(--text-2)">{stato}</p>'
-        "</div></section>"
+        "</tr></thead><tbody>" + righe + "</tbody></table></div>"
+        f'<div class="table-footer"><span>{stato}</span></div>'
+        "</div>"
     )
+
 
 
 def _project_status(latest: dict | None) -> str:

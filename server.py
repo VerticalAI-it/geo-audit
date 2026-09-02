@@ -20,6 +20,7 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_has_tracking, _sb_insert, _sb_insert_contact, _sb_insert_tracking_event, \
     _sb_issue_resolve_manually, _sb_issue_sync, _sb_issues_by_project, _sb_patch, _sb_project_bump_scan, \
     _sb_project_claim_due, _sb_project_get, _sb_project_patch, _sb_project_upsert, \
+    _sb_audits_by_user_grouped, _sb_projects_with_tracking, \
     _sb_projects_by_user, _sb_roadmap_iscrivi, _sb_roadmap_vota, _sb_roadmap_voti, \
     _sb_user_theme, _sb_user_theme_set
 from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, \
@@ -681,10 +682,15 @@ def _with_topbar(html: str, email: str) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    user, refreshed = _current_user(request)
-    ultimi_run = _ultimi_run_section(user["id"]) if user else ""
-    resp = HTMLResponse(_render(HOME_HTML, ULTIMI_RUN=ultimi_run))
-    return _apply_refresh(resp, refreshed)
+    """Landing pubblica.
+
+    Fino a settembre 2026 iniettava qui il riquadro «Ultimi run», visibile solo
+    a chi era già entrato: un blocco riservato in mezzo a una pagina di
+    presentazione. È stato spostato in fondo alla dashboard, che è il posto
+    dove si guardano i propri progetti. La home resta uguale per tutti, e non
+    ha più bisogno di leggere la sessione per rendersi.
+    """
+    return HTMLResponse(HOME_HTML)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1074,11 +1080,18 @@ def dashboard(request: Request):
     _backfill_projects(user["id"])
 
     projects = _sb_projects_by_user(user["id"])
+
+    # Due letture in blocco al posto di due richieste per ogni progetto: con 18
+    # progetti erano 38 viaggi al database in fila e la pagina ci metteva quasi
+    # 6 secondi. NON rimettere le chiamate dentro il ciclo.
+    runs_per_progetto = _sb_audits_by_user_grouped(user["id"], per_progetto=8)
+    con_tracking = _sb_projects_with_tracking([p["id"] for p in projects])
+
     cards = []
     for p in projects:
-        # 8 run invece di 2: i primi due servono a punteggio e delta come prima,
-        # tutti e otto alimentano la sparkline sulla card. Nessuna query in piu'.
-        runs = _sb_audits_by_project(p["id"], limit=8, full=False)
+        # i primi due run servono a punteggio e delta, tutti e otto alla
+        # curva dell'andamento sulla card
+        runs = runs_per_progetto.get(p["id"], [])
         latest = runs[0] if runs else None
         previous = runs[1] if len(runs) > 1 else None
         delta = None
@@ -1088,7 +1101,7 @@ def dashboard(request: Request):
         # dal piu' vecchio al piu' recente, solo i run con un punteggio
         history = [r["overall"] for r in reversed(runs) if r.get("overall") is not None]
 
-        tracking_on = _sb_has_tracking(p["id"])
+        tracking_on = p["id"] in con_tracking
         cards.append({
             "id": p["id"], "name": p["name"], "domain": p["domain"],
             "overall": latest.get("overall") if latest else None,
@@ -1120,8 +1133,16 @@ def dashboard(request: Request):
                        (f'{piu_vecchio["domain"]} — mai analizzato' if piu_vecchio else "")),
     }
 
+    # Ultimi run: si costruisce dagli audit gia' letti sopra, senza altre
+    # richieste al database. I run arrivano ordinati dal piu' recente.
+    tutti_i_run = sorted(
+        (r for elenco in runs_per_progetto.values() for r in elenco),
+        key=lambda r: r.get("created_at") or "", reverse=True)[:10]
+    domini = {p["id"]: p.get("domain") for p in projects}
+
     html = _render(DASHBOARD_HTML,
                     TEMA_PROFILO=_sb_user_theme(user) or "",
+                    ULTIMI_RUN=_ultimi_run_section(tutti_i_run, domini),
                     PROJECTS_JSON=json.dumps(cards),
                     SUMMARY_JSON=json.dumps(summary),
                     SUMMARY_BANNER=_dashboard_summary_banner(cards),
