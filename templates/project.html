@@ -1,7 +1,21 @@
 <!doctype html>
 <html lang="it">
 <head>
-<script>try{var _t=localStorage.getItem('geo-theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<script>
+/* Il tema del profilo (deciso dal server) vince su quello del browser, così
+   segue l'utente fra dispositivi. Questo script sta in testa alla pagina e
+   gira prima di qualsiasi disegno: altrimenti si vedrebbe il lampo del tema
+   sbagliato al caricamento. */
+(function(){
+  var profilo = "{{TEMA_PROFILO}}";
+  var t = profilo || null;
+  try{
+    if (profilo) localStorage.setItem('geo-theme', profilo);
+    else t = localStorage.getItem('geo-theme');
+  }catch(e){}
+  if (t) document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{PROJECT_NAME}} · GEO Audit · verticalai</title>
@@ -127,9 +141,14 @@
   }
   function cambiaTema(){
     var html = document.documentElement;
-    var versoScuro = html.getAttribute('data-theme') !== 'dark';
-    html.setAttribute('data-theme', versoScuro ? 'dark' : 'light');
-    try{ localStorage.setItem('geo-theme', versoScuro ? 'dark' : 'light'); }catch(e){}
+    var tema = html.getAttribute('data-theme') !== 'dark' ? 'dark' : 'light';
+    html.setAttribute('data-theme', tema);
+    /* prima nel browser (cambio immediato), poi sul profilo (segue l'utente
+       sugli altri dispositivi). Un salvataggio fallito non si segnala: la
+       scelta vale comunque qui, e un errore per un colore sarebbe rumore. */
+    try{ localStorage.setItem('geo-theme', tema); }catch(e){}
+    fetch('/preferenze/tema', {method:'POST', headers:{'Content-Type':'application/json'},
+                               body: JSON.stringify({theme: tema})}).catch(function(){});
   }
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') chiudiMenu(); });
 </script>

@@ -1,7 +1,21 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<script>try{var _t=localStorage.getItem('geo-theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<script>
+/* Il tema del profilo (deciso dal server) vince su quello del browser, così
+   segue l'utente fra dispositivi. Questo script sta in testa alla pagina e
+   gira prima di qualsiasi disegno: altrimenti si vedrebbe il lampo del tema
+   sbagliato al caricamento. */
+(function(){
+  var profilo = "{{TEMA_PROFILO}}";
+  var t = profilo || null;
+  try{
+    if (profilo) localStorage.setItem('geo-theme', profilo);
+    else t = localStorage.getItem('geo-theme');
+  }catch(e){}
+  if (t) document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>I tuoi progetti — GEO Audit</title>
@@ -137,9 +151,15 @@ const EMAIL    = {{USER_EMAIL}};
 
 function toggleTheme(){
   const html = document.documentElement;
-  const goingDark = html.getAttribute('data-theme') !== 'dark';
-  html.setAttribute('data-theme', goingDark ? 'dark' : 'light');
-  try{ localStorage.setItem('geo-theme', goingDark ? 'dark' : 'light'); }catch(e){}
+  const tema = html.getAttribute('data-theme') !== 'dark' ? 'dark' : 'light';
+  html.setAttribute('data-theme', tema);
+  /* Si scrive subito nel browser, così il cambio è immediato anche se la rete
+     è lenta; poi si salva sul profilo, che è quello che fa seguire il tema
+     su un altro dispositivo. Se il salvataggio fallisce non si avvisa: la
+     scelta è comunque valida qui, e un errore per un colore sarebbe rumore. */
+  try{ localStorage.setItem('geo-theme', tema); }catch(e){}
+  fetch('/preferenze/tema', {method:'POST', headers:{'Content-Type':'application/json'},
+                             body: JSON.stringify({theme: tema})}).catch(function(){});
 }
 
 function esc(s){
