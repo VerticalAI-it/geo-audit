@@ -1,7 +1,11 @@
 # 05 · Applicazione web (`server.py`)
 
-2588 righe che contengono l'intera app: route, accesso ai dati, autenticazione,
-generazione email e costruzione HTML di dashboard e tab.
+Route, autenticazione, email e cron. Da settembre 2026 l'app è divisa in quattro
+moduli: `config.py` (variabili d'ambiente), `db.py` (accesso Supabase),
+`views.py` (costruzione HTML di dashboard e tab) e `server.py`, che li mette
+insieme. I riferimenti a `server.py:NNN` in questo documento precedono la
+separazione: la funzione citata esiste ancora con lo stesso nome, ma può trovarsi
+in `db.py` (se inizia per `_sb_`) o in `views.py` (se costruisce HTML).
 
 ---
 

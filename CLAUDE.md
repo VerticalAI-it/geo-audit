@@ -2,7 +2,10 @@
 
 ## Struttura del progetto
 
-- `server.py` — app FastAPI principale (route, email, Supabase helpers)
+- `server.py` — app FastAPI: route, auth, email, cron
+- `config.py` — variabili d'ambiente condivise
+- `db.py` — accesso Supabase (tutti gli `_sb_*`); **importabile senza toccare `server.py`**
+- `views.py` — costruzione HTML di dashboard e tab di progetto
 - `api/index.py` — entry point Vercel (importa `server.app`)
 - `geo_audit.py` — logica di analisi GEO
 - `templates/` — file HTML caricati a memoria da `server.py`
@@ -26,8 +29,29 @@ Prima di un intervento non banale, leggi il documento pertinente in `docs/`:
 Se una modifica invalida quanto scritto lì, aggiorna il documento nello stesso
 commit.
 
+## Sezioni non ancora attive: dati dimostrativi, mai impliciti
+
+**Regola cambiata il 1 settembre 2026.** Prima: «mai dati simulati, le sezioni
+non disponibili dichiarano cosa manca». Ora: le sezioni non ancora attive
+mostrano **dati dimostrativi realistici accompagnati da un banner esplicito**
+(`_banner_campione` in `views.py`), perché una scatola vuota non fa capire cosa
+si otterrà.
+
+Il banner **non è opzionale**: senza, sarebbero numeri finti spacciati per veri.
+Le sezioni interessate stanno in `_SEZIONI_CAMPIONE`; quando una diventa reale,
+si toglie da quel dizionario e si scrive la funzione vera.
+
+Resta invece pienamente in vigore il principio da cui la vecchia regola nasceva:
+**un dato mostrato senza etichetta deve essere un dato misurato.** Dove manca
+lo storico non si inventa una linea piatta — si scrive che lo storico non c'è
+(vedi le sparkline della dashboard).
+
 ## Invarianti da non rompere
 
+- **Direzione degli import**: `server.py` → `views.py` → `db.py` → `config.py`.
+  Mai il contrario: `db.py` e `views.py` non devono importare `server.py`, o si
+  crea un ciclo. Se una funzione di `views.py` ha bisogno di un dato, lo riceve
+  come parametro o lo chiede a `db.py`.
 - **Autorizzazione**: ogni route che accede a dati di progetto deve verificare
   `project["user_id"] == user["id"]` — la service role key bypassa le RLS.
 - **Sessione**: ogni route protetta deve applicare `_apply_refresh(resp, refreshed)`,
@@ -47,6 +71,25 @@ commit.
 | `/miei-report` | String inline in `server.py` |
 
 ## Design System — regola fondamentale
+
+> ⚠️ **Redesign in corso (settembre 2026).** Convivono due design system:
+>
+> | Foglio | Usato da | Token |
+> |---|---|---|
+> | `static/css/geo-ds.css` | schermate già ridisegnate | `--bg-canvas`, `--accent-primary`, `--state-good`… |
+> | `static/css/design-system.css` | pagine non ancora migrate | `--canvas`, `--brand`, `--success`… |
+> | `static/css/ponte-legacy.css` | ponte fra i due | rimappa i vecchi nomi sui nuovi |
+>
+> **Le schermate nuove si scrivono con i token di `geo-ds.css`.** Il ponte
+> esiste solo per non dover riscrivere tutti i tab in un colpo solo, e va
+> **eliminato** quando l'ultimo tab sarà migrato. Non aggiungerci nulla.
+>
+> Riferimenti del redesign, fuori dal repo:
+> `Vertical AI/progetti/_specifiche-geo-audit/` — documento funzionale,
+> design system e le 16 pagine HTML del prototipo (fonte di verità visiva).
+>
+> Il tema di default è **chiaro**; la preferenza sta in `localStorage` sulla
+> chiave `geo-theme`, condivisa con il report generato.
 
 **Ogni modifica a UX/UI deve rispettare `design_system/DESIGN_SYSTEM.md`.**
 
