@@ -15,7 +15,8 @@ from datetime import datetime, timezone, timedelta
 import geo_audit
 from ai_sources import CRAWLER_CATEGORIE
 from config import SITE_URL
-from db import _sb_has_tracking, _sb_issues_by_project, _sb_recent_audits_by_user, _sb_tracking_events
+from db import _TETTO_EVENTI, _sb_has_tracking, _sb_issues_by_project, \
+    _sb_recent_audits_by_user, _sb_tracking_events
 
 
 _SCAN_FREQUENCY_LABELS = {"daily": "Giornaliero", "weekly": "Settimanale", "monthly": "Mensile"}
@@ -1603,7 +1604,7 @@ def _tab_traffic(project: dict) -> str:
     Adesso i due sono separati e dichiarati, e i passaggi dei crawler arrivano da
     chi puo' vederli: il plugin sul server del sito (vedi `POST /t`, campo `ua`).
     """
-    events = _sb_tracking_events(project["id"], days=30, limit=5000)
+    events = _sb_tracking_events(project["id"], days=30)
     if not events:
         return (
             '<div class="alert alert--info"><div class="ic">i</div>'
@@ -1753,8 +1754,19 @@ def _tab_traffic(project: dict) -> str:
         '</div>'
     )
 
+    # Un dato parziale non deve mai passare per completo: se il tetto di lettura
+    # ha tagliato, la scheda lo dice invece di mostrare numeri piu' bassi del vero.
+    avviso_parziale = ''
+    if len(events) >= _TETTO_EVENTI:
+        avviso_parziale = (
+            '<div class="alert alert--warn" style="margin-bottom:16px"><div class="ic">!</div>'
+            f'<div>Il progetto ha superato i {_TETTO_EVENTI:,} eventi in 30 giorni: '
+            'i numeri qui sotto sono calcolati sui più recenti, non su tutto il periodo.</div></div>'
+        ).replace(",", ".")
+
     return (
-        kpi
+        avviso_parziale
+        + kpi
         + sezione_crawler
         + sezione_referral
         + f'<div class="card" style="margin-top:20px">{_tracking_snippet_html(project["id"])}</div>'
