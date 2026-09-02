@@ -460,17 +460,17 @@ def analyze_page(url, fetched, static_for_parity, render_used):
                 score=score_checks(checks), checks=checks)
 
 # ============================================================ REPORT
-SC = {OK:"#0E9F6E", WARN:"#C77700", FAIL:"#D92D34", UNK:"#76768A"}
+SC = {OK:"#0E9F6E", WARN:"#C77700", FAIL:"#D92D34", UNK:"#83839A"}
 SLAB = {OK:"OK", WARN:"DA MIGLIORARE", FAIL:"CRITICITÀ", UNK:"DA VERIFICARE"}
 SEV_PRIO = {"critical":("critica","#D92D34"), "high":("alta","#C77700"),
-            "medium":("media","#5A45D8"), "low":("media","#5A45D8"), "info":("media","#5A45D8")}
+            "medium":("media","#6C5CE7"), "low":("media","#6C5CE7"), "info":("media","#6C5CE7")}
 SHORT = {"Dati strutturati":"Dati", "Contenuti & answerability":"Contenuti",
     "Meta & social":"Meta", "Autorità & trust":"Autorità", "HTML semantico":"HTML",
     "Rendering & accesso":"Accesso"}
 MONTHS = ["","gennaio","febbraio","marzo","aprile","maggio","giugno","luglio",
           "agosto","settembre","ottobre","novembre","dicembre"]
 def esc(s): return H.escape(str(s))
-def barcol(s): return "#0E9F6E" if s>=75 else ("#C77700" if s>=50 else "#D92D34")
+def barcol(s): return "#0E9F6E" if s>=75 else ("#B45309" if s>=50 else "#DC2626")
 def fmt_date(): d = datetime.now(); return f"{d.day} {MONTHS[d.month]} {d.year}"
 
 def gauge(score):
@@ -494,7 +494,7 @@ def radar(cats):
         rr = R*sc/100; pts.append(f"{cx+rr*math.cos(ang):.0f},{cy+rr*math.sin(ang):.0f}")
         lx = cx + (R+16)*math.cos(ang); ly = cy + (R+16)*math.sin(ang)
         anc = "middle" if abs(math.cos(ang))<0.3 else ("start" if math.cos(ang)>0 else "end")
-        labels += (f'<text x="{lx:.0f}" y="{ly+3:.0f}" text-anchor="{anc}" font-family="JetBrains Mono" '
+        labels += (f'<text x="{lx:.0f}" y="{ly+3:.0f}" text-anchor="{anc}" font-family="IBM Plex Mono" '
                    f'font-size="9.5" style="fill:var(--muted)">{esc(SHORT.get(name,name))}</text>')
     poly = f'<polygon points="{" ".join(pts)}" fill="rgba(124,107,236,.18)" style="stroke:var(--violet)" stroke-width="2"/>'
     dots = "".join(f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" r="3" style="fill:var(--violet)"/>' for p in pts)
@@ -513,19 +513,19 @@ def donut(ok, warn, fail):
                    f'transform="rotate(-90 {cx} {cy})" stroke-linecap="butt"/>')
         acc += frac
     out.append(f'<text x="{cx}" y="{cy-2}" text-anchor="middle" font-family="Space Grotesk" font-weight="800" font-size="24" style="fill:var(--ink)">{total}</text>')
-    out.append(f'<text x="{cx}" y="{cy+15}" text-anchor="middle" font-family="JetBrains Mono" font-size="8.5" style="fill:var(--muted)">CONTROLLI</text>')
+    out.append(f'<text x="{cx}" y="{cy+15}" text-anchor="middle" font-family="IBM Plex Mono" font-size="8.5" style="fill:var(--muted)">CONTROLLI</text>')
     return f'<svg width="140" height="140" viewBox="0 0 140 140">{"".join(out)}</svg>'
 
 def scale_bar(score):
     segs = [("F","#D92D34"),("E","#E0612A"),("D","#C77700"),("C","#C9A227"),("B","#5FA52E"),("A","#0E9F6E")]
     cells = "".join(f'<div style="flex:1;height:14px;background:{c};display:flex;align-items:center;'
-                    f'justify-content:center;font-family:JetBrains Mono;font-size:8px;color:#fff;font-weight:600">{l}</div>'
+                    f'justify-content:center;font-family:IBM Plex Mono;font-size:8px;color:#fff;font-weight:600">{l}</div>'
                     for l,c in segs)
     return (f'<div style="position:relative;margin:6px 0 2px">'
             f'<div style="display:flex;border-radius:6px;overflow:hidden">{cells}</div>'
             f'<div style="position:absolute;top:-7px;left:{score}%;transform:translateX(-50%);width:0;height:0;'
             f'border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #16151E"></div>'
-            f'<div style="position:absolute;top:18px;left:{score}%;transform:translateX(-50%);font-family:JetBrains Mono;'
+            f'<div style="position:absolute;top:18px;left:{score}%;transform:translateX(-50%);font-family:IBM Plex Mono;'
             f'font-size:9px;color:#16151E;font-weight:600;white-space:nowrap">{score}/100</div></div>')
 
 def dist_chart(pages):
@@ -541,39 +541,39 @@ def dist_chart(pages):
         cols += (f'<div style="flex:1;text-align:center">'
                  f'<div style="font-family:Space Grotesk;font-weight:800;font-size:14px;color:#16151E">{c}</div>'
                  f'<div style="height:{h}px;background:{col};border-radius:5px 5px 0 0;margin:3px 6px 0"></div>'
-                 f'<div style="font-family:JetBrains Mono;font-size:8.5px;color:#76768A;margin-top:5px">{name}</div></div>')
+                 f'<div style="font-family:IBM Plex Mono;font-size:8.5px;color:#83839A;margin-top:5px">{name}</div></div>')
     return f'<div style="display:flex;align-items:flex-end;gap:4px;height:130px">{cols}</div>'
 
 LOGO = ('<span class="logo"><svg width="22" height="22" viewBox="0 0 22 22" fill="none">'
-  '<rect x="2" y="9" width="4" height="11" rx="1.5" fill="#5A45D8"/>'
+  '<rect x="2" y="9" width="4" height="11" rx="1.5" fill="#6C5CE7"/>'
   '<rect x="9" y="4" width="4" height="16" rx="1.5" fill="#B3A8F7"/>'
-  '<rect x="16" y="11" width="4" height="9" rx="1.5" fill="#5A45D8"/></svg>'
+  '<rect x="16" y="11" width="4" height="9" rx="1.5" fill="#6C5CE7"/></svg>'
   '<b>vertical</b><span style="color:#B3A8F7">ai</span></span>')
 
 CSS = """
-:root{--ink:#16151E;--muted:#76768A;--line:#E6E6EF;--soft:#F3F1FB;--violet:#5A45D8;--violet-deep:#3D2CB8;--accent-dark:#16151E}
+:root{--ink:#14141C;--muted:#83839A;--line:rgba(20,20,30,.08);--soft:#F0F0F6;--violet:#6C5CE7;--violet-deep:#5B4BD6;--accent-dark:#14141C}
 *{box-sizing:border-box;margin:0;padding:0}html{font-size:15px}
-body{font-family:"Inter",sans-serif;color:var(--ink);background:linear-gradient(135deg,#EAE6FB 0%,#F0EDF8 60%,#E8EEFB 100%);background-attachment:fixed;line-height:1.55}
-.mono{font-family:"JetBrains Mono",monospace}
-.sheet{background:#fff;max-width:880px;margin:28px auto;box-shadow:0 4px 6px rgba(90,69,216,.06),0 16px 48px rgba(20,16,60,.14);border-radius:20px;overflow:hidden}
+body{font-family:"Inter",sans-serif;color:var(--ink);background:#F6F6FA;background-attachment:fixed;line-height:1.55}
+.mono{font-family:"IBM Plex Mono",monospace}
+.sheet{background:#fff;max-width:880px;margin:28px auto;box-shadow:0 4px 6px rgba(108,92,231,.06),0 16px 48px rgba(20,16,60,.14);border-radius:20px;overflow:hidden}
 h1,h2,h3{font-family:"Space Grotesk",sans-serif}
 .logo b{font-family:"Space Grotesk",sans-serif}
 .top{background:var(--accent-dark);color:#fff;padding:30px 56px 26px}
 .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}
 .logo{display:inline-flex;align-items:center;gap:8px;font-size:17px;color:#fff;font-family:"Space Grotesk",sans-serif;font-weight:700}.logo b{font-weight:800}
-.kicker{font-family:"JetBrains Mono";font-size:11px;letter-spacing:3px;color:#B3A8F7;text-transform:uppercase}
+.kicker{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:3px;color:#B3A8F7;text-transform:uppercase}
 .top h1{font-size:32px;font-weight:800;margin:6px 0 12px;word-break:break-word;letter-spacing:-.02em}
-.meta{font-family:"JetBrains Mono";font-size:12px;color:#BCBBCB;display:flex;gap:22px;flex-wrap:wrap}.meta b{color:#fff;font-weight:500}
-.scaninfo{margin-top:14px;font-family:"JetBrains Mono";font-size:10.5px;color:#8E8BA8;display:flex;gap:14px;flex-wrap:wrap}
+.meta{font-family:"IBM Plex Mono";font-size:12px;color:#BCBBCB;display:flex;gap:22px;flex-wrap:wrap}.meta b{color:#fff;font-weight:500}
+.scaninfo{margin-top:14px;font-family:"IBM Plex Mono";font-size:10.5px;color:#8E8BA8;display:flex;gap:14px;flex-wrap:wrap}
 .scaninfo .on{color:#3DDC97}.scaninfo .off{color:#F5BE57}
 .summary{display:flex;gap:30px;align-items:center;padding:32px 56px 4px}
 .gaugewrap{text-align:center;flex:none}.band{font-family:"Space Grotesk";font-weight:800;font-size:13px;color:var(--violet-deep);margin-top:4px;letter-spacing:.04em}
 .sumright{flex:1;min-width:0}.tiles{display:flex;gap:12px;margin-bottom:14px}
 .tile{flex:1;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--soft)}
-.tile .n{font-family:"Space Grotesk";font-weight:800;font-size:24px}.tile .l{font-size:10px;color:var(--muted);text-transform:uppercase;font-family:"JetBrains Mono";margin-top:2px;letter-spacing:.06em}
+.tile .n{font-family:"Space Grotesk";font-weight:800;font-size:24px}.tile .l{font-size:10px;color:var(--muted);text-transform:uppercase;font-family:"IBM Plex Mono";margin-top:2px;letter-spacing:.06em}
 .verdict{font-size:14px;border-left:3px solid var(--violet);padding-left:13px;color:#2C2A3A;line-height:1.6}
 .sec{padding:28px 56px 4px}
-h2{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--violet-deep);font-weight:700;margin-bottom:16px;font-family:"JetBrains Mono"}
+h2{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--violet-deep);font-weight:700;margin-bottom:16px;font-family:"IBM Plex Mono"}
 .two{display:flex;gap:30px;align-items:center;flex-wrap:wrap}
 .two .half{flex:1;min-width:240px}
 .legend{font-size:12.5px;color:var(--muted);margin-top:8px}.legend span{display:inline-flex;align-items:center;gap:6px;margin-right:14px}
@@ -587,27 +587,27 @@ h2{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--violet
 .callout .lbl{font-size:12px;color:var(--muted);margin-top:2px}
 table{width:100%;border-collapse:collapse}td{padding:9px 6px;border-top:1px solid var(--line);font-size:13px;vertical-align:top}
 tr:first-child td{border-top:none}.cdot{width:18px}.dot{display:inline-block;width:9px;height:9px;border-radius:50%}
-.cchk{font-weight:600;width:30%}.cdet{color:var(--muted)}.cst{width:118px;text-align:right;font-size:10px;font-weight:500;font-family:"JetBrains Mono"}
+.cchk{font-weight:600;width:30%}.cdet{color:var(--muted)}.cst{width:118px;text-align:right;font-size:10px;font-weight:500;font-family:"IBM Plex Mono"}
 .wins{display:flex;gap:12px;flex-wrap:wrap}
 .win{flex:1;min-width:200px;border:1px solid var(--line);border-radius:16px;padding:18px 20px;break-inside:avoid;background:var(--soft)}
-.win .wn{font-family:"JetBrains Mono";font-size:10px;color:var(--violet);font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.win .wn{font-family:"IBM Plex Mono";font-size:10px;color:var(--violet);font-weight:600;letter-spacing:.1em;text-transform:uppercase}
 .win h3{font-family:"Space Grotesk";font-size:15px;font-weight:700;margin:6px 0 4px}.win p{font-size:12.5px;color:var(--muted);line-height:1.5}
-.win .badge{display:inline-block;margin-top:8px;font-family:"JetBrains Mono";font-size:9.5px;color:var(--violet-deep);background:#EDE9FB;border-radius:20px;padding:3px 10px;border:1px solid #D4CFFA}
+.win .badge{display:inline-block;margin-top:8px;font-family:"IBM Plex Mono";font-size:9.5px;color:var(--violet-deep);background:#EDE9FB;border-radius:20px;padding:3px 10px;border:1px solid #D4CFFA}
 .pcard{border:1px solid var(--line);border-radius:16px;margin-bottom:12px;overflow:hidden;break-inside:avoid}
 .phead{display:flex;justify-content:space-between;align-items:center;background:var(--soft);padding:12px 18px;border-bottom:1px solid var(--line)}
-.ptag{display:inline-block;background:var(--violet);color:#fff;font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;font-family:"JetBrains Mono";text-transform:uppercase;margin-right:10px;letter-spacing:.06em}
+.ptag{display:inline-block;background:var(--violet);color:#fff;font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;font-family:"IBM Plex Mono";text-transform:uppercase;margin-right:10px;letter-spacing:.06em}
 .purl{font-size:12px;color:var(--muted);word-break:break-all}.pscore{font-family:"Space Grotesk";font-weight:800;font-size:23px}.pscore i{font-size:12px;color:var(--muted);font-style:normal}
 .pbody{padding:11px 18px}.finding{display:flex;gap:11px;padding:6px 0;align-items:flex-start}.finding .dot{margin-top:6px;flex:none}
 .ftitle{display:block;font-weight:600;font-size:13px}.fdetail{display:block;font-size:12.5px;color:var(--muted)}.allok{color:#0E9F6E;font-size:13px;padding:6px 0;font-weight:600}
 .action{display:flex;gap:16px;padding:14px 0;border-top:1px solid var(--line);break-inside:avoid}.action:first-child{border-top:none}
 .anum{font-family:"Space Grotesk";font-weight:800;font-size:19px;color:var(--violet);width:32px;flex:none}
 .ahead{display:flex;align-items:center;gap:10px;margin-bottom:3px;flex-wrap:wrap}.ptitle{font-weight:700;font-size:14px;font-family:"Space Grotesk"}
-.pill{font-family:"JetBrains Mono";font-size:9.5px;font-weight:600;border:1px solid;border-radius:20px;padding:2px 8px}
+.pill{font-family:"IBM Plex Mono";font-size:9.5px;font-weight:600;border:1px solid;border-radius:20px;padding:2px 8px}
 .adesc{font-size:12.5px;color:var(--muted);line-height:1.5}
 .notes{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px 20px;font-size:12.5px;color:#46435A;line-height:1.6}.notes b{color:var(--ink)}
 .cta{background:var(--accent-dark);color:#fff;padding:40px 56px;margin-top:32px;display:flex;justify-content:space-between;align-items:flex-start;gap:40px;flex-wrap:wrap}
 .cta-l{flex:1;min-width:220px}
-.cta-badge{display:inline-block;background:rgba(90,69,216,.3);color:#B3A8F7;font-family:"JetBrains Mono";font-size:10px;letter-spacing:2.5px;text-transform:uppercase;padding:4px 11px;border-radius:20px;margin-bottom:14px}
+.cta-badge{display:inline-block;background:rgba(108,92,231,.3);color:#B3A8F7;font-family:"IBM Plex Mono";font-size:10px;letter-spacing:2.5px;text-transform:uppercase;padding:4px 11px;border-radius:20px;margin-bottom:14px}
 .cta h3{font-family:"Space Grotesk";font-size:23px;font-weight:800;margin:0 0 12px;line-height:1.25;color:#fff;letter-spacing:-.01em}
 .cta-desc{font-size:13.5px;color:#BCBBCB;margin:0 0 14px;line-height:1.6}
 .cta ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px}
@@ -620,10 +620,10 @@ tr:first-child td{border-top:none}.cdot{width:18px}.dot{display:inline-block;wid
 .cta-r input:focus{border-color:#B3A8F7}
 .cta-pref{display:flex;align-items:center;gap:12px;font-size:13px;color:#BCBBCB;margin-bottom:12px;flex-wrap:wrap}
 .cta-pref label{display:flex;align-items:center;gap:5px;cursor:pointer}
-.cta-btn{width:100%;background:#5A45D8;color:#fff;border:none;border-radius:10px;font-family:"Space Grotesk";font-weight:700;font-size:15px;padding:13px;cursor:pointer;transition:background .15s;letter-spacing:.01em}
+.cta-btn{width:100%;background:#6C5CE7;color:#fff;border:none;border-radius:10px;font-family:"Space Grotesk";font-weight:700;font-size:15px;padding:13px;cursor:pointer;transition:background .15s;letter-spacing:.01em}
 .cta-btn:hover{background:#4A37BE}
 .cta-ok{display:none;color:#3DDC97;font-size:14px;margin-top:12px;font-weight:600;text-align:center}
-.foot{padding:16px 56px;font-size:11px;color:var(--muted);font-family:"JetBrains Mono";display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;border-top:1px solid var(--line)}
+.foot{padding:16px 56px;font-size:11px;color:var(--muted);font-family:"IBM Plex Mono";display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;border-top:1px solid var(--line)}
 .theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;padding:0;margin-left:10px}
 .theme-toggle:hover{background:rgba(255,255,255,.12)}
 .theme-toggle svg{width:15px;height:15px}
@@ -631,9 +631,9 @@ tr:first-child td{border-top:none}.cdot{width:18px}.dot{display:inline-block;wid
 [data-theme="dark"] .theme-toggle .i-moon{display:none}[data-theme="dark"] .theme-toggle .i-sun{display:block}
 /* Tema scuro (allineato al resto del sito): solo a schermo, mai in stampa/PDF */
 @media screen{
-[data-theme="dark"]{--ink:#F4F3F8;--muted:#9C99B5;--line:#272636;--soft:#1A1925;--violet:#7C6BEC;--violet-deep:#B3A8F7}
-[data-theme="dark"] body{background:radial-gradient(140% 100% at 70% -5%,#1E1A38 0%,#0B0A12 60%);background-attachment:fixed}
-[data-theme="dark"] .sheet{background:#131220;box-shadow:0 4px 6px rgba(0,0,0,.3),0 16px 48px rgba(0,0,0,.45)}
+[data-theme="dark"]{--ink:#F4F4F7;--muted:#7A7A8C;--line:rgba(255,255,255,.06);--soft:#1C1C24;--violet:#7C6FFF;--violet-deep:#B3A8F7}
+[data-theme="dark"] body{background:#0A0A0F;background-attachment:fixed}
+[data-theme="dark"] .sheet{background:#131319;box-shadow:0 4px 6px rgba(0,0,0,.3),0 16px 48px rgba(0,0,0,.45)}
 [data-theme="dark"] .verdict{color:var(--ink)}
 [data-theme="dark"] .notes{color:var(--muted)}
 [data-theme="dark"] .win .badge{background:rgba(124,107,236,.18);border-color:rgba(124,107,236,.4)}
@@ -713,7 +713,7 @@ def render_report(domain, site, pages, render_used, respect_robots):
       '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — '+esc(domain)+'</title>'
       '<link rel="preconnect" href="https://fonts.googleapis.com">'
       '<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800'
-      '&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">'
+      '&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">'
       '<style>'+CSS+'</style></head><body><div class="sheet">')
 
     rmode = '<span class="on">rendering JS attivo</span>' if render_used else '<span class="off">rendering JS non attivo</span>'
@@ -798,7 +798,7 @@ def render_report(domain, site, pages, render_used, respect_robots):
           f'<div class="pscore mono" style="color:{barcol(p.score)}">{p.score}<i>/100</i></div></div>'
           f'<div class="pbody">{body}</div></div>')
     if extra > 0:
-        cards += f'<div style="text-align:center;color:#76768A;font-size:12.5px;font-family:JetBrains Mono;padding:6px">+ altre {extra} pagine analizzate</div>'
+        cards += f'<div style="text-align:center;color:#83839A;font-size:12.5px;font-family:IBM Plex Mono;padding:6px">+ altre {extra} pagine analizzate</div>'
     pages_sec = f'<div class="sec"><h2>Analisi per pagina</h2>{cards}</div>' if cards else ""
 
     notes = ('<div class="sec"><h2>Metodo &amp; note</h2><div class="notes">'

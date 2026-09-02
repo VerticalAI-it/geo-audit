@@ -174,12 +174,25 @@ def _has_access(request: Request, job_id: str) -> bool:
 _AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 giorni (rinnovato ad ogni refresh)
 
 
+# I cookie di sessione sono `secure`, quindi il browser li accetta solo su
+# https. In produzione e' giusto e non si discute. In sviluppo pero' rende
+# l'applicativo inutilizzabile in locale: si fa il login e non si entra mai,
+# senza nessun messaggio d'errore.
+#
+# DEV_INSECURE_COOKIES=1 nel .env locale toglie quel vincolo. Non metterla MAI
+# in produzione: i cookie di sessione viaggerebbero in chiaro.
+_COOKIE_SECURE = os.environ.get("DEV_INSECURE_COOKIES", "") != "1"
+if not _COOKIE_SECURE:
+    print("[avvio] DEV_INSECURE_COOKIES attivo: cookie di sessione senza il "
+          "vincolo https. Va bene solo in sviluppo.")
+
+
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
     response.set_cookie("sb-access-token", access_token,
-                         httponly=True, secure=True, samesite="lax",
+                         httponly=True, secure=_COOKIE_SECURE, samesite="lax",
                          max_age=_AUTH_COOKIE_MAX_AGE)
     response.set_cookie("sb-refresh-token", refresh_token,
-                         httponly=True, secure=True, samesite="lax",
+                         httponly=True, secure=_COOKIE_SECURE, samesite="lax",
                          max_age=_AUTH_COOKIE_MAX_AGE)
 
 
