@@ -20,7 +20,7 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_has_tracking, _sb_insert, _sb_insert_contact, _sb_insert_tracking_event, \
     _sb_issue_resolve_manually, _sb_issue_sync, _sb_issues_by_project, _sb_patch, _sb_project_bump_scan, \
     _sb_project_claim_due, _sb_project_get, _sb_project_patch, _sb_project_upsert, \
-    _sb_projects_by_user
+    _sb_projects_by_user, _sb_user_theme, _sb_user_theme_set
 from views import _COMING_SOON_TABS, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, _coming_soon_tab, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
     _project_status, _sidebar, _subtabs, _tab_audit, _tab_campione, _tab_opportunities, \
@@ -978,6 +978,29 @@ def _backfill_projects(user_id: str) -> None:
                 _sb_patch(o["id"], {"project_id": project["id"]})
 
 
+@app.post("/preferenze/tema")
+async def preferenza_tema(request: Request):
+    """Salva sul profilo il tema scelto, così segue l'utente fra dispositivi."""
+    user, refreshed = _current_user(request)
+    if not user:
+        return Response(status_code=401)
+    try:
+        corpo = await request.json()
+    except Exception:
+        return Response(status_code=400)
+
+    tema = (corpo or {}).get("theme")
+    if tema not in ("light", "dark"):
+        return Response(status_code=400)
+
+    if not _sb_user_theme_set(user["id"], tema):
+        print(f"[/preferenze/tema] salvataggio fallito per {user.get('email')}")
+        return Response(status_code=500)
+
+    resp = Response(content='{"ok":true}', media_type="application/json")
+    return _apply_refresh(resp, refreshed)
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
     user, refreshed = _current_user(request)
@@ -1034,6 +1057,7 @@ def dashboard(request: Request):
     }
 
     html = _render(DASHBOARD_HTML,
+                    TEMA_PROFILO=_sb_user_theme(user) or "",
                     PROJECTS_JSON=json.dumps(cards),
                     SUMMARY_JSON=json.dumps(summary),
                     SUMMARY_BANNER=_dashboard_summary_banner(cards),
@@ -1117,6 +1141,7 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
         conteggi["pages"] = latest_light["pages_count"]
 
     html = _render(PROJECT_HTML,
+                    TEMA_PROFILO=_sb_user_theme(user) or "",
                     PROJECT_NAME=geo_audit.esc(project.get("name") or project.get("domain")),
                     PROJECT_DOMAIN=geo_audit.esc(project.get("domain") or ""),
                     PROJECT_ACTIONS=_project_actions(project),

@@ -345,3 +345,26 @@ def _sb_issue_resolve_manually(issue_id: str, user_id: str) -> dict | None:
     r.raise_for_status()
     righe = r.json()
     return righe[0] if righe else None
+
+
+def _sb_user_theme(user: dict | None) -> str | None:
+    """Tema salvato sul profilo, se c'è. Torna 'light', 'dark' o None."""
+    if not user:
+        return None
+    t = (user.get("user_metadata") or {}).get("theme")
+    return t if t in ("light", "dark") else None
+
+
+def _sb_user_theme_set(user_id: str, tema: str) -> bool:
+    """Salva il tema nei metadati dell'account.
+
+    I metadati utente di Supabase Auth esistono già e reggono un oggetto
+    libero: usarli evita una tabella di preferenze per un solo campo. Se un
+    domani le preferenze diventeranno molte (notifiche, lingua, fuso) allora
+    varrà la pena di una tabella dedicata.
+    """
+    if tema not in ("light", "dark"):
+        return False
+    r = req.put(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=_SB_H,
+                json={"user_metadata": {"theme": tema}}, timeout=10)
+    return r.status_code < 300
