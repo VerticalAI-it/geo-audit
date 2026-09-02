@@ -13,6 +13,7 @@ import json
 from datetime import datetime, timezone, timedelta
 
 import geo_audit
+from ai_sources import CRAWLER_CATEGORIE
 from config import SITE_URL
 from db import _sb_has_tracking, _sb_issues_by_project, _sb_recent_audits_by_user, _sb_tracking_events
 
@@ -1542,7 +1543,66 @@ def _tracking_snippet_html(project_id: str) -> str:
 
 
 
+def _colonne_giorni(daily: dict, giorni: int = 14, classe: str = "good") -> str:
+    """Andamento a colonne degli ultimi giorni, SVG inline.
+
+    Una tabella «Data | Eventi» costringe a leggere quattordici numeri per
+    accorgersi di una salita: la forma si vede, i numeri si contano.
+    """
+    oggi = datetime.now(timezone.utc).date()
+    serie = [(oggi - timedelta(days=i)) for i in range(giorni - 1, -1, -1)]
+    valori = [daily.get(g.isoformat(), 0) for g in serie]
+    massimo = max(valori) or 1
+
+    larghezza_col = 100 / giorni
+    barre = []
+    for i, (giorno, v) in enumerate(zip(serie, valori)):
+        h = (v / massimo) * 92 if v else 0
+        x = i * larghezza_col
+        # min-height a 1.5 per il giorno a zero: la colonna assente e quella a
+        # zero devono restare distinguibili dal fondo.
+        y = 100 - max(h, 1.5)
+        barre.append(
+            f'<rect x="{x + larghezza_col * 0.18:.2f}" y="{y:.2f}" '
+            f'width="{larghezza_col * 0.64:.2f}" height="{max(h, 1.5):.2f}" rx="0.6" '
+            f'class="{"col-piena" if v else "col-vuota"}">'
+            f'<title>{_fmt_date(giorno.isoformat())}: {v}</title></rect>'
+        )
+
+    return (
+        f'<div class="colonne-giorni colonne-{classe}">'
+        f'<svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" '
+        f'aria-label="Andamento degli ultimi {giorni} giorni">{"".join(barre)}</svg>'
+        f'<div class="colonne-assi"><span>{_fmt_date(serie[0].isoformat())}</span>'
+        f'<span>{_fmt_date(serie[-1].isoformat())}</span></div>'
+        '</div>'
+    )
+
+
+def _righe_barre(conteggi: dict, classe: str = "good", limite: int = 12) -> str:
+    """Classifica con barra proporzionale, riusando i componenti gia' a tema."""
+    if not conteggi:
+        return ''
+    ordinati = sorted(conteggi.items(), key=lambda x: -x[1])[:limite]
+    massimo = ordinati[0][1] or 1
+    return "".join(
+        f'<div class="engine-row"><div class="engine-name">{geo_audit.esc(str(nome))}</div>'
+        f'{_barra_semplice(round(100 * v / massimo), classe)}'
+        f'<div class="area-value">{v}</div></div>'
+        for nome, v in ordinati
+    )
+
+
 def _tab_traffic(project: dict) -> str:
+    """AI Traffic: i due fenomeni che prima erano uno solo.
+
+    ⚠️ La scheda misurava soltanto i **referral** — le persone che arrivano da un
+    assistente — e per questo sembrava sempre vuota: e' il fenomeno raro. Quello
+    frequente, «gli assistenti stanno leggendo il tuo sito», non poteva vederlo
+    perche' lo snippet e' JavaScript e **i crawler non eseguono JavaScript**.
+    Adesso i due sono separati e dichiarati, e i passaggi dei crawler arrivano da
+    chi puo' vederli: il plugin sul server del sito (vedi `POST /t`, campo `ua`).
+    """
     events = _sb_tracking_events(project["id"], days=30, limit=5000)
     if not events:
         return (
@@ -1552,10 +1612,32 @@ def _tab_traffic(project: dict) -> str:
             f'<div class="card" style="margin-top:16px">{_tracking_snippet_html(project["id"])}</div>'
         )
 
-    sessions = {}
-    for e in events:
-        sid = e.get("session_id") or e.get("created_at")
-        row = sessions.setdefault(sid, {"ai_source": None, "landing": e.get("page_url"), "first_at": e.get("created_at")})
+    crawler_hits = [e for e in events if e.get("event_name") == "crawler"]
+    visite = [e for e in events if e.get("event_name") != "crawler"]
+
+    # ── chi ti legge ────────────────────────────────────────────────────────
+    per_bot: dict = {}
+    per_categoria: dict = {}
+    crawler_daily: dict = {}
+    per_pagina_bot: dict = {}
+    for e in crawler_hits:
+        bot = e.get("ai_source") or "Sconosciuto"
+        per_bot[bot] = per_bot.get(bot, 0) + 1
+        props = e.get("properties") if isinstance(e.get("properties"), dict) else {}
+        cat = CRAWLER_CATEGORIE.get(props.get("categoria"), "Altro")
+        per_categoria[cat] = per_categoria.get(cat, 0) + 1
+        giorno = (e.get("created_at") or "")[:10]
+        if giorno:
+            crawler_daily[giorno] = crawler_daily.get(giorno, 0) + 1
+        url = e.get("page_url") or "—"
+        per_pagina_bot[url] = per_pagina_bot.get(url, 0) + 1
+
+    # ── chi ti manda persone ────────────────────────────────────────────────
+    sessions: dict = {}
+    for e in visite:
+        sid = e.get("session_id") or f"anon:{e.get('created_at')}"
+        row = sessions.setdefault(sid, {"ai_source": None, "landing": e.get("page_url"),
+                                        "first_at": e.get("created_at")})
         if e.get("ai_source"):
             row["ai_source"] = e["ai_source"]
         created = e.get("created_at") or ""
@@ -1569,56 +1651,114 @@ def _tab_traffic(project: dict) -> str:
     ai_pct = round(100 * ai_count / total_sessions) if total_sessions else 0
 
     by_source: dict = {}
-    for s in ai_sessions:
-        by_source[s["ai_source"]] = by_source.get(s["ai_source"], 0) + 1
-    source_rows = "".join(
-        f'<tr><td data-label="Provider"><b>{geo_audit.esc(k)}</b></td><td data-label="Sessioni">{v}</td></tr>'
-        for k, v in sorted(by_source.items(), key=lambda x: -x[1])
-    ) or '<tr><td colspan="2" class="card-sub">Nessuna sessione da AI nel periodo.</td></tr>'
-
     by_landing: dict = {}
     for s in ai_sessions:
-        url = s["landing"] or "—"
-        by_landing[url] = by_landing.get(url, 0) + 1
-    landing_rows = "".join(
-        f'<tr><td data-label="Pagina">{geo_audit.esc(k)}</td><td data-label="Sessioni">{v}</td></tr>'
-        for k, v in sorted(by_landing.items(), key=lambda x: -x[1])[:10]
-    ) or '<tr><td colspan="2" class="card-sub">Nessuna landing page da AI nel periodo.</td></tr>'
+        by_source[s["ai_source"]] = by_source.get(s["ai_source"], 0) + 1
+        by_landing[s["landing"] or "—"] = by_landing.get(s["landing"] or "—", 0) + 1
 
-    daily: dict = {}
-    for e in events:
+    referral_daily: dict = {}
+    for e in visite:
         if not e.get("ai_source"):
             continue
-        day = (e.get("created_at") or "")[:10]
-        if day:
-            daily[day] = daily.get(day, 0) + 1
-    trend_rows = "".join(
-        f'<tr><td data-label="Data">{_fmt_date(day)}</td><td data-label="Eventi AI">{count}</td></tr>'
-        for day, count in sorted(daily.items(), reverse=True)[:14]
-    ) or '<tr><td colspan="2" class="card-sub">Nessun evento AI negli ultimi 14 giorni.</td></tr>'
+        giorno = (e.get("created_at") or "")[:10]
+        if giorno:
+            referral_daily[giorno] = referral_daily.get(giorno, 0) + 1
 
-    return (
-        '<div class="mini-stat-row">'
-        f'<div class="mini-stat"><span class="mini-stat-num">{total_sessions}</span><span class="mini-stat-label">sessioni (30gg)</span></div>'
-        f'<div class="mini-stat stat-good"><span class="mini-stat-num">{ai_count}</span><span class="mini-stat-label">sessioni da AI</span></div>'
-        f'<div class="mini-stat"><span class="mini-stat-num">{ai_pct}%</span><span class="mini-stat-label">quota AI</span></div>'
-        '</div>'
+    # ── i numeri in testa ───────────────────────────────────────────────────
+    # Qui c'erano `.mini-stat`/`.mini-stat-row`, che esistono ma sono definite in
+    # un `<style>` dentro `templates/project.html`: vivono solo lì, e una scheda
+    # che le usa non si può rendere fuori da quel template. Si usa `.kpi-strip`,
+    # il componente equivalente del design system, che sta in `geo-ds.css` ed è
+    # già responsive (4 → 2 colonne).
+    def _kpi(valore, etichetta, sotto="", classe=""):
+        return (
+            '<div class="kpi">'
+            f'<div class="kpi-top"><span class="kpi-label">{etichetta}</span></div>'
+            f'<div class="kpi-value-row"><span class="kpi-value {classe}">{valore}</span></div>'
+            + (f'<div class="kpi-sub">{sotto}</div>' if sotto else '')
+            + '</div>'
+        )
 
-        '<div class="card-title" style="margin:20px 0 10px">Per provider</div>'
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Provider</th><th>Sessioni</th></tr></thead>'
-        f'<tbody>{source_rows}</tbody></table></div>'
-
-        '<div class="card-title" style="margin:20px 0 10px">Landing page più visitate da AI</div>'
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Pagina</th><th>Sessioni</th></tr></thead>'
-        f'<tbody>{landing_rows}</tbody></table></div>'
-
-        '<div class="card-title" style="margin:20px 0 10px">Andamento (ultimi 14 giorni)</div>'
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Data</th><th>Eventi AI</th></tr></thead>'
-        f'<tbody>{trend_rows}</tbody></table></div>'
-
-        f'<div class="card" style="margin-top:20px">{_tracking_snippet_html(project["id"])}</div>'
+    kpi = (
+        '<div class="kpi-strip">'
+        + _kpi(len(crawler_hits), "Passaggi di crawler AI", "ultimi 30 giorni", "good")
+        + _kpi(total_sessions, "Sessioni", "ultimi 30 giorni")
+        + _kpi(ai_count, "Sessioni da AI", "arrivate da un assistente", "good")
+        + _kpi(f"{ai_pct}%", "Quota AI", "sul totale delle sessioni")
+        + '</div>'
     )
 
+    # ── sezione crawler ─────────────────────────────────────────────────────
+    if crawler_hits:
+        pagine_bot = "".join(
+            f'<tr><td data-label="Pagina">{geo_audit.esc(k)}</td><td data-label="Passaggi">{v}</td></tr>'
+            for k, v in sorted(per_pagina_bot.items(), key=lambda x: -x[1])[:10]
+        )
+        sezione_crawler = (
+            '<div class="card" style="margin-top:20px">'
+            '<div class="card-title">Chi ti legge — crawler AI</div>'
+            '<p class="card-sub">I bot degli assistenti che sono passati sul sito negli ultimi '
+            '30 giorni. Non sono visite di persone: sono le AI che raccolgono i tuoi contenuti '
+            'per poterti citare.</p>'
+            f'<div style="margin-top:16px">{_righe_barre(per_bot, "good")}</div>'
+            f'<div style="margin-top:18px">{_colonne_giorni(crawler_daily, 14, "good")}</div>'
+            '<div class="card-title" style="margin:22px 0 10px">Per finalità</div>'
+            f'<div>{_righe_barre(per_categoria, "warn")}</div>'
+            '<div class="card-title" style="margin:22px 0 10px">Pagine più lette dai bot</div>'
+            '<div class="tbl-wrap"><table class="tbl tbl-responsive">'
+            '<thead><tr><th>Pagina</th><th>Passaggi</th></tr></thead>'
+            f'<tbody>{pagine_bot}</tbody></table></div>'
+            '</div>'
+        )
+    else:
+        sezione_crawler = (
+            '<div class="card" style="margin-top:20px">'
+            '<div class="card-title">Chi ti legge — crawler AI</div>'
+            '<div class="alert alert--info" style="margin-top:12px"><div class="ic">i</div>'
+            '<div><b>Nessun passaggio di crawler registrato, e con il solo snippet non se ne '
+            'registrerebbe mai uno.</b> Lo snippet è JavaScript e i bot degli assistenti '
+            'non eseguono JavaScript: quando GPTBot o ClaudeBot leggono una pagina, nel browser '
+            'non succede nulla da osservare. Per contarli serve chi sta sul server del sito — '
+            'il plugin Vertical GEO, che li riconosce dallo User-Agent e li manda qui.</div></div>'
+            '</div>'
+        )
+
+    # ── sezione referral ────────────────────────────────────────────────────
+    if ai_sessions:
+        landing_rows = "".join(
+            f'<tr><td data-label="Pagina">{geo_audit.esc(k)}</td><td data-label="Sessioni">{v}</td></tr>'
+            for k, v in sorted(by_landing.items(), key=lambda x: -x[1])[:10]
+        )
+        corpo_referral = (
+            f'<div style="margin-top:16px">{_righe_barre(by_source, "good")}</div>'
+            f'<div style="margin-top:18px">{_colonne_giorni(referral_daily, 14, "good")}</div>'
+            '<div class="card-title" style="margin:22px 0 10px">Pagine di atterraggio</div>'
+            '<div class="tbl-wrap"><table class="tbl tbl-responsive">'
+            '<thead><tr><th>Pagina</th><th>Sessioni</th></tr></thead>'
+            f'<tbody>{landing_rows}</tbody></table></div>'
+        )
+    else:
+        corpo_referral = (
+            '<p class="card-sub" style="margin-top:12px">Nessuna sessione arrivata da un '
+            'assistente AI in questo periodo. È il fenomeno più raro dei due: '
+            'prima le AI ti leggono, e solo dopo — se ti citano — ti mandano qualcuno.</p>'
+        )
+
+    sezione_referral = (
+        '<div class="card" style="margin-top:20px">'
+        '<div class="card-title">Chi ti manda persone — visite da AI</div>'
+        '<p class="card-sub">Sessioni di persone vere arrivate da un assistente, riconosciute '
+        'dal referrer o da <code>utm_source</code>.</p>'
+        f'{corpo_referral}'
+        '</div>'
+    )
+
+    return (
+        kpi
+        + sezione_crawler
+        + sezione_referral
+        + f'<div class="card" style="margin-top:20px">{_tracking_snippet_html(project["id"])}</div>'
+    )
 
 def _tab_settings(project: dict) -> str:
     freq = project.get("scan_frequency") or "weekly"

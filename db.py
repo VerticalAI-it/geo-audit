@@ -11,10 +11,10 @@ verificare project["user_id"] == user["id"].
 """
 import json
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlparse
 import requests as req
 
 from config import SUPABASE_URL, SUPABASE_SVC, SUPABASE_ANON
+from ai_sources import detect_ai_referral, detect_ai_crawler
 
 
 _SB_H = {
@@ -234,20 +234,6 @@ def _sb_issue_sync(project_id: str, user_id: str, audit_id: str, checks: list) -
                   headers=_SB_H, params={"id": f"eq.{i['id']}"}, timeout=10)
 
 
-_AI_REFERRER_DOMAINS = {
-    "chat.openai.com": "ChatGPT",
-    "chatgpt.com": "ChatGPT",
-    "perplexity.ai": "Perplexity",
-    "www.perplexity.ai": "Perplexity",
-    "gemini.google.com": "Gemini",
-    "bard.google.com": "Gemini",
-    "claude.ai": "Claude",
-    "copilot.microsoft.com": "Copilot",
-    "you.com": "You.com",
-    "meta.ai": "Meta AI",
-}
-
-
 _SCAN_LEASE = timedelta(minutes=20)
 
 
@@ -281,14 +267,15 @@ def _sb_project_claim_due() -> dict | None:
     return project
 
 
-def _detect_ai_source(referrer: str) -> str | None:
-    if not referrer:
-        return None
-    try:
-        host = urlparse(referrer).netloc.lower()
-    except Exception:
-        return None
-    return _AI_REFERRER_DOMAINS.get(host)
+def _detect_ai_source(referrer: str, page_url: str = "") -> str | None:
+    """Assistente AI da cui arriva la visita. Le regole stanno in `ai_sources`,
+    portate dal plugin GEO Suite dove sono in esercizio da mesi.
+
+    Il secondo parametro e' facoltativo per retrocompatibilita', ma passarlo
+    conviene: senza `page_url` si perde `utm_source`, e con lui tutti i referral
+    che arrivano senza `Referer` (link copiato a mano, app mobile, https->http).
+    """
+    return detect_ai_referral(referrer, page_url)
 
 
 def _sb_insert_tracking_event(data: dict) -> None:
@@ -300,7 +287,9 @@ def _sb_tracking_events(project_id: str, days: int = 30, limit: int = 5000) -> l
     r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event",
                 headers=_SB_H,
                 params={"project_id": f"eq.{project_id}", "created_at": f"gte.{since}",
-                        "select": "event_name,session_id,page_url,ai_source,created_at",
+                        # `properties` porta la categoria del crawler (training /
+                        # search / user), che e' cio che rende leggibile il dato.
+                        "select": "event_name,session_id,page_url,ai_source,properties,created_at",
                         "order": "created_at.desc", "limit": str(limit)},
                 timeout=10)
     return r.json() if r.ok else []

@@ -241,12 +241,17 @@ Alimentata dallo snippet first-party.
 |---|---|---|
 | `id` | UUID PK | |
 | `project_id` | UUID FK → `project` | `ON DELETE CASCADE` |
-| `event_name` | TEXT NOT NULL DEFAULT `'pageview'` | O nome evento custom |
-| `session_id` | TEXT | Da `sessionStorage` lato client |
+| `event_name` | TEXT NOT NULL DEFAULT `'pageview'` | `pageview`, **`crawler`**, o nome evento custom |
+| `session_id` | TEXT | Da `sessionStorage` lato client. **Vuoto sui `crawler`**: un bot non ha sessione |
 | `page_url` / `referrer` | TEXT | Troncati a 2048 caratteri dal server |
-| `ai_source` | TEXT | Provider AI dal referrer, **NULL se non AI** |
-| `properties` | JSONB | Payload libero per eventi di conversione |
+| `ai_source` | TEXT | Sui `pageview` l'assistente da cui arriva la visita; sui `crawler` il nome del bot. **NULL se non AI** |
+| `properties` | JSONB | Payload libero per eventi di conversione. Sui `crawler`: `categoria` (`training` / `search` / `user`) e `ua` |
 | `created_at` | TIMESTAMPTZ | |
+
+⚠️ **`event_name` non ha un CHECK**: `crawler` è una convenzione applicativa, non
+un vincolo del database. Chi legge la tabella deve separare le due famiglie —
+`_tab_traffic` lo fa, e chi non lo facesse conterebbe i passaggi dei bot fra le
+sessioni delle persone.
 
 `ai_source` è **calcolato al momento dell'inserimento**, non a query time. È una
 denormalizzazione voluta: rende banale sia l'indice parziale sia il breakdown per

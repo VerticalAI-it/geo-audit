@@ -15,6 +15,7 @@ import geo_audit
 
 # ── moduli interni ───────────────────────────────────────────────────────────
 from config import FROM_EMAIL, RESEND_KEY, SITE_URL, SUPABASE_ANON, SUPABASE_URL, _SECRET
+from ai_sources import detect_ai_crawler as _detect_ai_crawler
 from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_project, \
     _sb_audits_without_project, _sb_auth_refresh, _sb_auth_user, _sb_get, _sb_get_by_email, \
     _sb_has_tracking, _sb_insert, _sb_insert_contact, _sb_insert_tracking_event, \
@@ -891,9 +892,23 @@ async def api_cron(request: Request, max_projects: int = 3):
 
 @app.post("/t")
 async def track(request: Request):
-    """Endpoint pubblico di ingestion per lo snippet static/js/geo-track.js.
-    Nessuna autenticazione (gira su siti di terzi): validazione minima,
-    fallisce silenziosamente per non rompere mai il sito del cliente."""
+    """Endpoint pubblico di ingestion. Nessuna autenticazione (gira su siti di
+    terzi): validazione minima, fallisce silenziosamente per non rompere mai il
+    sito del cliente.
+
+    Due mittenti, due fenomeni diversi:
+
+    | Mittente | Campo | Cosa registra |
+    |---|---|---|
+    | `static/js/geo-track.js`, dal browser | — | le visite delle persone |
+    | il plugin sul server del sito | `ua` | i passaggi dei crawler AI |
+
+    ⚠️ Il secondo non è un di più: **i crawler non eseguono JavaScript**, quindi
+    dal browser sono invisibili per costruzione. Solo chi sta sul server vede
+    GPTBot che passa, e lo manda qui con lo User-Agent grezzo — il
+    riconoscimento lo fa questo endpoint, così la lista dei bot si aggiorna qui
+    senza toccare i siti dei clienti.
+    """
     try:
         body = await request.json()
     except Exception:
@@ -909,6 +924,24 @@ async def track(request: Request):
     session_id = (body.get("sid") or "")[:128]
     properties = body.get("props") if isinstance(body.get("props"), dict) else None
 
+    user_agent = (body.get("ua") or "")[:512]
+    crawler = _detect_ai_crawler(user_agent) if user_agent else None
+    if crawler:
+        # Un bot non ha sessione: contarlo come tale gonfierebbe le sessioni del
+        # sito con visite che nessuno ha fatto.
+        label, categoria = crawler
+        event_name = "crawler"
+        session_id = ""
+        ai_source = label
+        properties = {**(properties or {}), "categoria": categoria, "ua": user_agent}
+    elif user_agent:
+        # Il mittente dichiara uno UA ma non è di un bot noto: è un passaggio
+        # normale, non va contato come traffico AI né buttato via in silenzio.
+        ai_source = None
+        properties = {**(properties or {}), "ua": user_agent}
+    else:
+        ai_source = _detect_ai_source(referrer, page_url)
+
     try:
         _sb_insert_tracking_event({
             "project_id": project_id,
@@ -916,7 +949,7 @@ async def track(request: Request):
             "session_id": session_id,
             "page_url": page_url,
             "referrer": referrer,
-            "ai_source": _detect_ai_source(referrer),
+            "ai_source": ai_source,
             "properties": properties,
         })
     except Exception:
