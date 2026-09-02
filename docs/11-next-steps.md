@@ -28,18 +28,54 @@ aspettarlo.
 
 Interventi con rapporto valore/sforzo alto, nessuna dipendenza, eseguibili subito.
 
-| # | Intervento | Sforzo | Perché |
+| # | Intervento | Stato | Perché |
 |---|---|---|---|
-| 0.1 | Verificare/impostare `CRON_SECRET` in produzione | S | 🔴 Token report prevedibili col default |
-| 0.2 | Log nell'`except` di ogni invio email | S | Oggi i lead persi sono invisibili |
-| 0.3 | Allineare `barcol()` a 50 in `geo_audit.py` | S | Un carattere; toglie un'incoerenza visibile |
-| 0.4 | Allineare il default del tema fra report e prodotto | S | Il tema cambia sotto i piedi all'utente |
-| 0.5 | Rimuovere `templates/gate.html` e `waiting.html` | S | Codice morto già manutenuto per errore |
-| 0.6 | Riscrivere il `README.md` come ingresso verso `docs/` | S | È la prima cosa che legge chi arriva |
-| 0.7 | Aggiornare i path e la tabella route in `DESIGN_SYSTEM.md` | S | Riferimenti a file inesistenti |
-| 0.8 | Avviso in AI Traffic al raggiungimento del tetto di 5000 eventi | S | Oggi tronca in silenzio |
+| 0.1 | Verificare/impostare `CRON_SECRET` in produzione | ✅ verificato | È valorizzata con una stringa casuale: il rischio non sussiste |
+| 0.2 | Log nell'`except` di ogni invio email | ✅ fatto | Oggi i lead persi sono invisibili |
+| 0.3 | Allineare `barcol()` a 50 in `geo_audit.py` | ✅ fatto | Un carattere; toglieva un'incoerenza visibile |
+| 0.4 | Allineare il default del tema fra report e prodotto | ✅ fatto | Il report parte chiaro come il resto |
+| 0.5 | Rimuovere `templates/gate.html` e `waiting.html` | ⬜ da fare | Codice morto già manutenuto per errore |
+| 0.6 | Riscrivere il `README.md` come ingresso verso `docs/` | ✅ fatto | È la prima cosa che legge chi arriva |
+| 0.7 | Aggiornare i path e la tabella route in `DESIGN_SYSTEM.md` | ⬜ da fare | Riferimenti a file inesistenti |
+| 0.8 | Avviso in AI Traffic al tetto di 5000 eventi | ⬜ da fare | Oggi tronca in silenzio |
 
 📄 Dettaglio: [10 · Stato e debito tecnico](10-stato-e-debito-tecnico.md)
+
+---
+
+## Il redesign UI/UX (settembre 2026) — fatto
+
+Su specifica dell'analista (documento funzionale e 16 pagine di prototipo).
+**In produzione.**
+
+| Cosa | Nota |
+|---|---|
+| Separazione di `server.py` in `config` / `db` / `views` | 152 definizioni prima, 152 dopo |
+| Dashboard, pagina progetto con menu laterale, le 7 sezioni su dati reali | |
+| Pages con ricerca, filtri, ordinamento, export CSV | CSV generato nel browser |
+| Opportunities con raggruppamento, paginazione reale e «Segna risolto» | |
+| Le 5 sezioni non attive con dati dimostrativi e banner | Ha **cambiato una regola di prodotto**, vedi `CLAUDE.md` |
+| Report esterno allineato al design system | I report già emessi non cambiano |
+| Tema che segue l'utente fra dispositivi | Nei metadati dell'account |
+| Roadmap pubblica coi voti | Nessuna tabella nuova |
+
+### Quel che il redesign ha lasciato indietro, e perché
+
+| Cosa | Perché non è stato fatto |
+|---|---|
+| **Preferenze di notifica** in Settings | Gli interruttori senza il lavoro sul cron che manda le email sono una promessa di messaggi che non arrivano. Vanno fatti **insieme** |
+| **Eliminazione progetto** («zona pericolosa») | Non decisa. Il database è già pronto: le righe collegate spariscono da sole |
+| **PDF del report** | Decisione di prodotto: rimandato. Si incrocia con «restare su Vercel o passare a container» |
+| **Roadmap interna** come pagina dell'app | Decisa come documento fuori dal prodotto: costruirla richiederebbe un concetto di «team» che non esiste |
+| **Linea «media competitor»** nel grafico storico | Non esiste la fonte dati e non esisterà finché non arriva il blocco 3 |
+
+### Guasto aperto, indipendente dal redesign
+
+🔴 **I magic link non partono.** Supabase accetta la richiesta (HTTP 200) ma la
+sua posta predefinita non consegna: nessuno riesce ad accedere se non ha già
+una sessione. Serve configurare l'SMTP nel pannello Supabase — c'è una chiave
+Brevo pronta. Nel frattempo i link di accesso si generano con l'API
+amministrativa.
 
 ---
 

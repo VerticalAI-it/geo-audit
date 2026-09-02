@@ -225,6 +225,55 @@ Ultimo commit.
 
 ---
 
+## Fase F — Redesign UI/UX (1-2 settembre 2026)
+
+Il progetto passa di mano: lo sviluppatore che l'ha costruito lascia, e il
+lavoro prosegue sulla specifica di un analista interno — un documento
+funzionale più 16 pagine di prototipo, scelta «Opzione A».
+
+Undici commit in due giorni, poi il merge in produzione. Il punto di rollback
+è il tag **`prima-del-rework`**.
+
+| Commit | Cosa |
+|---|---|
+| `204f26d` | Soglia colore a 50 e tema chiaro nel report |
+| `d23c4b1` | Log sugli invii email falliti |
+| `9dc51c6` | **Separazione di `server.py`** in config/db/views |
+| `8990c30` | Dashboard sul design system nuovo |
+| `17fc264` | Menu laterale e Overview con anello del punteggio |
+| `d6ea296` | Pages con ricerca, filtri, ordinamento, CSV |
+| `3a4b8d5` | Riepilogo, Technical GEO, Traffic, Settings |
+| `76dab52` | Opportunities con paginazione reale |
+| `7aea4ce` | Le 5 sezioni non attive con dati dimostrativi |
+| `af7d727` | «Segna risolto» |
+
+### Tre cose imparate, che valgono più del codice
+
+**Un commento non è un vincolo.** `issue.status` era descritto come
+`-- open | resolved` e per questo si stava per chiedere una migrazione: la
+colonna non aveva nessun `CHECK` e accettava già il terzo valore. Prima di
+chiedere di toccare un database di produzione, leggere lo schema vero.
+
+**Il mobile va guardato, non dedotto.** Una regola CSS aggiunta per colorare la
+colonna del menu batteva per specificità il `position:fixed` che la sidebar
+assume sotto 980px: su telefono la pagina appariva **vuota**. Sul desktop non
+si vedeva nulla di strano.
+
+**L'applicativo non era utilizzabile in locale.** I cookie di sessione sono
+`secure`, quindi su http il browser li scarta: si faceva il login e non si
+entrava mai, senza nessun errore. Nessuno se n'era accorto perché nessuno ci
+aveva provato.
+
+### Regola di prodotto cambiata
+
+Le sezioni non ancora attive mostravano una scatola vuota, per la regola «mai
+dati simulati». Ora mostrano **dati dimostrativi con banner esplicito**: una
+scatola vuota non fa capire cosa si otterrà. Il principio di fondo resta, ed è
+scritto in `CLAUDE.md`: *un dato mostrato senza etichetta dev'essere un dato
+misurato*.
+
+---
+
 ## Cose provate e abbandonate
 
 Utile saperlo prima di riproporle:

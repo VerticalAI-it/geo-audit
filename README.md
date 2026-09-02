@@ -1,16 +1,23 @@
 # GEO Audit — Vertical AI
 
-Piattaforma di **Generative Engine Optimization**: analizza quanto un sito è
-leggibile, citabile e consigliabile dagli assistenti AI (ChatGPT, Gemini, Claude,
-Perplexity), produce un report con punteggio e interventi prioritari, e monitora
-nel tempo l'andamento del progetto.
+Piattaforma di **Generative Engine Optimization**: misura quanto un sito è
+leggibile, citabile e consigliabile dagli assistenti AI (ChatGPT, Gemini,
+Claude, Perplexity), produce un report con punteggio e interventi prioritari, e
+monitora l'andamento nel tempo.
+
+In produzione su **[geo.verticalai.it](https://geo.verticalai.it)**.
+
+> Non è un tool SEO. La SEO ottimizza per *comparire in una lista di link*; la
+> GEO ottimizza per *essere la fonte che l'assistente legge, sintetizza e cita*.
+> Cambiano i segnali che contano — dati strutturati, contenuto leggibile senza
+> JavaScript, accesso dei crawler AI — e cambia il modo di misurare l'esito.
 
 ---
 
-## 📚 Documentazione
+## Documentazione
 
-**La documentazione completa è in [`docs/`](docs/README.md)** — architettura,
-catalogo dei check, modello dati, deploy, debito tecnico e roadmap.
+**La documentazione completa è in [`docs/`](docs/README.md).** Questo file è solo
+la porta d'ingresso.
 
 | Se devi… | Leggi |
 |---|---|
@@ -21,14 +28,41 @@ catalogo dei check, modello dati, deploy, debito tecnico e roadmap.
 | Pianificare il prossimo lavoro | [docs/11-next-steps.md](docs/11-next-steps.md) |
 | Toccare HTML, CSS o email | [design_system/DESIGN_SYSTEM.md](design_system/DESIGN_SYSTEM.md) |
 
-Regole operative vincolanti per chi modifica il repo: [CLAUDE.md](CLAUDE.md).
+**Regole operative vincolanti per chi modifica il repo: [CLAUDE.md](CLAUDE.md).**
+Leggilo prima di aprire un file: contiene gli errori già pagati una volta.
+
+---
+
+## Come è fatto
+
+| Layer | Tecnologia |
+|---|---|
+| Backend | Python 3.12 · FastAPI |
+| Motore di audit | `geo_audit.py` — requests + BeautifulSoup, nessun LLM |
+| Database e autenticazione | Supabase (Postgres + magic link) |
+| Email | Resend |
+| Frontend | HTML server-rendered, CSS con token, JavaScript senza framework |
+| Hosting | Vercel (serverless) |
+
+Il codice sta in quattro moduli, con gli import a senso unico:
+
+```
+server.py  →  views.py  →  db.py  →  config.py
+   route      HTML delle    accesso    variabili
+   auth       schermate     ai dati    d'ambiente
+   email
+   cron
+```
+
+**Mai il contrario**: `db.py` e `views.py` non importano `server.py`, o si crea
+un ciclo.
 
 ---
 
 ## Avvio rapido
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 cp .env.example .env      # compila almeno SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY
@@ -38,67 +72,41 @@ uvicorn server:app --reload
 # → http://localhost:8000
 ```
 
-Setup completo (database, auth, rendering JS, PDF, Docker):
-[docs/08-setup-e-deploy.md](docs/08-setup-e-deploy.md).
+> **In locale serve `DEV_INSECURE_COOKIES=1` nel `.env`.** I cookie di sessione
+> sono `secure` e su http il browser li scarta: senza quella variabile si fa il
+> login e non si entra mai, senza nessun messaggio d'errore.
 
-### Solo il motore, da riga di comando
-
-Non richiede Supabase né variabili d'ambiente:
+Il solo motore di audit gira anche senza database e senza credenziali:
 
 ```bash
-python geo_audit.py www.esempio.it --max-pages 20 --out report.html --json report.json
+python geo_audit.py www.esempio.it --max-pages 20 --out report.html
 ```
 
-È anche l'unico modo per ottenere il PDF e per avere il check `render.parity`
-calcolato davvero — vedi [docs/03-audit-engine.md](docs/03-audit-engine.md#uso-da-cli).
+---
+
+## Prima di un commit
+
+Non ci sono test automatici ([è il primo debito da sanare](docs/11-next-steps.md)).
+Il minimo sindacale:
+
+```bash
+python -m py_compile server.py views.py db.py config.py api/index.py geo_audit.py
+python -c "import json; json.load(open('vercel.json'))"
+python geo_audit.py example.com --no-pdf --max-pages 3
+```
+
+E una prova a occhio su **entrambi i temi** e su **schermo stretto**: il
+comportamento responsive è pieno di dettagli che si rompono in silenzio.
 
 ---
 
-## Struttura
+## Tre cose che è costato caro imparare
 
-| Percorso | Contenuto |
-|---|---|
-| [`server.py`](server.py) | App FastAPI: route, auth, dashboard, email, helper Supabase |
-| [`geo_audit.py`](geo_audit.py) | Motore di audit: crawl, 31 check, scoring, report HTML/PDF |
-| [`api/index.py`](api/index.py) | Entry point Vercel (importa `server.app`) |
-| [`templates/`](templates/) | Pagine HTML, caricate a memoria da `server.py` |
-| [`static/`](static/) | CSS del design system, snippet di tracking |
-| [`design_system/`](design_system/) | Fonte di verità visiva: token, componenti, email |
-| [`docs/`](docs/) | Documentazione completa |
-| [`supabase_setup.sql`](supabase_setup.sql) | Migrazione dello schema (idempotente) |
-
----
-
-## Deploy
-
-Produzione su **Vercel**, zero-config: `api/index.py` è servita come funzione ASGI
-nativa, ed è **l'unica funzione del deployment**.
-
-> ⚠️ **Non aggiungere `rewrites` a [`vercel.json`](vercel.json).** Un catch-all va
-> in conflitto con il routing FastAPI nativo e restituisce `{"detail":"Not Found"}`
-> su ogni pagina — build verde, produzione rotta.
-
-> ⚠️ **Non aggiungere file in `api/`.** Solo `index.py` diventa una funzione: ogni
-> altro file lì dentro non viene costruito e le sue richieste finiscono nel router
-> FastAPI. È così che il cron è rimasto morto per due settimane. Qualsiasi nuovo
-> endpoint — pagina statica, cron, webhook — va aggiunto come route FastAPI in
-> `server.py`.
-
-Il [`Dockerfile`](Dockerfile) resta valido per un deploy a container
-(Railway/Render/Fly), dove funzionano anche il rendering headless e il PDF.
-
----
-
-## Stato
-
-Disponibile oggi: motore di audit, account con magic link, progetti con storico,
-dashboard portfolio, dettaglio progetto, ciclo di vita delle issue, tracking
-first-party con tab AI Traffic, audit periodici automatici.
-
-In arrivo: monitoraggio delle citazioni reali sui provider AI, competitor e share
-of voice, presenza off-site. Vedi [docs/11-next-steps.md](docs/11-next-steps.md)
-e la [roadmap pubblica](https://geo-audit.vercel.app/roadmap).
-
----
-
-© [verticalai.it](https://verticalai.it)
+1. **Niente `rewrites` in `vercel.json`.** Vercel serve l'app FastAPI come
+   singola function e un catch-all manuale manda in conflitto il routing: build
+   verde, produzione con `{"detail":"Not Found"}` su ogni pagina.
+2. **Ogni endpoint va aggiunto come route FastAPI in `server.py`**, cron
+   compreso. Un file in `api/` che non sia `index.py` non diventa mai una
+   function — un cron è rimasto morto due settimane per questo.
+3. **`NOTIFY pgrst, 'reload schema';`** dopo ogni migrazione, o le colonne nuove
+   restano invisibili all'API con errore `PGRST205`.
