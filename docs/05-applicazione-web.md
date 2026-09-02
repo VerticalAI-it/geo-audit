@@ -276,7 +276,21 @@ come sotto-livello.
 | | Competitors | 🔒 soon | — |
 | | Citations | 🔒 soon | — |
 | **Traffic & Reports** | AI Traffic | ✅ *(se lo snippet è installato)* | `tracking_event` |
-| | Reports | 🔒 soon | — |
+| | Reports | ✅ | `audits` + `issue` + `tracking_event` |
+
+**Reports** era una sezione dimostrativa, ed è diventata reale il 2 settembre
+2026: ogni numero del digest d'esempio — punteggio, criticità risolte, traffico
+AI — era già calcolabile sui dati del progetto. Il rapporto si legge e si copia
+in testo semplice, pronto da girare al cliente finale.
+
+⚠️ Quello che manca **non è il rapporto ma la sua spedizione automatica**, che
+richiede cron e notifiche. La scheda lo dichiara e non mette interruttori: degli
+interruttori che promettono email non recapitate sono peggio di una riga che
+spiega perché non ci sono ancora.
+
+Il riepilogo (`_riepilogo_periodo`) non riempie mai un buco con uno zero: dove il
+tracking non è installato il valore resta `None` e il rapporto scrive «non
+misurato», perché «nessun evento» e «non stiamo guardando» sono due cose diverse.
 | **Settings** | *(nessun figlio)* | ✅ | `project` |
 
 Una categoria in cui **tutti** i figli sono "coming soon" viene marcata `soon` già
@@ -388,6 +402,37 @@ già stato incollato correttamente.
 
 ## Tracking first-party
 
+### Due fenomeni, non uno
+
+| | Chi | Come si vede | Chi lo manda a `/t` |
+|---|---|---|---|
+| **Crawler AI** | GPTBot, ClaudeBot, PerplexityBot… | User-Agent, **solo lato server** | il plugin sul sito |
+| **Referral AI** | una persona che clicca un link dentro ChatGPT | `Referer` / `utm_source` | lo snippet nel browser |
+
+⚠️ **I crawler non eseguono JavaScript**: lo snippet non ne vedrà mai nemmeno
+uno, per costruzione. È il motivo per cui AI Traffic sembrava non funzionare —
+misurava solo il fenomeno raro (qualcuno *arriva* da un assistente) e non poteva
+vedere quello frequente (gli assistenti *ti leggono*). Verificato sui dati veri
+il 2 settembre 2026: **4.089 eventi in `tracking_event`, tutti `pageview`, zero
+crawler.**
+
+Le regole di riconoscimento stanno in [ai_sources.py](../ai_sources.py), portate
+dal plugin GEO Suite di Octoplug dove sono in esercizio da mesi. I criteri che
+contano, ognuno nato da un errore già pagato lì:
+
+- il dominio si confronta **col solo host e per suffisso** — cercarlo dentro
+  l'URL faceva contare `html.it/articoli/chatgpt-guida/` come visita *da* ChatGPT;
+- `utm_source` è il **secondo segnale**, e vale per **parola intera** — molti
+  assistenti mandano traffico senza `Referer`, ma «you» dentro «youtube» non è
+  You.com;
+- alcune voci richiedono anche il **percorso**: solo `bing.com/chat` è Copilot,
+  `bing.com/search` è un motore di ricerca.
+
+Effetto misurato sui 4.089 eventi già in database: gli eventi riconosciuti come
+AI passano da **11 a 29** (+164%), senza una sola riclassificazione errata in
+senso opposto. Il grosso erano visite con `utm_source=chatgpt.com` **e nessun
+referrer**, che finivano fra il traffico diretto.
+
 ### Lo snippet
 
 [static/js/geo-track.js](../static/js/geo-track.js) — ~1.5 KB, IIFE, nessuna
@@ -416,10 +461,23 @@ Scelte progettuali, tutte orientate a **non rompere il sito del cliente**:
 
 - **Nessuna autenticazione** — gira su domini di terzi
 - Validazione minima: senza `pid` esce, e basta
-- Troncamento difensivo: `event` 64 char, `url`/`ref` 2048, `sid` 128
-- `_detect_ai_source()` mappa l'host del referrer sul provider
+- Troncamento difensivo: `event` 64 char, `url`/`ref` 2048, `sid` 128, `ua` 512
+- `_detect_ai_source()` riconosce il referral da `ref` **e** dall'`utm_source`
+  dentro `url`
 - Timeout Supabase a **5 secondi** (più corto degli altri, che sono a 10)
 - **Ritorna 204 in ogni caso**, anche in errore
+
+**Il campo `ua`** distingue i due mittenti. Se il body lo porta, la richiesta
+arriva da un server (il plugin) e non da un browser: l'endpoint riconosce il
+crawler dallo User-Agent e scrive `event_name = "crawler"`, `ai_source` = nome
+del bot, `session_id` vuoto (un bot non ha sessione: contarlo come tale
+gonfierebbe le sessioni del sito con visite che nessuno ha fatto), e la finalità
+del passaggio in `properties.categoria`. Uno UA che non è di un bot noto viene
+registrato come pageview normale, non buttato via.
+
+Il riconoscimento sta **qui e non nel plugin** di proposito: la lista dei bot
+invecchia in fretta, e così si aggiorna sulla piattaforma senza toccare i siti
+dei clienti.
 
 Non c'è rate limiting. Limite noto ([04 · Modello
 dati](04-data-model.md#tracking_event)).

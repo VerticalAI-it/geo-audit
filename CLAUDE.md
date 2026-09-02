@@ -5,6 +5,8 @@
 - `server.py` — app FastAPI: route, auth, email, cron
 - `config.py` — variabili d'ambiente condivise
 - `db.py` — accesso Supabase (tutti gli `_sb_*`); **importabile senza toccare `server.py`**
+- `ai_sources.py` — chi sono le AI: crawler (dallo User-Agent) e referral (da
+  `Referer`/`utm_source`). Modulo foglia, non importa nulla del progetto
 - `views.py` — costruzione HTML di dashboard e tab di progetto
 - `api/index.py` — entry point Vercel (importa `server.app`)
 - `geo_audit.py` — logica di analisi GEO
@@ -48,7 +50,8 @@ lo storico non si inventa una linea piatta — si scrive che lo storico non c'è
 
 ## Invarianti da non rompere
 
-- **Direzione degli import**: `server.py` → `views.py` → `db.py` → `config.py`.
+- **Direzione degli import**: `server.py` → `views.py` → `db.py` → `config.py`,
+  con `ai_sources.py` foglia come `config.py`.
   Mai il contrario: `db.py` e `views.py` non devono importare `server.py`, o si
   crea un ciclo. Se una funzione di `views.py` ha bisogno di un dato, lo riceve
   come parametro o lo chiede a `db.py`.

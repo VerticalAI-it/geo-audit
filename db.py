@@ -12,10 +12,10 @@ verificare project["user_id"] == user["id"].
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlparse
 import requests as req
 
 from config import SUPABASE_URL, SUPABASE_SVC, SUPABASE_ANON
+from ai_sources import detect_ai_referral, detect_ai_crawler
 
 
 _SB_H = {
@@ -235,20 +235,6 @@ def _sb_issue_sync(project_id: str, user_id: str, audit_id: str, checks: list) -
                   headers=_SB_H, params={"id": f"eq.{i['id']}"}, timeout=10)
 
 
-_AI_REFERRER_DOMAINS = {
-    "chat.openai.com": "ChatGPT",
-    "chatgpt.com": "ChatGPT",
-    "perplexity.ai": "Perplexity",
-    "www.perplexity.ai": "Perplexity",
-    "gemini.google.com": "Gemini",
-    "bard.google.com": "Gemini",
-    "claude.ai": "Claude",
-    "copilot.microsoft.com": "Copilot",
-    "you.com": "You.com",
-    "meta.ai": "Meta AI",
-}
-
-
 _SCAN_LEASE = timedelta(minutes=20)
 
 
@@ -282,29 +268,89 @@ def _sb_project_claim_due() -> dict | None:
     return project
 
 
-def _detect_ai_source(referrer: str) -> str | None:
-    if not referrer:
-        return None
-    try:
-        host = urlparse(referrer).netloc.lower()
-    except Exception:
-        return None
-    return _AI_REFERRER_DOMAINS.get(host)
+def _detect_ai_source(referrer: str, page_url: str = "") -> str | None:
+    """Assistente AI da cui arriva la visita. Le regole stanno in `ai_sources`,
+    portate dal plugin GEO Suite dove sono in esercizio da mesi.
+
+    Il secondo parametro e' facoltativo per retrocompatibilita', ma passarlo
+    conviene: senza `page_url` si perde `utm_source`, e con lui tutti i referral
+    che arrivano senza `Referer` (link copiato a mano, app mobile, https->http).
+    """
+    return detect_ai_referral(referrer, page_url)
 
 
 def _sb_insert_tracking_event(data: dict) -> None:
     req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", json=data, headers=_SB_H, timeout=5)
 
 
-def _sb_tracking_events(project_id: str, days: int = 30, limit: int = 5000) -> list:
+# PostgREST non restituisce piu' di 1000 righe per richiesta, qualunque `limit`
+# si chieda: oltre, si pagina con l'header Range.
+_PAGINA_PG = 1000
+
+# ⚠️ Tetto agli eventi letti per una scheda. Serve perche' un sito con molti
+# crawler puo' produrre decine di migliaia di righe al mese, e scaricarle tutte a
+# ogni apertura della scheda costerebbe secondi. Chi chiama riceve anche il
+# numero totale, cosi' puo' dire che sta mostrando una parte invece di far
+# passare un dato parziale per completo.
+_TETTO_EVENTI = 12000
+
+_TRACKING_FIELDS = "event_name,session_id,page_url,ai_source,properties,created_at"
+
+
+def _sb_tracking_events_conta(project_id: str, days: int = 30) -> int:
+    """Quanti eventi ci sono nel periodo, senza scaricarli."""
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event",
-                headers=_SB_H,
+                headers={**_SB_H, "Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"},
                 params={"project_id": f"eq.{project_id}", "created_at": f"gte.{since}",
-                        "select": "event_name,session_id,page_url,ai_source,created_at",
-                        "order": "created_at.desc", "limit": str(limit)},
-                timeout=10)
-    return r.json() if r.ok else []
+                        "select": "id"}, timeout=10)
+    intervallo = r.headers.get("content-range", "")
+    try:
+        return int(intervallo.split("/")[-1])
+    except (ValueError, IndexError):
+        return 0
+
+
+def _sb_tracking_events(project_id: str, days: int = 30, limit: int = _TETTO_EVENTI) -> list:
+    """Eventi di tracking del periodo, paginati.
+
+    ⚠️ Qui c'era una richiesta sola con `limit=5000`, e **PostgREST ne restituisce
+    al massimo 1000**: su un progetto con 4.089 eventi in 30 giorni la scheda ne
+    leggeva un quarto e presentava quel quarto come il totale. Il difetto era
+    silenzioso — nessun errore, solo numeri piu' bassi del vero — e sarebbe
+    peggiorato con l'arrivo dei passaggi dei crawler, che si sommano alle visite.
+
+    Ordini di grandezza misurati su un sito vero (fratellipalomba.it, 41 giorni):
+    3.671 visite, 1.178 passaggi di crawler, 29 referral da AI. I crawler non sono
+    piu' delle visite — sono quaranta volte i referral, che e' il confronto giusto:
+    sono le due cose che questa scheda mette una accanto all'altra.
+    """
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    params = {"project_id": f"eq.{project_id}", "created_at": f"gte.{since}",
+              # `properties` porta la categoria del crawler (training / search /
+              # user), che e' cio che rende leggibile il dato.
+              "select": _TRACKING_FIELDS, "order": "created_at.desc"}
+
+    def pagina(inizio: int) -> list:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event",
+                    headers={**_SB_H, "Range-Unit": "items",
+                             "Range": f"{inizio}-{inizio + _PAGINA_PG - 1}"},
+                    params=params, timeout=10)
+        return r.json() if r.ok else []
+
+    prima = pagina(0)
+    if len(prima) < _PAGINA_PG:
+        return prima
+
+    # Ci sono altre pagine: si scaricano in parallelo, non una dopo l'altra.
+    totale = min(_sb_tracking_events_conta(project_id, days) or len(prima), limit)
+    inizi = list(range(_PAGINA_PG, totale, _PAGINA_PG))
+    if not inizi:
+        return prima
+    with ThreadPoolExecutor(max_workers=min(6, len(inizi))) as pool:
+        for blocco in pool.map(pagina, inizi):
+            prima.extend(blocco)
+    return prima[:limit]
 
 
 def _sb_has_tracking(project_id: str) -> bool:

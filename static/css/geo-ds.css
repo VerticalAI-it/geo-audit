@@ -1082,3 +1082,16 @@ h1{font-family:var(--font-display); font-size:26px; font-weight:600; letter-spac
 .row-resolve:hover{background:var(--accent-primary); color:#fff;}
 .row-resolve:disabled{opacity:.6; cursor:wait;}
 .row-resolve.errore{color:var(--state-critical); background:var(--state-critical-dim);}
+
+/* ── Andamento a colonne (AI Traffic) ──────────────────────────────────────
+   Il giorno a zero resta una colonna sottile e non un vuoto: leggere una serie
+   con dei buchi e' leggere quanti giorni sono passati, non quanti eventi. */
+.colonne-giorni{width:100%;}
+.colonne-giorni svg{width:100%; height:96px; display:block;}
+.colonne-giorni .col-piena{fill:var(--state-good);}
+.colonne-giorni .col-vuota{fill:var(--border-medium);}
+.colonne-warn .col-piena{fill:var(--state-warn);}
+.colonne-assi{
+  display:flex; justify-content:space-between;
+  margin-top:6px; font-size:11px; color:var(--text-muted);
+}

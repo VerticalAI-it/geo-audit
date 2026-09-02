@@ -13,8 +13,10 @@ import json
 from datetime import datetime, timezone, timedelta
 
 import geo_audit
+from ai_sources import CRAWLER_CATEGORIE
 from config import SITE_URL
-from db import _sb_has_tracking, _sb_issues_by_project, _sb_recent_audits_by_user, _sb_tracking_events
+from db import _TETTO_EVENTI, _sb_audits_by_project, _sb_has_tracking, _sb_issues_by_project, \
+    _sb_recent_audits_by_user, _sb_tracking_events
 
 
 _SCAN_FREQUENCY_LABELS = {"daily": "Giornaliero", "weekly": "Settimanale", "monthly": "Mensile"}
@@ -228,6 +230,44 @@ def _banner_campione(dominio: str, cosa_serve: str) -> str:
 def _barra_semplice(valore: int, classe: str = "warn") -> str:
     return (f'<div class="area-track"><div class="area-fill {classe}" '
             f'style="--w:{valore}%"></div></div>')
+
+
+def _kpi_semplice(valore, etichetta: str, sotto: str = "", classe: str = "") -> str:
+    """Una tessera della `.kpi-strip` del design system.
+
+    Sta qui e non dentro una singola scheda perche' la usano in due, e due copie
+    della stessa tessera divergono al primo ritocco.
+    """
+    return (
+        '<div class="kpi">'
+        f'<div class="kpi-top"><span class="kpi-label">{etichetta}</span></div>'
+        f'<div class="kpi-value-row"><span class="kpi-value {classe}">{valore}</span></div>'
+        + (f'<div class="kpi-sub">{sotto}</div>' if sotto else '')
+        + '</div>'
+    )
+
+
+# Lo stesso script serve allo snippet di tracking e al rapporto da copiare: e'
+# idempotente (`data-pronto`), quindi due inclusioni nella stessa pagina non
+# agganciano due volte lo stesso bottone.
+_COPIA_JS = """<script>
+document.querySelectorAll('.copy-btn[data-copia]').forEach(function(b){
+  if (b.dataset.pronto) return;
+  b.dataset.pronto = "1";
+  b.addEventListener('click', function(){
+    navigator.clipboard.writeText(b.dataset.testo).then(function(){
+      const et = b.querySelector('span');
+      const prima = et.textContent;
+      et.textContent = '✓ Copiato';
+      b.classList.add('copied');
+      setTimeout(function(){ et.textContent = prima; b.classList.remove('copied'); }, 1800);
+    });
+  });
+});
+</script>"""
+
+_SEV_BARRA = {"critical": "critical", "high": "critical", "medium": "warn",
+              "low": "good", "info": "good"}
 
 
 def _campione_ai_visibility(dominio: str) -> str:
@@ -447,8 +487,10 @@ _SEZIONI_CAMPIONE = {
         "Serve il monitoraggio dei prompt e l'elenco dei concorrenti da confrontare."),
     "citations": (_campione_citations,
         "Serve l'osservazione delle citazioni nelle risposte degli assistenti."),
-    "reports": (_campione_reports,
-        "Serve almeno un modulo di monitoraggio attivo da cui generare avvisi."),
+    # `reports` stava qui ed e' uscito il 2 settembre 2026: ogni numero del
+    # digest d'esempio era gia' calcolabile sui dati del progetto. Vedi
+    # `_tab_reports`. Cio' che manca non e' il rapporto ma la sua spedizione
+    # automatica, e quella la scheda la dichiara invece di simularla.
 }
 
 
@@ -1542,8 +1584,67 @@ def _tracking_snippet_html(project_id: str) -> str:
 
 
 
+def _colonne_giorni(daily: dict, giorni: int = 14, classe: str = "good") -> str:
+    """Andamento a colonne degli ultimi giorni, SVG inline.
+
+    Una tabella «Data | Eventi» costringe a leggere quattordici numeri per
+    accorgersi di una salita: la forma si vede, i numeri si contano.
+    """
+    oggi = datetime.now(timezone.utc).date()
+    serie = [(oggi - timedelta(days=i)) for i in range(giorni - 1, -1, -1)]
+    valori = [daily.get(g.isoformat(), 0) for g in serie]
+    massimo = max(valori) or 1
+
+    larghezza_col = 100 / giorni
+    barre = []
+    for i, (giorno, v) in enumerate(zip(serie, valori)):
+        h = (v / massimo) * 92 if v else 0
+        x = i * larghezza_col
+        # min-height a 1.5 per il giorno a zero: la colonna assente e quella a
+        # zero devono restare distinguibili dal fondo.
+        y = 100 - max(h, 1.5)
+        barre.append(
+            f'<rect x="{x + larghezza_col * 0.18:.2f}" y="{y:.2f}" '
+            f'width="{larghezza_col * 0.64:.2f}" height="{max(h, 1.5):.2f}" rx="0.6" '
+            f'class="{"col-piena" if v else "col-vuota"}">'
+            f'<title>{_fmt_date(giorno.isoformat())}: {v}</title></rect>'
+        )
+
+    return (
+        f'<div class="colonne-giorni colonne-{classe}">'
+        f'<svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" '
+        f'aria-label="Andamento degli ultimi {giorni} giorni">{"".join(barre)}</svg>'
+        f'<div class="colonne-assi"><span>{_fmt_date(serie[0].isoformat())}</span>'
+        f'<span>{_fmt_date(serie[-1].isoformat())}</span></div>'
+        '</div>'
+    )
+
+
+def _righe_barre(conteggi: dict, classe: str = "good", limite: int = 12) -> str:
+    """Classifica con barra proporzionale, riusando i componenti gia' a tema."""
+    if not conteggi:
+        return ''
+    ordinati = sorted(conteggi.items(), key=lambda x: -x[1])[:limite]
+    massimo = ordinati[0][1] or 1
+    return "".join(
+        f'<div class="engine-row"><div class="engine-name">{geo_audit.esc(str(nome))}</div>'
+        f'{_barra_semplice(round(100 * v / massimo), classe)}'
+        f'<div class="area-value">{v}</div></div>'
+        for nome, v in ordinati
+    )
+
+
 def _tab_traffic(project: dict) -> str:
-    events = _sb_tracking_events(project["id"], days=30, limit=5000)
+    """AI Traffic: i due fenomeni che prima erano uno solo.
+
+    ⚠️ La scheda misurava soltanto i **referral** — le persone che arrivano da un
+    assistente — e per questo sembrava sempre vuota: e' il fenomeno raro. Quello
+    frequente, «gli assistenti stanno leggendo il tuo sito», non poteva vederlo
+    perche' lo snippet e' JavaScript e **i crawler non eseguono JavaScript**.
+    Adesso i due sono separati e dichiarati, e i passaggi dei crawler arrivano da
+    chi puo' vederli: il plugin sul server del sito (vedi `POST /t`, campo `ua`).
+    """
+    events = _sb_tracking_events(project["id"], days=30)
     if not events:
         return (
             '<div class="alert alert--info"><div class="ic">i</div>'
@@ -1552,10 +1653,32 @@ def _tab_traffic(project: dict) -> str:
             f'<div class="card" style="margin-top:16px">{_tracking_snippet_html(project["id"])}</div>'
         )
 
-    sessions = {}
-    for e in events:
-        sid = e.get("session_id") or e.get("created_at")
-        row = sessions.setdefault(sid, {"ai_source": None, "landing": e.get("page_url"), "first_at": e.get("created_at")})
+    crawler_hits = [e for e in events if e.get("event_name") == "crawler"]
+    visite = [e for e in events if e.get("event_name") != "crawler"]
+
+    # ── chi ti legge ────────────────────────────────────────────────────────
+    per_bot: dict = {}
+    per_categoria: dict = {}
+    crawler_daily: dict = {}
+    per_pagina_bot: dict = {}
+    for e in crawler_hits:
+        bot = e.get("ai_source") or "Sconosciuto"
+        per_bot[bot] = per_bot.get(bot, 0) + 1
+        props = e.get("properties") if isinstance(e.get("properties"), dict) else {}
+        cat = CRAWLER_CATEGORIE.get(props.get("categoria"), "Altro")
+        per_categoria[cat] = per_categoria.get(cat, 0) + 1
+        giorno = (e.get("created_at") or "")[:10]
+        if giorno:
+            crawler_daily[giorno] = crawler_daily.get(giorno, 0) + 1
+        url = e.get("page_url") or "—"
+        per_pagina_bot[url] = per_pagina_bot.get(url, 0) + 1
+
+    # ── chi ti manda persone ────────────────────────────────────────────────
+    sessions: dict = {}
+    for e in visite:
+        sid = e.get("session_id") or f"anon:{e.get('created_at')}"
+        row = sessions.setdefault(sid, {"ai_source": None, "landing": e.get("page_url"),
+                                        "first_at": e.get("created_at")})
         if e.get("ai_source"):
             row["ai_source"] = e["ai_source"]
         created = e.get("created_at") or ""
@@ -1569,54 +1692,347 @@ def _tab_traffic(project: dict) -> str:
     ai_pct = round(100 * ai_count / total_sessions) if total_sessions else 0
 
     by_source: dict = {}
-    for s in ai_sessions:
-        by_source[s["ai_source"]] = by_source.get(s["ai_source"], 0) + 1
-    source_rows = "".join(
-        f'<tr><td data-label="Provider"><b>{geo_audit.esc(k)}</b></td><td data-label="Sessioni">{v}</td></tr>'
-        for k, v in sorted(by_source.items(), key=lambda x: -x[1])
-    ) or '<tr><td colspan="2" class="card-sub">Nessuna sessione da AI nel periodo.</td></tr>'
-
     by_landing: dict = {}
     for s in ai_sessions:
-        url = s["landing"] or "—"
-        by_landing[url] = by_landing.get(url, 0) + 1
-    landing_rows = "".join(
-        f'<tr><td data-label="Pagina">{geo_audit.esc(k)}</td><td data-label="Sessioni">{v}</td></tr>'
-        for k, v in sorted(by_landing.items(), key=lambda x: -x[1])[:10]
-    ) or '<tr><td colspan="2" class="card-sub">Nessuna landing page da AI nel periodo.</td></tr>'
+        by_source[s["ai_source"]] = by_source.get(s["ai_source"], 0) + 1
+        by_landing[s["landing"] or "—"] = by_landing.get(s["landing"] or "—", 0) + 1
 
-    daily: dict = {}
-    for e in events:
+    referral_daily: dict = {}
+    for e in visite:
         if not e.get("ai_source"):
             continue
-        day = (e.get("created_at") or "")[:10]
-        if day:
-            daily[day] = daily.get(day, 0) + 1
-    trend_rows = "".join(
-        f'<tr><td data-label="Data">{_fmt_date(day)}</td><td data-label="Eventi AI">{count}</td></tr>'
-        for day, count in sorted(daily.items(), reverse=True)[:14]
-    ) or '<tr><td colspan="2" class="card-sub">Nessun evento AI negli ultimi 14 giorni.</td></tr>'
+        giorno = (e.get("created_at") or "")[:10]
+        if giorno:
+            referral_daily[giorno] = referral_daily.get(giorno, 0) + 1
+
+    # ── i numeri in testa ───────────────────────────────────────────────────
+    # Qui c'erano `.mini-stat`/`.mini-stat-row`, che esistono ma sono definite in
+    # un `<style>` dentro `templates/project.html`: vivono solo lì, e una scheda
+    # che le usa non si può rendere fuori da quel template. Si usa `.kpi-strip`,
+    # il componente equivalente del design system, che sta in `geo-ds.css` ed è
+    # già responsive (4 → 2 colonne).
+    kpi = (
+        '<div class="kpi-strip">'
+        + _kpi_semplice(len(crawler_hits), "Passaggi di crawler AI", "ultimi 30 giorni", "good")
+        + _kpi_semplice(total_sessions, "Sessioni", "ultimi 30 giorni")
+        + _kpi_semplice(ai_count, "Sessioni da AI", "arrivate da un assistente", "good")
+        + _kpi_semplice(f"{ai_pct}%", "Quota AI", "sul totale delle sessioni")
+        + '</div>'
+    )
+
+    # ── sezione crawler ─────────────────────────────────────────────────────
+    if crawler_hits:
+        pagine_bot = "".join(
+            f'<tr><td data-label="Pagina">{geo_audit.esc(k)}</td><td data-label="Passaggi">{v}</td></tr>'
+            for k, v in sorted(per_pagina_bot.items(), key=lambda x: -x[1])[:10]
+        )
+        sezione_crawler = (
+            '<div class="card" style="margin-top:20px">'
+            '<div class="card-title">Chi ti legge — crawler AI</div>'
+            '<p class="card-sub">I bot degli assistenti che sono passati sul sito negli ultimi '
+            '30 giorni. Non sono visite di persone: sono le AI che raccolgono i tuoi contenuti '
+            'per poterti citare.</p>'
+            f'<div style="margin-top:16px">{_righe_barre(per_bot, "good")}</div>'
+            f'<div style="margin-top:18px">{_colonne_giorni(crawler_daily, 14, "good")}</div>'
+            '<div class="card-title" style="margin:22px 0 10px">Per finalità</div>'
+            f'<div>{_righe_barre(per_categoria, "warn")}</div>'
+            '<div class="card-title" style="margin:22px 0 10px">Pagine più lette dai bot</div>'
+            '<div class="tbl-wrap"><table class="tbl tbl-responsive">'
+            '<thead><tr><th>Pagina</th><th>Passaggi</th></tr></thead>'
+            f'<tbody>{pagine_bot}</tbody></table></div>'
+            '</div>'
+        )
+    else:
+        sezione_crawler = (
+            '<div class="card" style="margin-top:20px">'
+            '<div class="card-title">Chi ti legge — crawler AI</div>'
+            '<div class="alert alert--info" style="margin-top:12px"><div class="ic">i</div>'
+            '<div><b>Nessun passaggio di crawler registrato, e con il solo snippet non se ne '
+            'registrerebbe mai uno.</b> Lo snippet è JavaScript e i bot degli assistenti '
+            'non eseguono JavaScript: quando GPTBot o ClaudeBot leggono una pagina, nel browser '
+            'non succede nulla da osservare. Per contarli serve chi sta sul server del sito — '
+            'il plugin Vertical GEO, che li riconosce dallo User-Agent e li manda qui.</div></div>'
+            '</div>'
+        )
+
+    # ── sezione referral ────────────────────────────────────────────────────
+    if ai_sessions:
+        landing_rows = "".join(
+            f'<tr><td data-label="Pagina">{geo_audit.esc(k)}</td><td data-label="Sessioni">{v}</td></tr>'
+            for k, v in sorted(by_landing.items(), key=lambda x: -x[1])[:10]
+        )
+        corpo_referral = (
+            f'<div style="margin-top:16px">{_righe_barre(by_source, "good")}</div>'
+            f'<div style="margin-top:18px">{_colonne_giorni(referral_daily, 14, "good")}</div>'
+            '<div class="card-title" style="margin:22px 0 10px">Pagine di atterraggio</div>'
+            '<div class="tbl-wrap"><table class="tbl tbl-responsive">'
+            '<thead><tr><th>Pagina</th><th>Sessioni</th></tr></thead>'
+            f'<tbody>{landing_rows}</tbody></table></div>'
+        )
+    else:
+        corpo_referral = (
+            '<p class="card-sub" style="margin-top:12px">Nessuna sessione arrivata da un '
+            'assistente AI in questo periodo. È il fenomeno più raro dei due: '
+            'prima le AI ti leggono, e solo dopo — se ti citano — ti mandano qualcuno.</p>'
+        )
+
+    sezione_referral = (
+        '<div class="card" style="margin-top:20px">'
+        '<div class="card-title">Chi ti manda persone — visite da AI</div>'
+        '<p class="card-sub">Sessioni di persone vere arrivate da un assistente, riconosciute '
+        'dal referrer o da <code>utm_source</code>.</p>'
+        f'{corpo_referral}'
+        '</div>'
+    )
+
+    # Un dato parziale non deve mai passare per completo: se il tetto di lettura
+    # ha tagliato, la scheda lo dice invece di mostrare numeri piu' bassi del vero.
+    avviso_parziale = ''
+    if len(events) >= _TETTO_EVENTI:
+        avviso_parziale = (
+            '<div class="alert alert--warn" style="margin-bottom:16px"><div class="ic">!</div>'
+            f'<div>Il progetto ha superato i {_TETTO_EVENTI:,} eventi in 30 giorni: '
+            'i numeri qui sotto sono calcolati sui più recenti, non su tutto il periodo.</div></div>'
+        ).replace(",", ".")
 
     return (
-        '<div class="mini-stat-row">'
-        f'<div class="mini-stat"><span class="mini-stat-num">{total_sessions}</span><span class="mini-stat-label">sessioni (30gg)</span></div>'
-        f'<div class="mini-stat stat-good"><span class="mini-stat-num">{ai_count}</span><span class="mini-stat-label">sessioni da AI</span></div>'
-        f'<div class="mini-stat"><span class="mini-stat-num">{ai_pct}%</span><span class="mini-stat-label">quota AI</span></div>'
-        '</div>'
+        avviso_parziale
+        + kpi
+        + sezione_crawler
+        + sezione_referral
+        + f'<div class="card" style="margin-top:20px">{_tracking_snippet_html(project["id"])}</div>'
+    )
 
-        '<div class="card-title" style="margin:20px 0 10px">Per provider</div>'
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Provider</th><th>Sessioni</th></tr></thead>'
-        f'<tbody>{source_rows}</tbody></table></div>'
+_SEV_ORDINE = ["critical", "high", "medium", "low", "info"]
+_SEV_NOME = {"critical": "Critiche", "high": "Gravi", "medium": "Medie",
+             "low": "Minori", "info": "Informative"}
 
-        '<div class="card-title" style="margin:20px 0 10px">Landing page più visitate da AI</div>'
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Pagina</th><th>Sessioni</th></tr></thead>'
-        f'<tbody>{landing_rows}</tbody></table></div>'
 
-        '<div class="card-title" style="margin:20px 0 10px">Andamento (ultimi 14 giorni)</div>'
-        '<div class="tbl-wrap"><table class="tbl tbl-responsive"><thead><tr><th>Data</th><th>Eventi AI</th></tr></thead>'
-        f'<tbody>{trend_rows}</tbody></table></div>'
+def _plurale(n: int, singolare: str, plurale: str) -> str:
+    """«1 visite da AI» si legge come una svista, e una svista fa dubitare anche
+    del numero che le sta accanto."""
+    return f"{n} {singolare if n == 1 else plurale}"
 
-        f'<div class="card" style="margin-top:20px">{_tracking_snippet_html(project["id"])}</div>'
+
+def _riepilogo_periodo(project: dict, giorni: int = 30) -> dict:
+    """I numeri del rapporto, tutti misurati. Nessuna stima, nessun riempitivo.
+
+    Dove un dato non c'e' resta None e chi rende il rapporto lo dice: una riga
+    «nessun calo di traffico» scritta senza aver misurato il traffico e' peggio
+    di una riga assente, perche' non si distingue da una misurata.
+    """
+    da = datetime.now(timezone.utc) - timedelta(days=giorni)
+    da_iso = da.isoformat()
+
+    storico = _sb_audits_by_project(project["id"], limit=260, full=False)
+    nel_periodo = [a for a in storico if (a.get("created_at") or "") >= da_iso]
+
+    punteggi = [a for a in storico if a.get("overall") is not None]
+    attuale = punteggi[0]["overall"] if punteggi else None
+    # Il confronto e' col primo audit del periodo, non con quello precedente:
+    # un rapporto a 30 giorni deve dire quanto e' cambiato in 30 giorni, non
+    # quanto e' cambiato dall'ultima volta che si e' guardato.
+    dentro = [a for a in punteggi if (a.get("created_at") or "") >= da_iso]
+    iniziale = dentro[-1]["overall"] if len(dentro) > 1 else None
+    delta = (attuale - iniziale) if (attuale is not None and iniziale is not None) else None
+
+    issues = _sb_issues_by_project(project["id"])
+    aperte = [i for i in issues if i.get("status") == "open"]
+    per_sev: dict = {}
+    for i in aperte:
+        s = i.get("severity") or "info"
+        per_sev[s] = per_sev.get(s, 0) + 1
+    risolte = [i for i in issues
+               if i.get("status") in ("resolved", "resolved_manually")
+               and (i.get("resolved_at") or "") >= da_iso]
+    nuove = [i for i in aperte if (i.get("first_seen_at") or "") >= da_iso]
+
+    # La voce con piu' impatto: la criticita' aperta piu' grave, e fra pari
+    # gravita' quella che tocca piu' pagine — e' quella che, sistemata, sposta
+    # di piu' il punteggio.
+    per_check: dict = {}
+    for i in aperte:
+        k = (i.get("check_id"), i.get("title"), i.get("severity") or "info")
+        per_check[k] = per_check.get(k, 0) + 1
+    prioritaria = None
+    if per_check:
+        def peso(v):
+            (_, _, sev), n = v
+            return (_SEV_ORDINE.index(sev) if sev in _SEV_ORDINE else 9, -n)
+        (check_id, titolo, sev), quante = sorted(per_check.items(), key=peso)[0]
+        prioritaria = {"titolo": titolo or check_id, "severita": sev, "pagine": quante}
+
+    eventi = _sb_tracking_events(project["id"], days=giorni)
+    crawler = [e for e in eventi if e.get("event_name") == "crawler"]
+    visite = [e for e in eventi if e.get("event_name") != "crawler"]
+    sessioni_ai = {e.get("session_id") for e in visite
+                   if e.get("ai_source") and e.get("session_id")}
+    per_bot: dict = {}
+    for e in crawler:
+        b = e.get("ai_source") or "Sconosciuto"
+        per_bot[b] = per_bot.get(b, 0) + 1
+
+    return {
+        "giorni": giorni,
+        "audit_fatti": len(nel_periodo),
+        "punteggio": attuale,
+        "punteggio_iniziale": iniziale,
+        "delta": delta,
+        "aperte": len(aperte),
+        "per_sev": per_sev,
+        "risolte": len(risolte),
+        "nuove": len(nuove),
+        "prioritaria": prioritaria,
+        # None, non 0: «nessun evento registrato» e «il tracking non e'
+        # installato» sono due cose diverse e non vanno confuse in uno zero.
+        "tracking": bool(eventi),
+        "crawler": len(crawler) if eventi else None,
+        "per_bot": per_bot,
+        "sessioni_ai": len(sessioni_ai) if eventi else None,
+    }
+
+
+def _rapporto_testo(project: dict, r: dict) -> str:
+    """Il rapporto in testo semplice, pronto da incollare in una email.
+
+    Serve a chi lavora per conto terzi: il valore non e' la schermata, e' poter
+    girare due paragrafi al proprio cliente senza riscriverli a mano.
+    """
+    dominio = project.get("domain") or project.get("name") or ""
+    righe = [f"GEO Audit · {dominio} — ultimi {r['giorni']} giorni", ""]
+
+    if r["punteggio"] is None:
+        righe.append("Punteggio: nessun audit completato.")
+    elif r["delta"] is None:
+        righe.append(f"Punteggio GEO: {r['punteggio']}/100 "
+                     "(un solo audit nel periodo: non c'è ancora un confronto).")
+    else:
+        verso = "salito" if r["delta"] > 0 else ("sceso" if r["delta"] < 0 else "rimasto")
+        segno = f"{r['delta']:+d}" if r["delta"] else "invariato"
+        righe.append(f"Punteggio GEO: {r['punteggio']}/100, {verso} da "
+                     f"{r['punteggio_iniziale']} ({segno}).")
+
+    if r["risolte"] or r["nuove"]:
+        pezzi = []
+        if r["risolte"]:
+            pezzi.append(_plurale(r["risolte"], "criticità risolta", "criticità risolte"))
+        if r["nuove"]:
+            pezzi.append(_plurale(r["nuove"], "nuova", "nuove"))
+        resta = _plurale(r["aperte"], "aperta", "aperte")
+        righe.append(f"Criticità: {' e '.join(pezzi)}. Ne {'resta' if r['aperte'] == 1 else 'restano'} {resta}.")
+    else:
+        righe.append(f"Criticità aperte: {r['aperte']}, nessun cambiamento nel periodo.")
+
+    if r["tracking"]:
+        if r["crawler"]:
+            top = sorted(r["per_bot"].items(), key=lambda x: -x[1])[:3]
+            elenco = ", ".join(f"{b} ({n})" for b, n in top)
+            righe.append(f"Crawler AI: {_plurale(r['crawler'], 'passaggio', 'passaggi')}. "
+                         f"{'Il più assiduo' if len(top) == 1 else 'I più assidui'}: {elenco}.")
+        else:
+            righe.append("Crawler AI: nessun passaggio registrato nel periodo.")
+        righe.append(f"Visite arrivate da un assistente AI: {r['sessioni_ai']}.")
+    else:
+        righe.append("Traffico AI: non misurato (tracking non ancora installato).")
+
+    if r["prioritaria"]:
+        p = r["prioritaria"]
+        dove = f" su {p['pagine']} pagine" if p["pagine"] > 1 else ""
+        righe += ["", f"Da fare per primo: {p['titolo']}{dove}."]
+
+    return "\n".join(righe)
+
+
+def _tab_reports(project: dict) -> str:
+    """Rapporti: il punto del periodo, calcolato sui dati veri del progetto.
+
+    ⚠️ Era una sezione dimostrativa, e non doveva restarlo: ogni numero del
+    digest d'esempio — punteggio, criticità risolte, traffico AI — era già
+    calcolabile. Quello che davvero manca non è il rapporto ma la **spedizione
+    automatica**, che ha bisogno del cron e delle notifiche; per questo il
+    rapporto qui si legge e si copia, e gli avvisi restano dichiarati come non
+    attivi invece di essere interruttori che non accendono niente.
+    """
+    r = _riepilogo_periodo(project, 30)
+    testo = _rapporto_testo(project, r)
+
+    if r["delta"] is None:
+        classe_delta, freccia = "", ""
+    elif r["delta"] > 0:
+        classe_delta, freccia = "good", "▲ "
+    elif r["delta"] < 0:
+        classe_delta, freccia = "critical", "▼ "
+    else:
+        classe_delta, freccia = "", ""
+
+    kpi = (
+        '<div class="kpi-strip">'
+        + _kpi_semplice(r["punteggio"] if r["punteggio"] is not None else "—",
+                        "Punteggio GEO",
+                        (f'{freccia}{abs(r["delta"])} punti in {r["giorni"]} giorni'
+                         if r["delta"] else f'{r["audit_fatti"]} audit nel periodo'),
+                        classe_delta)
+        + _kpi_semplice(r["risolte"], "Criticità risolte", f'negli ultimi {r["giorni"]} giorni', "good")
+        + _kpi_semplice(r["aperte"], "Criticità aperte",
+                        (_plurale(r["nuove"], "comparsa", "comparse") + " nel periodo")
+                        if r["nuove"] else "nessuna nuova")
+        + _kpi_semplice(r["crawler"] if r["crawler"] is not None else "—", "Passaggi di crawler AI",
+                        "tracking non installato" if not r["tracking"]
+                        else _plurale(r["sessioni_ai"], "visita da AI", "visite da AI"),
+                        "good" if r["crawler"] else "")
+        + '</div>'
+    )
+
+    sev_righe = "".join(
+        f'<div class="engine-row"><div class="engine-name">{_SEV_NOME.get(s, s)}</div>'
+        f'{_barra_semplice(round(100 * n / max(r["per_sev"].values())), _SEV_BARRA.get(s, "warn"))}'
+        f'<div class="area-value">{n}</div></div>'
+        for s, n in sorted(r["per_sev"].items(),
+                           key=lambda x: _SEV_ORDINE.index(x[0]) if x[0] in _SEV_ORDINE else 9)
+    ) or '<p class="card-sub">Nessuna criticità aperta.</p>'
+
+    prossimo = ''
+    if r["prioritaria"]:
+        p = r["prioritaria"]
+        dove = f' su {p["pagine"]} pagine' if p["pagine"] > 1 else ''
+        prossimo = (
+            '<div class="alert alert--info" style="margin-top:16px"><div class="ic">i</div>'
+            f'<div><b>Da fare per primo:</b> {geo_audit.esc(p["titolo"] or "")}{dove}. '
+            'È la criticità più grave fra quelle aperte, e fra pari gravità quella che '
+            'tocca più pagine — sistemarla è ciò che sposta di più il punteggio.</div></div>'
+        )
+
+    return (
+        kpi
+        + '<div class="card" style="margin-top:20px">'
+          '<div class="card-title">Il punto degli ultimi 30 giorni</div>'
+          '<p class="card-sub">Calcolato sugli audit, sulle criticità e sul tracking di questo '
+          'progetto. Copialo e giralo al cliente così com\'è.</p>'
+          f'<div class="code-block" style="margin-top:14px">'
+          '<div class="code-block-header"><span class="code-block-label">Rapporto</span>'
+          f'<button class="copy-btn" data-copia="rapportoTesto" data-testo="{geo_audit.esc(testo)}">'
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+          '<rect x="9" y="9" width="13" height="13" rx="2"/>'
+          '<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+          '<span>Copia</span></button></div>'
+          '<div class="code-content"><code id="rapportoTesto" style="white-space:pre-wrap">'
+          f'{geo_audit.esc(testo)}</code></div></div>'
+          f'{prossimo}'
+          '</div>'
+
+        + '<div class="card" style="margin-top:20px">'
+          '<div class="card-title">Criticità aperte per gravità</div>'
+          f'<div style="margin-top:14px">{sev_righe}</div></div>'
+
+        + '<div class="card" style="margin-top:20px">'
+          '<div class="card-title">Invio automatico</div>'
+          '<p class="card-sub">Il rapporto qui sopra è pronto, ma per ora si legge e si copia: '
+          '<b>non parte da solo</b>. La spedizione periodica e gli avvisi sulle variazioni '
+          'richiedono il sistema di notifiche, che non è ancora attivo. Quando lo sarà, questa '
+          'scheda avrà gli interruttori — metterli adesso vorrebbe dire promettere email che '
+          'non arriverebbero.</p></div>'
+
+        + _COPIA_JS
     )
 
 
