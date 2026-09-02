@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 import geo_audit
 from ai_sources import CRAWLER_CATEGORIE
 from config import SITE_URL
-from db import _TETTO_EVENTI, _sb_has_tracking, _sb_issues_by_project, \
+from db import _TETTO_EVENTI, _sb_audits_by_project, _sb_has_tracking, _sb_issues_by_project, \
     _sb_recent_audits_by_user, _sb_tracking_events
 
 
@@ -230,6 +230,44 @@ def _banner_campione(dominio: str, cosa_serve: str) -> str:
 def _barra_semplice(valore: int, classe: str = "warn") -> str:
     return (f'<div class="area-track"><div class="area-fill {classe}" '
             f'style="--w:{valore}%"></div></div>')
+
+
+def _kpi_semplice(valore, etichetta: str, sotto: str = "", classe: str = "") -> str:
+    """Una tessera della `.kpi-strip` del design system.
+
+    Sta qui e non dentro una singola scheda perche' la usano in due, e due copie
+    della stessa tessera divergono al primo ritocco.
+    """
+    return (
+        '<div class="kpi">'
+        f'<div class="kpi-top"><span class="kpi-label">{etichetta}</span></div>'
+        f'<div class="kpi-value-row"><span class="kpi-value {classe}">{valore}</span></div>'
+        + (f'<div class="kpi-sub">{sotto}</div>' if sotto else '')
+        + '</div>'
+    )
+
+
+# Lo stesso script serve allo snippet di tracking e al rapporto da copiare: e'
+# idempotente (`data-pronto`), quindi due inclusioni nella stessa pagina non
+# agganciano due volte lo stesso bottone.
+_COPIA_JS = """<script>
+document.querySelectorAll('.copy-btn[data-copia]').forEach(function(b){
+  if (b.dataset.pronto) return;
+  b.dataset.pronto = "1";
+  b.addEventListener('click', function(){
+    navigator.clipboard.writeText(b.dataset.testo).then(function(){
+      const et = b.querySelector('span');
+      const prima = et.textContent;
+      et.textContent = '✓ Copiato';
+      b.classList.add('copied');
+      setTimeout(function(){ et.textContent = prima; b.classList.remove('copied'); }, 1800);
+    });
+  });
+});
+</script>"""
+
+_SEV_BARRA = {"critical": "critical", "high": "critical", "medium": "warn",
+              "low": "good", "info": "good"}
 
 
 def _campione_ai_visibility(dominio: str) -> str:
@@ -449,8 +487,10 @@ _SEZIONI_CAMPIONE = {
         "Serve il monitoraggio dei prompt e l'elenco dei concorrenti da confrontare."),
     "citations": (_campione_citations,
         "Serve l'osservazione delle citazioni nelle risposte degli assistenti."),
-    "reports": (_campione_reports,
-        "Serve almeno un modulo di monitoraggio attivo da cui generare avvisi."),
+    # `reports` stava qui ed e' uscito il 2 settembre 2026: ogni numero del
+    # digest d'esempio era gia' calcolabile sui dati del progetto. Vedi
+    # `_tab_reports`. Cio' che manca non e' il rapporto ma la sua spedizione
+    # automatica, e quella la scheda la dichiara invece di simularla.
 }
 
 
@@ -1671,21 +1711,12 @@ def _tab_traffic(project: dict) -> str:
     # che le usa non si può rendere fuori da quel template. Si usa `.kpi-strip`,
     # il componente equivalente del design system, che sta in `geo-ds.css` ed è
     # già responsive (4 → 2 colonne).
-    def _kpi(valore, etichetta, sotto="", classe=""):
-        return (
-            '<div class="kpi">'
-            f'<div class="kpi-top"><span class="kpi-label">{etichetta}</span></div>'
-            f'<div class="kpi-value-row"><span class="kpi-value {classe}">{valore}</span></div>'
-            + (f'<div class="kpi-sub">{sotto}</div>' if sotto else '')
-            + '</div>'
-        )
-
     kpi = (
         '<div class="kpi-strip">'
-        + _kpi(len(crawler_hits), "Passaggi di crawler AI", "ultimi 30 giorni", "good")
-        + _kpi(total_sessions, "Sessioni", "ultimi 30 giorni")
-        + _kpi(ai_count, "Sessioni da AI", "arrivate da un assistente", "good")
-        + _kpi(f"{ai_pct}%", "Quota AI", "sul totale delle sessioni")
+        + _kpi_semplice(len(crawler_hits), "Passaggi di crawler AI", "ultimi 30 giorni", "good")
+        + _kpi_semplice(total_sessions, "Sessioni", "ultimi 30 giorni")
+        + _kpi_semplice(ai_count, "Sessioni da AI", "arrivate da un assistente", "good")
+        + _kpi_semplice(f"{ai_pct}%", "Quota AI", "sul totale delle sessioni")
         + '</div>'
     )
 
@@ -1771,6 +1802,239 @@ def _tab_traffic(project: dict) -> str:
         + sezione_referral
         + f'<div class="card" style="margin-top:20px">{_tracking_snippet_html(project["id"])}</div>'
     )
+
+_SEV_ORDINE = ["critical", "high", "medium", "low", "info"]
+_SEV_NOME = {"critical": "Critiche", "high": "Gravi", "medium": "Medie",
+             "low": "Minori", "info": "Informative"}
+
+
+def _plurale(n: int, singolare: str, plurale: str) -> str:
+    """«1 visite da AI» si legge come una svista, e una svista fa dubitare anche
+    del numero che le sta accanto."""
+    return f"{n} {singolare if n == 1 else plurale}"
+
+
+def _riepilogo_periodo(project: dict, giorni: int = 30) -> dict:
+    """I numeri del rapporto, tutti misurati. Nessuna stima, nessun riempitivo.
+
+    Dove un dato non c'e' resta None e chi rende il rapporto lo dice: una riga
+    «nessun calo di traffico» scritta senza aver misurato il traffico e' peggio
+    di una riga assente, perche' non si distingue da una misurata.
+    """
+    da = datetime.now(timezone.utc) - timedelta(days=giorni)
+    da_iso = da.isoformat()
+
+    storico = _sb_audits_by_project(project["id"], limit=260, full=False)
+    nel_periodo = [a for a in storico if (a.get("created_at") or "") >= da_iso]
+
+    punteggi = [a for a in storico if a.get("overall") is not None]
+    attuale = punteggi[0]["overall"] if punteggi else None
+    # Il confronto e' col primo audit del periodo, non con quello precedente:
+    # un rapporto a 30 giorni deve dire quanto e' cambiato in 30 giorni, non
+    # quanto e' cambiato dall'ultima volta che si e' guardato.
+    dentro = [a for a in punteggi if (a.get("created_at") or "") >= da_iso]
+    iniziale = dentro[-1]["overall"] if len(dentro) > 1 else None
+    delta = (attuale - iniziale) if (attuale is not None and iniziale is not None) else None
+
+    issues = _sb_issues_by_project(project["id"])
+    aperte = [i for i in issues if i.get("status") == "open"]
+    per_sev: dict = {}
+    for i in aperte:
+        s = i.get("severity") or "info"
+        per_sev[s] = per_sev.get(s, 0) + 1
+    risolte = [i for i in issues
+               if i.get("status") in ("resolved", "resolved_manually")
+               and (i.get("resolved_at") or "") >= da_iso]
+    nuove = [i for i in aperte if (i.get("first_seen_at") or "") >= da_iso]
+
+    # La voce con piu' impatto: la criticita' aperta piu' grave, e fra pari
+    # gravita' quella che tocca piu' pagine — e' quella che, sistemata, sposta
+    # di piu' il punteggio.
+    per_check: dict = {}
+    for i in aperte:
+        k = (i.get("check_id"), i.get("title"), i.get("severity") or "info")
+        per_check[k] = per_check.get(k, 0) + 1
+    prioritaria = None
+    if per_check:
+        def peso(v):
+            (_, _, sev), n = v
+            return (_SEV_ORDINE.index(sev) if sev in _SEV_ORDINE else 9, -n)
+        (check_id, titolo, sev), quante = sorted(per_check.items(), key=peso)[0]
+        prioritaria = {"titolo": titolo or check_id, "severita": sev, "pagine": quante}
+
+    eventi = _sb_tracking_events(project["id"], days=giorni)
+    crawler = [e for e in eventi if e.get("event_name") == "crawler"]
+    visite = [e for e in eventi if e.get("event_name") != "crawler"]
+    sessioni_ai = {e.get("session_id") for e in visite
+                   if e.get("ai_source") and e.get("session_id")}
+    per_bot: dict = {}
+    for e in crawler:
+        b = e.get("ai_source") or "Sconosciuto"
+        per_bot[b] = per_bot.get(b, 0) + 1
+
+    return {
+        "giorni": giorni,
+        "audit_fatti": len(nel_periodo),
+        "punteggio": attuale,
+        "punteggio_iniziale": iniziale,
+        "delta": delta,
+        "aperte": len(aperte),
+        "per_sev": per_sev,
+        "risolte": len(risolte),
+        "nuove": len(nuove),
+        "prioritaria": prioritaria,
+        # None, non 0: «nessun evento registrato» e «il tracking non e'
+        # installato» sono due cose diverse e non vanno confuse in uno zero.
+        "tracking": bool(eventi),
+        "crawler": len(crawler) if eventi else None,
+        "per_bot": per_bot,
+        "sessioni_ai": len(sessioni_ai) if eventi else None,
+    }
+
+
+def _rapporto_testo(project: dict, r: dict) -> str:
+    """Il rapporto in testo semplice, pronto da incollare in una email.
+
+    Serve a chi lavora per conto terzi: il valore non e' la schermata, e' poter
+    girare due paragrafi al proprio cliente senza riscriverli a mano.
+    """
+    dominio = project.get("domain") or project.get("name") or ""
+    righe = [f"GEO Audit · {dominio} — ultimi {r['giorni']} giorni", ""]
+
+    if r["punteggio"] is None:
+        righe.append("Punteggio: nessun audit completato.")
+    elif r["delta"] is None:
+        righe.append(f"Punteggio GEO: {r['punteggio']}/100 "
+                     "(un solo audit nel periodo: non c'è ancora un confronto).")
+    else:
+        verso = "salito" if r["delta"] > 0 else ("sceso" if r["delta"] < 0 else "rimasto")
+        segno = f"{r['delta']:+d}" if r["delta"] else "invariato"
+        righe.append(f"Punteggio GEO: {r['punteggio']}/100, {verso} da "
+                     f"{r['punteggio_iniziale']} ({segno}).")
+
+    if r["risolte"] or r["nuove"]:
+        pezzi = []
+        if r["risolte"]:
+            pezzi.append(_plurale(r["risolte"], "criticità risolta", "criticità risolte"))
+        if r["nuove"]:
+            pezzi.append(_plurale(r["nuove"], "nuova", "nuove"))
+        resta = _plurale(r["aperte"], "aperta", "aperte")
+        righe.append(f"Criticità: {' e '.join(pezzi)}. Ne {'resta' if r['aperte'] == 1 else 'restano'} {resta}.")
+    else:
+        righe.append(f"Criticità aperte: {r['aperte']}, nessun cambiamento nel periodo.")
+
+    if r["tracking"]:
+        if r["crawler"]:
+            top = sorted(r["per_bot"].items(), key=lambda x: -x[1])[:3]
+            elenco = ", ".join(f"{b} ({n})" for b, n in top)
+            righe.append(f"Crawler AI: {_plurale(r['crawler'], 'passaggio', 'passaggi')}. "
+                         f"{'Il più assiduo' if len(top) == 1 else 'I più assidui'}: {elenco}.")
+        else:
+            righe.append("Crawler AI: nessun passaggio registrato nel periodo.")
+        righe.append(f"Visite arrivate da un assistente AI: {r['sessioni_ai']}.")
+    else:
+        righe.append("Traffico AI: non misurato (tracking non ancora installato).")
+
+    if r["prioritaria"]:
+        p = r["prioritaria"]
+        dove = f" su {p['pagine']} pagine" if p["pagine"] > 1 else ""
+        righe += ["", f"Da fare per primo: {p['titolo']}{dove}."]
+
+    return "\n".join(righe)
+
+
+def _tab_reports(project: dict) -> str:
+    """Rapporti: il punto del periodo, calcolato sui dati veri del progetto.
+
+    ⚠️ Era una sezione dimostrativa, e non doveva restarlo: ogni numero del
+    digest d'esempio — punteggio, criticità risolte, traffico AI — era già
+    calcolabile. Quello che davvero manca non è il rapporto ma la **spedizione
+    automatica**, che ha bisogno del cron e delle notifiche; per questo il
+    rapporto qui si legge e si copia, e gli avvisi restano dichiarati come non
+    attivi invece di essere interruttori che non accendono niente.
+    """
+    r = _riepilogo_periodo(project, 30)
+    testo = _rapporto_testo(project, r)
+
+    if r["delta"] is None:
+        classe_delta, freccia = "", ""
+    elif r["delta"] > 0:
+        classe_delta, freccia = "good", "▲ "
+    elif r["delta"] < 0:
+        classe_delta, freccia = "critical", "▼ "
+    else:
+        classe_delta, freccia = "", ""
+
+    kpi = (
+        '<div class="kpi-strip">'
+        + _kpi_semplice(r["punteggio"] if r["punteggio"] is not None else "—",
+                        "Punteggio GEO",
+                        (f'{freccia}{abs(r["delta"])} punti in {r["giorni"]} giorni'
+                         if r["delta"] else f'{r["audit_fatti"]} audit nel periodo'),
+                        classe_delta)
+        + _kpi_semplice(r["risolte"], "Criticità risolte", f'negli ultimi {r["giorni"]} giorni', "good")
+        + _kpi_semplice(r["aperte"], "Criticità aperte",
+                        (_plurale(r["nuove"], "comparsa", "comparse") + " nel periodo")
+                        if r["nuove"] else "nessuna nuova")
+        + _kpi_semplice(r["crawler"] if r["crawler"] is not None else "—", "Passaggi di crawler AI",
+                        "tracking non installato" if not r["tracking"]
+                        else _plurale(r["sessioni_ai"], "visita da AI", "visite da AI"),
+                        "good" if r["crawler"] else "")
+        + '</div>'
+    )
+
+    sev_righe = "".join(
+        f'<div class="engine-row"><div class="engine-name">{_SEV_NOME.get(s, s)}</div>'
+        f'{_barra_semplice(round(100 * n / max(r["per_sev"].values())), _SEV_BARRA.get(s, "warn"))}'
+        f'<div class="area-value">{n}</div></div>'
+        for s, n in sorted(r["per_sev"].items(),
+                           key=lambda x: _SEV_ORDINE.index(x[0]) if x[0] in _SEV_ORDINE else 9)
+    ) or '<p class="card-sub">Nessuna criticità aperta.</p>'
+
+    prossimo = ''
+    if r["prioritaria"]:
+        p = r["prioritaria"]
+        dove = f' su {p["pagine"]} pagine' if p["pagine"] > 1 else ''
+        prossimo = (
+            '<div class="alert alert--info" style="margin-top:16px"><div class="ic">i</div>'
+            f'<div><b>Da fare per primo:</b> {geo_audit.esc(p["titolo"] or "")}{dove}. '
+            'È la criticità più grave fra quelle aperte, e fra pari gravità quella che '
+            'tocca più pagine — sistemarla è ciò che sposta di più il punteggio.</div></div>'
+        )
+
+    return (
+        kpi
+        + '<div class="card" style="margin-top:20px">'
+          '<div class="card-title">Il punto degli ultimi 30 giorni</div>'
+          '<p class="card-sub">Calcolato sugli audit, sulle criticità e sul tracking di questo '
+          'progetto. Copialo e giralo al cliente così com\'è.</p>'
+          f'<div class="code-block" style="margin-top:14px">'
+          '<div class="code-block-header"><span class="code-block-label">Rapporto</span>'
+          f'<button class="copy-btn" data-copia="rapportoTesto" data-testo="{geo_audit.esc(testo)}">'
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+          '<rect x="9" y="9" width="13" height="13" rx="2"/>'
+          '<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'
+          '<span>Copia</span></button></div>'
+          '<div class="code-content"><code id="rapportoTesto" style="white-space:pre-wrap">'
+          f'{geo_audit.esc(testo)}</code></div></div>'
+          f'{prossimo}'
+          '</div>'
+
+        + '<div class="card" style="margin-top:20px">'
+          '<div class="card-title">Criticità aperte per gravità</div>'
+          f'<div style="margin-top:14px">{sev_righe}</div></div>'
+
+        + '<div class="card" style="margin-top:20px">'
+          '<div class="card-title">Invio automatico</div>'
+          '<p class="card-sub">Il rapporto qui sopra è pronto, ma per ora si legge e si copia: '
+          '<b>non parte da solo</b>. La spedizione periodica e gli avvisi sulle variazioni '
+          'richiedono il sistema di notifiche, che non è ancora attivo. Quando lo sarà, questa '
+          'scheda avrà gli interruttori — metterli adesso vorrebbe dire promettere email che '
+          'non arriverebbero.</p></div>'
+
+        + _COPIA_JS
+    )
+
 
 def _tab_settings(project: dict) -> str:
     freq = project.get("scan_frequency") or "weekly"

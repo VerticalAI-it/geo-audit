@@ -276,7 +276,21 @@ come sotto-livello.
 | | Competitors | 🔒 soon | — |
 | | Citations | 🔒 soon | — |
 | **Traffic & Reports** | AI Traffic | ✅ *(se lo snippet è installato)* | `tracking_event` |
-| | Reports | 🔒 soon | — |
+| | Reports | ✅ | `audits` + `issue` + `tracking_event` |
+
+**Reports** era una sezione dimostrativa, ed è diventata reale il 2 settembre
+2026: ogni numero del digest d'esempio — punteggio, criticità risolte, traffico
+AI — era già calcolabile sui dati del progetto. Il rapporto si legge e si copia
+in testo semplice, pronto da girare al cliente finale.
+
+⚠️ Quello che manca **non è il rapporto ma la sua spedizione automatica**, che
+richiede cron e notifiche. La scheda lo dichiara e non mette interruttori: degli
+interruttori che promettono email non recapitate sono peggio di una riga che
+spiega perché non ci sono ancora.
+
+Il riepilogo (`_riepilogo_periodo`) non riempie mai un buco con uno zero: dove il
+tracking non è installato il valore resta `None` e il rapporto scrive «non
+misurato», perché «nessun evento» e «non stiamo guardando» sono due cose diverse.
 | **Settings** | *(nessun figlio)* | ✅ | `project` |
 
 Una categoria in cui **tutti** i figli sono "coming soon" viene marcata `soon` già

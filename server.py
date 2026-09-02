@@ -27,7 +27,8 @@ from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_C
     _coming_soon_tab, _roadmap_colonne_html, _roadmap_live_html, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
     _project_status, _sidebar, _subtabs, _tab_audit, _tab_campione, _tab_opportunities, \
-    _tab_overview, _tab_pages, _tab_settings, _tab_technical, _tab_traffic, _ultimi_run_section
+    _tab_overview, _tab_pages, _tab_reports, _tab_settings, _tab_technical, _tab_traffic, \
+    _ultimi_run_section
 
 
 app = FastAPI(title="GEO Audit · verticalai")
@@ -1227,6 +1228,8 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
         body = _tab_opportunities(project_id)
     elif tab == "traffic":
         body = _tab_traffic(project)
+    elif tab == "reports":
+        body = _tab_reports(project)
     elif tab == "settings":
         body = _tab_settings(project)
     else:
