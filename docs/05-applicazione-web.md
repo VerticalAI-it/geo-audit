@@ -64,9 +64,30 @@ riquadro esiste.
 | `/project/{project_id}` | GET | Dettaglio progetto — `?tab=` seleziona la sezione |
 | `/project/{project_id}/settings` | POST | Nome, settore, cadenza di scansione |
 | `/project/{project_id}/rerun` | POST | Rifà l'audit manualmente |
+| `/project/{project_id}/issue/{issue_id}/resolve` | POST | Chiude a mano una criticità (settembre 2026) |
+| `/preferenze/tema` | POST | Salva il tema sul profilo, così segue l'utente (settembre 2026) |
 
 Le route protette redirigono a `/login?next=<destinazione>` quando manca la
-sessione.
+sessione. `/preferenze/tema` e la chiusura manuale rispondono invece **401**:
+sono chiamate da JavaScript, e un redirect al login non servirebbe a nulla.
+
+### Roadmap pubblica (settembre 2026)
+
+| Route | Metodo | Cosa fa | Auth |
+|---|---|---|---|
+| `/roadmap` | GET | Pagina pubblica: funzionalità disponibili, in arrivo e voti | — |
+| `/roadmap/voto` | POST | Registra un «mi interessa» | — |
+| `/roadmap/avvisami` | POST | Raccoglie chi vuole essere avvisato | — |
+
+Sono **endpoint pubblici**, come richiede una roadmap che chiunque deve poter
+votare. Valgono quindi le stesse cautele di `/t`: campi troncati, nessuna
+fiducia nell'input, e la consapevolezza che **non c'è rate limiting**.
+
+L'anti-voto-multiplo è un identificativo casuale generato dal browser, più il
+rifiuto lato server del secondo voto dello stesso votante sulla stessa voce.
+È una barriera **debole per costruzione**: serve a misurare l'interesse, non a
+garantire l'unicità del voto. Se un domani quei numeri dovessero contare, il
+punto dove aggiungere un limite per IP è segnato in `server.py`.
 
 ---
 

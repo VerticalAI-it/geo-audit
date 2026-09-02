@@ -66,6 +66,23 @@ Non solo un audit statico: sapere chi arriva davvero dal sito dagli assistenti A
 - **Nota**: nessun rate-limiting dedicato sull'endpoint pubblico in questa prima
   versione — da valutare se il volume lo richiede
 
+### v1.4 — Redesign UI/UX (settembre 2026)
+Stesso prodotto, interfaccia rifatta sulla specifica dell'analista.
+
+- Menu laterale al posto delle linguette a doppio livello; anello del punteggio
+  e grafico storico affiancati nella panoramica di progetto
+- Ricerca, filtri, ordinamento ed esportazione CSV sull'elenco pagine;
+  raggruppamento e **paginazione reale** sulle criticità
+- **«Segna risolto»**: una criticità si può chiudere a mano, ma se l'analisi la
+  ritrova torna aperta — l'audit vince sullo stato manuale
+- Le sezioni non ancora attive mostrano **dati dimostrativi con banner
+  esplicito** invece di una scatola vuota (cambio di regola rispetto a prima)
+- Report esterno allineato al design system. ⚠️ I report già emessi non
+  cambiano: sono salvati con i loro stili dentro
+- Tema chiaro/scuro **che segue l'utente fra dispositivi** (sta nei metadati
+  dell'account, non nel browser)
+- **Roadmap pubblica** con i voti funzionanti: questa pagina
+
 ---
 
 ## Prossimi passi (in ordine)

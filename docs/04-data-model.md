@@ -142,7 +142,7 @@ La tabella che trasforma un'istantanea in una serie storica.
 | `category`, `title`, `severity` | TEXT | Denormalizzati dal check |
 | `url` | TEXT | NULL per issue a livello di sito |
 | `fingerprint` | TEXT NOT NULL | `check_id \|\| '\|' \|\| coalesce(url,'')` |
-| `status` | TEXT NOT NULL DEFAULT `'open'` | `open` \| `resolved` |
+| `status` | TEXT NOT NULL DEFAULT `'open'` | `open` \| `resolved` \| `resolved_manually` |
 | `first_seen_audit` / `last_seen_audit` | UUID FK → `audits` | |
 | `first_seen_at` / `last_seen_at` / `resolved_at` | TIMESTAMPTZ | |
 
@@ -164,6 +164,47 @@ Il passo 3 è quello che dà il valore: una issue risolta viene chiusa da sola,
 senza intervento manuale. E una issue che **riappare** viene riaperta mantenendo
 il suo `first_seen_at` originale — quindi si sa che è un problema ricorrente, non
 nuovo.
+
+### I tre stati, e perché l'audit vince (settembre 2026)
+
+Con l'azione «Segna risolto» su Opportunities gli stati sono diventati tre:
+
+| Stato | Significato |
+|---|---|
+| `open` | criticità aperta |
+| `resolved` | chiusa dall'audit, che non l'ha più rilevata |
+| `resolved_manually` | chiusa a mano dall'utente |
+
+**Non è servita nessuna migrazione.** `issue.status` è una colonna `TEXT` senza
+vincolo `CHECK`: il commento `-- open | resolved` nello schema descrive l'uso,
+non lo impone. Vale la pena saperlo anche al contrario — se un giorno si
+volesse impedire davvero valori arbitrari lì dentro, il vincolo andrebbe
+aggiunto sul serio.
+
+La regola concordata è che **l'audit vince sullo stato manuale**: se un check
+torna a fallire sulla stessa pagina, la riga torna `open` qualunque fosse il
+suo stato. Era già rispettata dal codice per come è scritto, e ora è
+documentata nel docstring di `_sb_issue_sync()` — due dettagli da non toccare:
+
+1. il ramo che riapre **non guarda** lo stato precedente;
+2. la chiusura automatica filtra su `status == "open"`, quindi non tocca le
+   righe chiuse a mano.
+
+Chi ha chiuso e quando si ricavano da `user_id` (un progetto ha un proprietario
+solo) e da `resolved_at`: per questo non sono state aggiunte colonne.
+
+### Dove stanno le cose che non hanno una tabella
+
+Due funzionalità di settembre 2026 usano posti che esistevano già, invece di
+tabelle nuove. È una scelta di proporzione, ed è reversibile:
+
+| Cosa | Dove | Perché |
+|---|---|---|
+| Tema chiaro/scuro dell'utente | `auth.users.user_metadata.theme` | Un solo campo non giustifica una tabella. Se le preferenze diventeranno molte (notifiche, lingua, fuso) allora sì: il punto di innesto è `_sb_user_theme_set()` |
+| Voti e iscrizioni della roadmap | `tracking_event` con `event_name` `roadmap_vote` / `roadmap_signup` | La tabella ha già un campo libero (`properties`) e `project_id` facoltativo. Restano **fuori** dalle statistiche di AI Traffic, che filtrano sempre per progetto |
+
+> ⚠️ Se un domani si contano i voti con query aggregate, `tracking_event` non è
+> il posto giusto: le tre funzioni in `db.py` sono il punto da cui migrare.
 
 ### Il fingerprint è un contratto
 
