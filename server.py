@@ -18,7 +18,7 @@ from config import FROM_EMAIL, RESEND_KEY, SITE_URL, SUPABASE_ANON, SUPABASE_URL
 from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_project, \
     _sb_audits_without_project, _sb_auth_refresh, _sb_auth_user, _sb_get, _sb_get_by_email, \
     _sb_has_tracking, _sb_insert, _sb_insert_contact, _sb_insert_tracking_event, \
-    _sb_issue_sync, _sb_issues_by_project, _sb_patch, _sb_project_bump_scan, \
+    _sb_issue_resolve_manually, _sb_issue_sync, _sb_issues_by_project, _sb_patch, _sb_project_bump_scan, \
     _sb_project_claim_due, _sb_project_get, _sb_project_patch, _sb_project_upsert, \
     _sb_projects_by_user
 from views import _COMING_SOON_TABS, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, _coming_soon_tab, \
@@ -1112,6 +1112,32 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
                     TAB_BODY=body,
                     USER_EMAIL=json.dumps(user.get("email", "")))
     resp = HTMLResponse(html)
+    return _apply_refresh(resp, refreshed)
+
+
+@app.post("/project/{project_id}/issue/{issue_id}/resolve")
+def issue_resolve(project_id: str, issue_id: str, request: Request):
+    """Chiude a mano una criticità dalla schermata Opportunities."""
+    user, refreshed = _current_user(request)
+    if not user:
+        return Response(status_code=401)
+
+    # controllo di proprietà: la service role key bypassa le RLS, quindi va
+    # ripetuto in ogni route che tocca dati di progetto
+    project = _sb_project_get(project_id)
+    if not project or project.get("user_id") != user["id"]:
+        return Response(status_code=404)
+
+    try:
+        riga = _sb_issue_resolve_manually(issue_id, user["id"])
+    except Exception as e:
+        print(f"[/issue/resolve] chiusura manuale fallita per {issue_id}: {e!r}")
+        return Response(status_code=500)
+
+    if not riga:
+        return Response(status_code=404)
+
+    resp = Response(content='{"ok":true}', media_type="application/json", status_code=200)
     return _apply_refresh(resp, refreshed)
 
 

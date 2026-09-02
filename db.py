@@ -183,7 +183,24 @@ def _sb_issues_by_project(project_id: str, status: str | None = None) -> list:
 def _sb_issue_sync(project_id: str, user_id: str, audit_id: str, checks: list) -> None:
     """Ciclo di vita delle issue del progetto: apre/aggiorna quelle presenti nei
     check warn/fail dell'audit appena completato, marca risolte quelle aperte in
-    precedenza e non più viste in questo run."""
+    precedenza e non più viste in questo run.
+
+    Tre stati possibili in `status`:
+      open               criticità aperta
+      resolved           chiusa dall'audit, che non l'ha più rilevata
+      resolved_manually  chiusa a mano dall'utente da Opportunities
+
+    **L'audit vince sullo stato manuale**: se un check torna a fallire sulla
+    stessa pagina, la riga torna `open` qualunque fosse il suo stato — è il
+    ramo `if prev` qui sotto, che non guarda lo stato precedente apposta.
+
+    All'opposto, la chiusura automatica in fondo tocca **solo** le `open`: una
+    riga chiusa a mano resta chiusa finché l'audit non la ritrova, altrimenti si
+    perderebbe l'informazione che qualcuno l'aveva già gestita.
+
+    Nessuna migrazione è stata necessaria: `issue.status` è una colonna TEXT
+    senza vincolo CHECK — il commento `-- open | resolved` nello schema è solo
+    una nota, non una regola imposta dal database."""
     now = datetime.now(timezone.utc).isoformat()
     existing = {i["fingerprint"]: i for i in _sb_issues_by_project(project_id)}
     seen = set()
@@ -311,3 +328,20 @@ def _sb_auth_refresh(refresh_token: str) -> dict | None:
                  headers={"apikey": SUPABASE_ANON, "Content-Type": "application/json"},
                  timeout=10)
     return r.json() if r.ok else None
+
+
+def _sb_issue_resolve_manually(issue_id: str, user_id: str) -> dict | None:
+    """Chiude a mano una criticità. Ritorna la riga aggiornata, None se non
+    esiste o non appartiene all'utente.
+
+    Il filtro su user_id NON è un di più: la service role key scavalca le
+    politiche di sicurezza del database, quindi senza questo vincolo chiunque
+    conoscesse un id potrebbe chiudere le criticità altrui.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    r = req.patch(f"{SUPABASE_URL}/rest/v1/issue", headers=_SB_H, timeout=10,
+                  params={"id": f"eq.{issue_id}", "user_id": f"eq.{user_id}"},
+                  json={"status": "resolved_manually", "resolved_at": now})
+    r.raise_for_status()
+    righe = r.json()
+    return righe[0] if righe else None

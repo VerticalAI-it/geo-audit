@@ -1272,12 +1272,17 @@ def _tab_opportunities(project_id: str) -> str:
 
     dati = []
     for i in issues:
+        stato = i.get("status")
         dati.append({
+            "id": i.get("id"),
             "titolo": i.get("title") or i.get("check_id") or "",
             "check": i.get("check_id") or "",
             "sev": i.get("severity") or "",
             "url": i.get("url") or "",
-            "stato": "aperta" if i.get("status") == "open" else "risolta",
+            # 'resolved_manually' è chiusa quanto 'resolved': cambia solo chi
+            # l'ha chiusa, e lo si vede dall'etichetta
+            "stato": "aperta" if stato == "open" else "risolta",
+            "manuale": stato == "resolved_manually",
             "prima": _fmt_date(i.get("first_seen_at")),
             "ultima": _fmt_date(i.get("last_seen_at")),
         })
@@ -1314,6 +1319,7 @@ def _tab_opportunities(project_id: str) -> str:
 
         '<script>'
         f'const OP_DATI = {json.dumps(dati)};'
+        f'const OP_PROGETTO = {json.dumps(project_id)};'
         r"""
         (function(){
           const PER_PAGINA = 12;
@@ -1353,11 +1359,18 @@ def _tab_opportunities(project_id: str) -> str:
               + '<td><span class="badge ' + sevCls(d.sev) + '">' + esc(d.sev || "n.d.") + '</span></td>'
               + '<td class="date-muted">' + esc(d.prima) + '</td>'
               + '<td class="date-muted">' + esc(d.ultima) + '</td>'
-              + '<td><span class="badge ' + d.stato + '">' + (d.stato === "aperta" ? "Aperta" : "Risolta") + '</span></td>'
+              + '<td><span class="badge ' + d.stato + '">'
+              +   (d.stato === "aperta" ? "Aperta" : (d.manuale ? "Chiusa a mano" : "Risolta"))
+              + '</span></td>'
+              + '<td class="row-action">'
+              +   (d.stato === "aperta"
+                    ? '<button class="row-resolve" data-id="' + esc(d.id) + '">Segna risolto</button>'
+                    : '')
+              + '</td>'
               + '</tr>').join("");
             return '<div class="table-scroll"><table class="data-grid"><thead><tr>'
               + '<th>Check</th>' + (perPagina ? '' : '<th>Pagina</th>')
-              + '<th>Severità</th><th>Prima vista</th><th>Ultima vista</th><th>Stato</th>'
+              + '<th>Severità</th><th>Prima vista</th><th>Ultima vista</th><th>Stato</th><th></th>'
               + '</tr></thead><tbody>' + corpo + '</tbody></table></div>';
           }
 
@@ -1408,6 +1421,32 @@ def _tab_opportunities(project_id: str) -> str:
                 disegna();
               });
             });
+
+            cont.querySelectorAll(".row-resolve[data-id]").forEach(b => {
+              b.addEventListener("click", () => chiudiAMano(b));
+            });
+          }
+
+          /* Chiusura manuale. Il riscontro all'utente arriva solo dopo la
+             conferma del server: mostrare subito "risolta" e scoprire poi che
+             la chiamata è fallita sarebbe peggio di mezzo secondo di attesa. */
+          function chiudiAMano(bottone){
+            const id = bottone.dataset.id;
+            bottone.disabled = true;
+            bottone.textContent = "Attendi…";
+            fetch("/project/" + encodeURIComponent(OP_PROGETTO)
+                  + "/issue/" + encodeURIComponent(id) + "/resolve", {method: "POST"})
+              .then(r => {
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                const d = OP_DATI.find(x => x.id === id);
+                if (d){ d.stato = "risolta"; d.manuale = true; }
+                disegna();
+              })
+              .catch(() => {
+                bottone.disabled = false;
+                bottone.textContent = "Non riuscito, riprova";
+                bottone.classList.add("errore");
+              });
           }
 
           function interruttore(id, leggi, scrivi){
