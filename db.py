@@ -368,3 +368,60 @@ def _sb_user_theme_set(user_id: str, tema: str) -> bool:
     r = req.put(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=_SB_H,
                 json={"user_metadata": {"theme": tema}}, timeout=10)
     return r.status_code < 300
+
+
+# ── Roadmap pubblica: voti e iscrizioni ─────────────────────────────────────
+#
+# Niente tabelle nuove: si usa `tracking_event`, che ha gia' un campo libero
+# (`properties`) e non pretende un progetto. I voti restano fuori dalle
+# statistiche di AI Traffic perche' quelle filtrano sempre per project_id, che
+# qui e' vuoto.
+#
+# Se un domani i voti diventeranno tanti o serviranno query aggregate, una
+# tabella dedicata avra' senso: il punto di innesto sono queste tre funzioni.
+
+_ROADMAP_VOTO = "roadmap_vote"
+_ROADMAP_ISCRIZIONE = "roadmap_signup"
+
+
+def _sb_roadmap_voti() -> dict:
+    """Conteggio dei voti per funzionalita'."""
+    r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                params={"event_name": f"eq.{_ROADMAP_VOTO}",
+                        "select": "properties", "limit": "5000"})
+    if r.status_code >= 300:
+        return {}
+    conteggio: dict = {}
+    for riga in r.json():
+        f = (riga.get("properties") or {}).get("feature")
+        if f:
+            conteggio[f] = conteggio.get(f, 0) + 1
+    return conteggio
+
+
+def _sb_roadmap_ha_votato(votante: str, feature: str) -> bool:
+    """Vero se questo votante ha gia' votato questa funzionalita'."""
+    r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                params={"event_name": f"eq.{_ROADMAP_VOTO}",
+                        "properties->>votante": f"eq.{votante}",
+                        "properties->>feature": f"eq.{feature}",
+                        "select": "id", "limit": "1"})
+    return r.status_code < 300 and bool(r.json())
+
+
+def _sb_roadmap_vota(votante: str, feature: str) -> bool:
+    """Registra un voto. Falso se era gia' stato espresso."""
+    if _sb_roadmap_ha_votato(votante, feature):
+        return False
+    r = req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                 json={"event_name": _ROADMAP_VOTO,
+                       "properties": {"feature": feature, "votante": votante}})
+    return r.status_code < 300
+
+
+def _sb_roadmap_iscrivi(email: str, feature: str | None = None) -> bool:
+    """Registra chi vuole essere avvisato quando una funzionalita' arriva."""
+    r = req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                 json={"event_name": _ROADMAP_ISCRIZIONE,
+                       "properties": {"email": email, "feature": feature}})
+    return r.status_code < 300

@@ -1909,3 +1909,104 @@ def _subtabs(project_id: str, active_tab: str, conteggi: dict | None = None) -> 
         voci.append(f'<a class="{classe}" href="/project/{project_id}?tab={chiave}">'
                     f'{geo_audit.esc(etichetta)}{badge}</a>')
     return '<div class="subtabs">' + "".join(voci) + '</div>'
+
+
+# ── Roadmap pubblica ─────────────────────────────────────────────────────────
+#
+# I contenuti stanno qui e si aggiornano a mano: e' una pagina di prodotto, non
+# un dato calcolato. Gli identificativi (la prima voce di ogni tupla) sono la
+# chiave con cui si contano i voti: **non vanno mai cambiati**, altrimenti i
+# voti raccolti finiscono su una funzionalita' che non esiste piu'.
+
+_ROADMAP_LIVE = [
+    ("Analisi GEO del sito",
+     "31 controlli su sei aree, punteggio da 0 a 100 e report completo con gli interventi da fare."),
+    ("Storico e andamento",
+     "Ogni sito diventa un progetto con la sua storia: si vede se il punteggio sale o scende nel tempo."),
+    ("Criticità con ciclo di vita",
+     "Un problema sa da quanti giorni è aperto, e si chiude da solo quando l'analisi non lo trova più."),
+    ("Analisi automatica ricorrente",
+     "Il sito viene ricontrollato da solo, ogni giorno, settimana o mese."),
+    ("Traffico dagli assistenti AI",
+     "Uno snippet da installare misura quante visite arrivano da ChatGPT, Perplexity, Gemini e gli altri."),
+    ("Report condivisibile",
+     "Un documento con punteggio, criticità e interventi, da girare a chi deve metterci mano."),
+]
+
+_ROADMAP_COLONNE = [
+    ("In sviluppo", "Ci stiamo lavorando adesso", [
+        ("visibilita-ai", "AI Visibility",
+         "Quanto il sito viene citato nelle risposte di ChatGPT, Gemini e Perplexity, misurato su domande "
+         "vere poste con regolarità.",
+         '<path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 6v6l4 2"/>'),
+        ("prompt", "Prompt e argomenti",
+         "Su quali domande comparite e su quali no, argomento per argomento.",
+         '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>'),
+    ]),
+    ("Pianificato", "Subito dopo", [
+        ("competitor", "Confronto con i concorrenti",
+         "Quanto spazio occupate voi e quanto loro nelle risposte delle AI, e su quali domande vi superano.",
+         '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>'),
+        ("citazioni", "Citazioni e fonti",
+         "Quali vostre pagine vengono indicate come fonte, e chi altro parla di voi.",
+         '<path d="M10 9V5a2 2 0 00-2-2H4a2 2 0 00-2 2v4a2 2 0 002 2h2l2 4M22 9V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v4a2 2 0 002 2h2l2 4"/>'),
+        ("avvisi", "Avvisi e riepiloghi",
+         "Una mail quando il punteggio cambia molto o compare un problema grave, e un riepilogo periodico.",
+         '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>'),
+    ]),
+    ("In esplorazione", "Ci stiamo ragionando", [
+        ("accuratezza", "Accuratezza del racconto",
+         "Verificare che le AI raccontino la vostra azienda in modo corretto, e correggere dove sbagliano.",
+         '<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/>'),
+        ("fuori-sito", "Presenza fuori dal sito",
+         "Wikipedia, Wikidata e le fonti indipendenti che le AI leggono parlando di voi.",
+         '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20 15 15 0 010-20"/>'),
+        ("per-motore", "Punteggio per singolo motore",
+         "Un punteggio distinto per ChatGPT, Gemini, Claude e Perplexity: hanno criteri diversi.",
+         '<path d="M12 20V10M18 20V4M6 20v-4"/>'),
+    ]),
+]
+
+
+def _roadmap_live_html() -> str:
+    return "".join(
+        '<div class="live-card">'
+        '<div class="live-check">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">'
+        '<polyline points="20 6 9 17 4 12"/></svg></div>'
+        '<div>'
+        f'<div class="live-title">{geo_audit.esc(t)}</div>'
+        f'<div class="live-desc">{geo_audit.esc(d)}</div>'
+        '</div></div>'
+        for t, d in _ROADMAP_LIVE
+    )
+
+
+def _roadmap_colonne_html(voti: dict) -> str:
+    colonne = []
+    for titolo, sottotitolo, funzioni in _ROADMAP_COLONNE:
+        schede = []
+        for chiave, nome, descrizione, icona in funzioni:
+            n = voti.get(chiave, 0)
+            schede.append(
+                '<div class="feature-card">'
+                f'<div class="feature-icon"><svg width="18" height="18" viewBox="0 0 24 24" '
+                f'fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{icona}</svg></div>'
+                f'<div class="feature-title">{geo_audit.esc(nome)}</div>'
+                f'<div class="feature-desc">{geo_audit.esc(descrizione)}</div>'
+                '<div class="feature-footer">'
+                f'<button class="vote-btn" data-feature="{geo_audit.esc(chiave)}">'
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+                'aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>'
+                '<span>Mi interessa</span></button>'
+                f'<span class="vote-count">{n} {"voto" if n == 1 else "voti"}</span>'
+                '</div></div>'
+            )
+        colonne.append(
+            '<div>'
+            f'<div class="col-header"><div class="feature-title">{geo_audit.esc(titolo)}</div>'
+            f'<div class="col-sub">{geo_audit.esc(sottotitolo)}</div></div>'
+            + "".join(schede) +
+            '</div>'
+        )
+    return "".join(colonne)
