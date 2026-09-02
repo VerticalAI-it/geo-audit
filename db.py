@@ -318,7 +318,12 @@ def _sb_tracking_events(project_id: str, days: int = 30, limit: int = _TETTO_EVE
     al massimo 1000**: su un progetto con 4.089 eventi in 30 giorni la scheda ne
     leggeva un quarto e presentava quel quarto come il totale. Il difetto era
     silenzioso — nessun errore, solo numeri piu' bassi del vero — e sarebbe
-    peggiorato con i passaggi dei crawler, che sono molti piu' delle visite.
+    peggiorato con l'arrivo dei passaggi dei crawler, che si sommano alle visite.
+
+    Ordini di grandezza misurati su un sito vero (fratellipalomba.it, 41 giorni):
+    3.671 visite, 1.178 passaggi di crawler, 29 referral da AI. I crawler non sono
+    piu' delle visite — sono quaranta volte i referral, che e' il confronto giusto:
+    sono le due cose che questa scheda mette una accanto all'altra.
     """
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     params = {"project_id": f"eq.{project_id}", "created_at": f"gte.{since}",
