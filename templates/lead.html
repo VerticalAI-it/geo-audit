@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Richiedi l'accesso — GEO Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-canvas:#0A0A0F; --bg-surface:#131319; --bg-surface-raised:#1C1C24; --bg-surface-hover:#20202A;
+    --border-subtle: rgba(255,255,255,0.06); --border-medium: rgba(255,255,255,0.10);
+    --accent-primary:#7C6FFF; --accent-primary-dim: rgba(124,111,255,0.14);
+    --text-primary:#F4F4F7; --text-secondary:#B4B4C2; --text-muted:#7A7A8C;
+    --state-good:#34D399; --state-good-dim: rgba(52,211,153,0.12);
+    --state-warn:#FBBF24; --state-warn-dim: rgba(251,191,36,0.12);
+    --state-critical:#F87171; --state-critical-dim: rgba(248,113,113,0.12);
+    --radius-sm:8px; --radius-md:12px; --radius-lg:20px;
+    --font-display:'Space Grotesk', sans-serif; --font-body:'Inter', sans-serif; --font-mono:'IBM Plex Mono', monospace;
+    --card-shadow: none;
+  }
+  [data-theme="light"]{
+    --bg-canvas:#F6F6FA; --bg-surface:#FFFFFF; --bg-surface-raised:#F0F0F6; --bg-surface-hover:#E7E7F0;
+    --border-subtle: rgba(20,20,30,0.08); --border-medium: rgba(20,20,30,0.14);
+    --accent-primary:#6C5CE7; --accent-primary-dim: rgba(108,92,231,0.10);
+    --text-primary:#14141C; --text-secondary:#4A4A5C; --text-muted:#83839A;
+    --state-good:#0E9F6E; --state-good-dim: rgba(14,159,110,0.10);
+    --state-warn:#B45309; --state-warn-dim: rgba(180,83,9,0.10);
+    --state-critical:#DC2626; --state-critical-dim: rgba(220,38,38,0.10);
+    --card-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 2px 8px rgba(16,24,40,0.05);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg-canvas); color:var(--text-primary); font-family:var(--font-body); font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; min-height:100vh; display:flex; flex-direction:column; transition:background .15s ease, color .15s ease;}
+  body::before{content:''; position:fixed; inset:0; background:radial-gradient(ellipse 900px 500px at 50% -10%, rgba(124,111,255,0.10), transparent 60%); pointer-events:none; z-index:0;}
+  [data-theme="light"] body::before{background:radial-gradient(ellipse 900px 500px at 50% -10%, rgba(108,92,231,0.06), transparent 60%);}
+  a{color:inherit;}
+
+  .topbar{display:flex; align-items:center; justify-content:space-between; padding:20px 28px; position:relative; z-index:1;}
+  .brand{display:flex; align-items:center; gap:9px;}
+  .brand-mark{width:28px;height:28px;border-radius:7px; background:linear-gradient(135deg, var(--accent-primary), #5B4FE8); display:flex;align-items:center;justify-content:center; font-family:var(--font-display); font-weight:700; font-size:14px; color:#fff;}
+  .brand-name{font-family:var(--font-display); font-weight:600; font-size:16px;}
+  .brand-name span{color:var(--accent-primary);}
+  .theme-toggle{width:36px;height:36px;border-radius:var(--radius-sm);border:1px solid var(--border-medium); background:var(--bg-surface); color:var(--text-secondary); display:flex;align-items:center;justify-content:center; cursor:pointer;}
+  .theme-toggle:hover{background:var(--bg-surface-raised);}
+
+  .main{flex:1; display:flex; align-items:flex-start; justify-content:center; padding:30px 20px 50px 20px; position:relative; z-index:1;}
+  .layout{width:100%; max-width:920px; display:grid; grid-template-columns:1fr 380px; gap:20px; align-items:flex-start;}
+
+  .promise-card{background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:32px 30px; box-shadow:var(--card-shadow);}
+  .status-badge{
+    display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10.5px;
+    color:var(--state-warn); background:var(--state-warn-dim); padding:4px 10px; border-radius:20px; margin-bottom:16px;
+  }
+  .promise-title{font-family:var(--font-display); font-size:24px; font-weight:600; margin-bottom:10px; line-height:1.25;}
+  .promise-sub{font-size:13.5px; color:var(--text-secondary); line-height:1.6; margin-bottom:26px;}
+  .promise-sub b{color:var(--text-primary);}
+
+  .preview-panel{
+    background:linear-gradient(135deg, var(--accent-primary-dim), rgba(124,111,255,0.02));
+    border:1px solid rgba(124,111,255,0.25); border-radius:var(--radius-lg); padding:20px 22px;
+  }
+  .preview-label{font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--accent-primary); font-weight:700; margin-bottom:14px;}
+  .preview-row{display:flex; align-items:center; gap:18px; margin-bottom:18px;}
+  .preview-gauge{position:relative; width:76px; height:76px; flex-shrink:0;}
+  .preview-gauge svg{transform:rotate(-90deg);}
+  .preview-gauge-track{fill:none; stroke:var(--bg-surface-raised); stroke-width:7;}
+  /* ⚠️ L'arco deve corrispondere al numero che gli sta dentro. Nel mockup
+     l'offset è 120 su 200, cioè un arco al 40%, con scritto 67 — lo stesso
+     difetto già trovato su un altro gauge del prototipo. Qui l'offset è
+     calcolato: 200 × (1 − 0,67) = 66. Anche in un esempio illustrativo, un
+     numero che non torna col disegno insegna a non fidarsi dei numeri. */
+  .preview-gauge-fill{fill:none; stroke:var(--state-warn); stroke-width:7; stroke-linecap:round; stroke-dasharray:200; stroke-dashoffset:66;}
+  .preview-gauge-num{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--font-display); font-size:19px; font-weight:700;}
+  .preview-text{font-size:12.5px; color:var(--text-secondary); line-height:1.5;}
+  .preview-text b{color:var(--text-primary);}
+
+  .preview-opps{display:flex; flex-direction:column; gap:9px;}
+  .preview-opp{display:flex; align-items:center; gap:9px; font-size:12px; color:var(--text-secondary); background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:8px; padding:9px 12px;}
+  .preview-opp .dot{width:6px; height:6px; border-radius:50%; flex-shrink:0;}
+  .preview-opp.warn .dot{background:var(--state-warn);}
+  .preview-opp.critical .dot{background:var(--state-critical);}
+  .preview-caption{font-size:11px; color:var(--text-muted); margin-top:14px; font-style:italic;}
+
+  .how-title{font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); font-weight:600; margin:26px 0 12px 0;}
+  .how-step{display:flex; gap:11px; margin-bottom:12px; align-items:flex-start;}
+  .how-num{font-family:var(--font-mono); font-size:11.5px; color:var(--accent-primary); font-weight:600; width:20px; flex-shrink:0; padding-top:1px;}
+  .how-text{font-size:12.5px; color:var(--text-secondary); line-height:1.5;}
+  .how-text b{color:var(--text-primary);}
+
+  .form-card{background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:28px 26px; box-shadow:var(--card-shadow); position:sticky; top:20px;}
+  .form-card-title{font-family:var(--font-display); font-size:16px; font-weight:600; margin-bottom:18px;}
+  .form-row{margin-bottom:16px;}
+  .form-label{font-size:12.5px; font-weight:600; color:var(--text-secondary); margin-bottom:7px; display:block;}
+  .form-label .optional{font-weight:400; color:var(--text-muted); text-transform:none;}
+  .form-input{
+    width:100%; background:var(--bg-surface-raised); border:1px solid var(--border-subtle); border-radius:var(--radius-sm);
+    padding:12px 14px; color:var(--text-primary); font-family:var(--font-body); font-size:14px; outline:none;
+    transition:border-color .12s ease;
+  }
+  .form-input:focus{border-color:var(--accent-primary); box-shadow:0 0 0 3px var(--accent-primary-dim);}
+  .form-input.error{border-color:var(--state-critical);}
+  .form-error{font-size:11.5px; color:var(--state-critical); margin-top:5px; display:none;}
+  .form-error.show{display:block;}
+
+  .btn-submit{
+    width:100%; background:var(--accent-primary); border:1px solid var(--accent-primary); color:#fff;
+    font-family:var(--font-body); font-size:14px; font-weight:600; padding:13px; border-radius:var(--radius-sm);
+    cursor:pointer; margin-top:6px; transition:background .12s ease;
+  }
+  .btn-submit:hover{background:#6c5ff0;}
+  .btn-submit:disabled{opacity:.65; cursor:progress;}
+  .form-note{font-size:11px; color:var(--text-muted); text-align:center; margin-top:12px; line-height:1.5;}
+
+  .auth-footer{margin-top:18px; padding-top:16px; border-top:1px solid var(--border-subtle); font-size:12px; color:var(--text-muted); text-align:center;}
+  .auth-footer a{color:var(--accent-primary); font-weight:600; text-decoration:none;}
+
+  @media (max-width: 860px){
+    .layout{grid-template-columns:1fr;}
+    .form-card{position:static;}
+  }
+  @media (max-width: 480px){
+    .promise-card, .form-card{padding:24px 20px;}
+    .preview-row{flex-direction:column; align-items:flex-start; gap:12px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">V</div>
+    <div class="brand-name">vertical<span>ai</span></div>
+  </div>
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Cambia tema">
+    <svg class="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+  </button>
+</div>
+
+<div class="main">
+  <div class="layout">
+
+    <div class="promise-card">
+      <div class="status-badge">● Accesso non ancora attivo</div>
+      <div class="promise-title">Lasciaci il tuo sito.<br>Iniziamo subito ad analizzarlo.</div>
+      <div class="promise-sub">Questa email non risulta ancora attiva su GEO Audit. Compila il modulo qui a fianco: <b>avviamo da subito l'analisi del sito che ci indichi</b>, così quando ti ricontattiamo avremo già pronti il tuo punteggio GEO iniziale e le prime azioni di miglioramento concrete — non solo una telefonata commerciale.</div>
+
+      <div class="preview-panel">
+        <div class="preview-label">Anteprima — cosa riceverai</div>
+        <div class="preview-row">
+          <div class="preview-gauge">
+            <svg viewBox="0 0 76 76" width="76" height="76">
+              <circle class="preview-gauge-track" cx="38" cy="38" r="32"/>
+              <circle class="preview-gauge-fill" cx="38" cy="38" r="32"/>
+            </svg>
+            <div class="preview-gauge-num">67</div>
+          </div>
+          <div class="preview-text">Il <b>punteggio GEO</b> del tuo sito: quanto è visibile oggi alle AI come ChatGPT, Gemini e Perplexity.</div>
+        </div>
+        <div class="preview-opps">
+          <div class="preview-opp warn"><span class="dot"></span>Es. "Contatti presenti" da migliorare su più pagine</div>
+          <div class="preview-opp critical"><span class="dot"></span>Es. "Dati strutturati" mancanti in 2 pagine chiave</div>
+        </div>
+        <div class="preview-caption">Esempio illustrativo — il tuo report reale sarà basato sul sito che indichi qui sotto.</div>
+      </div>
+
+      <div class="how-title">Come funziona da qui</div>
+      <div class="how-step"><span class="how-num">01</span><span class="how-text"><b>Invii il modulo</b> con il sito da analizzare</span></div>
+      <div class="how-step"><span class="how-num">02</span><span class="how-text"><b>Analizziamo il sito</b> con lo stesso motore che usiamo per i nostri clienti attivi</span></div>
+      <div class="how-step"><span class="how-num">03</span><span class="how-text"><b>Ti ricontattiamo</b> con punteggio e azioni pronte, non solo una chiacchierata</span></div>
+    </div>
+
+    <!-- Form vero: POST al server. Niente JavaScript necessario per inviarlo —
+         il controllo lato client è solo per dare l'errore subito. -->
+    <form class="form-card" method="post" action="/richiedi-accesso" id="leadForm">
+      <div class="form-card-title">Richiedi l'analisi</div>
+
+      <div class="form-row">
+        <label class="form-label" for="email">Email</label>
+        <input class="form-input" type="email" id="email" name="email" value="{{EMAIL}}" required>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="telefono">Telefono <span class="optional">(opzionale)</span></label>
+        <input class="form-input" type="tel" id="telefono" name="telefono" placeholder="+39 ...">
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="sito">Sito da analizzare</label>
+        <input class="form-input" type="text" id="sito" name="sito" placeholder="tuosito.it" required>
+        <div class="form-error" id="sitoError">Inserisci il dominio del sito da analizzare.</div>
+      </div>
+
+      <button class="btn-submit" type="submit" id="btnInvia">Invia e avvia l'analisi</button>
+      <div class="form-note">Nessun impegno. Ti ricontattiamo entro breve con i risultati.</div>
+
+      <div class="auth-footer">
+        Hai già un accesso attivo? <a href="/login">Torna al login</a>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+<script>
+  function toggleTheme(){
+    const html = document.documentElement;
+    const goingLight = html.getAttribute('data-theme') !== 'light';
+    html.setAttribute('data-theme', goingLight ? 'light' : 'dark');
+    try{ localStorage.setItem('geo-theme', goingLight ? 'light' : 'dark'); }catch(e){}
+    document.querySelectorAll('.icon-sun').forEach(el => el.style.display = goingLight ? 'none' : 'block');
+    document.querySelectorAll('.icon-moon').forEach(el => el.style.display = goingLight ? 'block' : 'none');
+  }
+  /* Il tema scelto vale su tutto il prodotto: si legge la stessa chiave delle
+     altre pagine, così chi arriva qui non si vede cambiare il tema sotto gli occhi. */
+  (function(){
+    let salvato = null;
+    try{ salvato = localStorage.getItem('geo-theme'); }catch(e){}
+    const scuro = salvato === 'dark';
+    document.documentElement.setAttribute('data-theme', scuro ? 'dark' : 'light');
+    document.querySelectorAll('.icon-sun').forEach(el => el.style.display = scuro ? 'block' : 'none');
+    document.querySelectorAll('.icon-moon').forEach(el => el.style.display = scuro ? 'none' : 'block');
+  })();
+
+  document.getElementById('leadForm').addEventListener('submit', function(e){
+    const sito = document.getElementById('sito');
+    const err  = document.getElementById('sitoError');
+    if(sito.value.trim().length < 3 || sito.value.indexOf('.') === -1){
+      e.preventDefault();
+      sito.classList.add('error');
+      err.classList.add('show');
+      return;
+    }
+    sito.classList.remove('error');
+    err.classList.remove('show');
+    /* L'audit parte davvero: il bottone dice cosa sta succedendo invece di
+       restare identico mentre la pagina sembra ferma. */
+    const btn = document.getElementById('btnInvia');
+    btn.disabled = true;
+    btn.textContent = 'Avvio l’analisi…';
+  });
+</script>
+
+</body>
+</html>

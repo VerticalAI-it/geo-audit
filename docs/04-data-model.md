@@ -285,6 +285,28 @@ Lead generation, indipendente dalla gerarchia progetti.
 I campi di snapshot sono denormalizzati apposta: la richiesta di contatto deve
 restare leggibile anche se l'audit collegato viene cancellato.
 
+### Ci vivono anche i lead del flusso di accesso
+
+Dal 3 settembre 2026 questa tabella raccoglie **due sorgenti**:
+
+| Sorgente | Come si riconosce | Cosa contiene |
+|---|---|---|
+| form del report esterno | l'audit collegato ha `source` `manual`/`auto` | richiesta su un audit già fatto |
+| **richiesta di accesso** (`/richiedi-accesso`) | l'audit collegato ha **`source = 'lead'`** | `domain` = sito da analizzare, `audit_id` = audit preliminare |
+
+⚠️ **Perché qui e non in una tabella nuova**, che pure il documento funzionale
+proponeva: crearla richiede un DDL, e le chiavi di servizio non fanno DDL —
+servirebbe qualcuno che apre il pannello Supabase, e la funzionalità resterebbe
+ferma lì. Questa tabella nasce come raccolta lead e ha già tutti i campi utili:
+`email`, `phone`, `domain`, più `audit_id` e lo snapshot `overall`/`grade`, che
+sono esattamente il collegamento all'audit preliminare e il suo esito.
+
+⚠️ **Lo stato del lead non è una colonna, è un fatto:** se l'email ha un account
+in `auth.users` la richiesta è stata approvata, altrimenti sta ancora aspettando.
+Così non esistono due verità da tenere allineate. Lo stato intermedio
+«contattato», che serve all'Admin Dashboard e non a questo flusso, è la cosa che
+un domani richiederà una colonna in più.
+
 ---
 
 ## Row Level Security
