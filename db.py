@@ -98,20 +98,52 @@ _LINK_MAX = 4
 _LINK_FINESTRA_MIN = 15
 
 
-def _sb_link_richiesto(email: str) -> None:
-    """Segna che per questa email e' partito (o si e' tentato) un link.
+def _sb_login_evento(email: str, tipo: str, client_id: str | None = None) -> None:
+    """Segna un momento del percorso di accesso.
 
-    ⚠️ Sta in `tracking_event` come le altre cose di servizio, e per lo stesso
-    motivo: creare `login_events` vuole un DDL. Quando quella tabella esistera'
-    — e' nella migrazione Fase D — questa funzione e la sua gemella si spostano
-    li', e diventano anche lo storico accessi del pannello.
+    Due tipi, e insieme dicono una cosa che nessuno dei due direbbe da solo:
+      `link_richiesto`   — e' partito un link
+      `accesso_riuscito` — la sessione si e' davvero aperta
+    Il divario fra i due sono i link che non vengono mai cliccati: mail che non
+    arrivano, o gente che ci ripensa. Supabase espone solo `last_sign_in_at`,
+    cioe' l'ultima volta e basta.
     """
     try:
-        req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=6,
-                 json={"event_name": _LINK_RICHIESTO,
-                       "properties": {"email": (email or "").strip().lower()}})
+        req.post(f"{SUPABASE_URL}/rest/v1/login_events", headers=_SB_H, timeout=6,
+                 json={"email": (email or "").strip().lower() or None,
+                       "event_type": tipo, "client_id": client_id})
     except Exception:
         pass
+
+
+def _sb_link_richiesto(email: str) -> None:
+    """Un link e' partito per questa email."""
+    _sb_login_evento(email, "link_richiesto")
+
+
+def _sb_login_riuscito(email: str, client_id: str | None = None) -> None:
+    """La sessione si e' aperta davvero."""
+    _sb_login_evento(email, "accesso_riuscito", client_id)
+
+
+def _sb_accessi_cliente(client_id: str, email: str = "", limit: int = 40) -> list:
+    """Lo storico accessi di un cliente, per la sua scheda nel pannello.
+
+    Si cerca per `client_id` **o** per email: i primi eventi di un cliente
+    nascono prima che l'account esista — quando chiede il link non sappiamo
+    ancora se lo diventera' — quindi li' c'e' solo l'indirizzo.
+    """
+    filtri = []
+    if client_id:
+        filtri.append(f"client_id.eq.{client_id}")
+    if email:
+        filtri.append(f"email.eq.{(email or '').strip().lower()}")
+    if not filtri:
+        return []
+    r = req.get(f"{SUPABASE_URL}/rest/v1/login_events", headers=_SB_H, timeout=15,
+                params={"or": f"({','.join(filtri)})", "select": "event_type,created_at",
+                        "order": "created_at.desc", "limit": str(limit)})
+    return r.json() if r.ok else []
 
 
 def _sb_link_troppo_spesso(email: str) -> bool:
@@ -126,10 +158,10 @@ def _sb_link_troppo_spesso(email: str) -> bool:
         return False
     da = (datetime.now(timezone.utc) - timedelta(minutes=_LINK_FINESTRA_MIN)).isoformat()
     try:
-        r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event",
+        r = req.get(f"{SUPABASE_URL}/rest/v1/login_events",
                     headers={**_SB_H, "Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"},
-                    params={"event_name": f"eq.{_LINK_RICHIESTO}", "created_at": f"gte.{da}",
-                            "properties->>email": f"eq.{email}", "select": "id"}, timeout=8)
+                    params={"event_type": "eq.link_richiesto", "created_at": f"gte.{da}",
+                            "email": f"eq.{email}", "select": "id"}, timeout=8)
         quante = int((r.headers.get("content-range") or "*/0").split("/")[-1])
     except Exception:
         # Se il conteggio non riesce non si blocca l'accesso: un limite che si
@@ -138,31 +170,80 @@ def _sb_link_troppo_spesso(email: str) -> bool:
     return quante >= _LINK_MAX
 
 
+# ── Note interne su un cliente ──────────────────────────────────────────────
+
+def _sb_note_cliente(client_id: str, limit: int = 50) -> list:
+    r = req.get(f"{SUPABASE_URL}/rest/v1/client_notes", headers=_SB_H, timeout=15,
+                params={"client_id": f"eq.{client_id}",
+                        "select": "id,text,author_email,created_at",
+                        "order": "created_at.desc", "limit": str(limit)})
+    return r.json() if r.ok else []
+
+
+def _sb_nota_aggiungi(client_id: str, testo: str, autore_id: str, autore_email: str) -> bool:
+    """Aggiunge una nota. Non si modifica e non si cancella: una nota
+    commerciale che qualcuno puo' riscrivere dopo non e' piu' una traccia."""
+    r = req.post(f"{SUPABASE_URL}/rest/v1/client_notes", headers=_SB_H, timeout=10,
+                 json={"client_id": client_id, "text": (testo or "").strip()[:4000],
+                       "author_id": autore_id, "author_email": autore_email})
+    return r.status_code < 300
+
+
+# ── Promemoria «installa il tracking» ───────────────────────────────────────
+
+def _sb_promemoria_inviati(project_ids: list) -> dict:
+    """Ultimo promemoria mandato, per progetto. Serve a non riscrivere a raffica."""
+    if not project_ids:
+        return {}
+    elenco = ",".join(project_ids[:200])
+    r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_reminders", headers=_SB_H, timeout=15,
+                params={"project_id": f"in.({elenco})", "select": "project_id,sent_at,sent_to",
+                        "order": "sent_at.desc", "limit": "500"})
+    out: dict = {}
+    for riga in (r.json() if r.ok else []):
+        out.setdefault(riga["project_id"], riga)      # il primo e' il piu' recente
+    return out
+
+
+def _sb_promemoria_registra(project_id: str, chi: str, a_chi: str) -> bool:
+    r = req.post(f"{SUPABASE_URL}/rest/v1/tracking_reminders", headers=_SB_H, timeout=10,
+                 json={"project_id": project_id, "sent_by": chi, "sent_to": a_chi})
+    return r.status_code < 300
+
+
+# ── Lo stato di una richiesta ───────────────────────────────────────────────
+
+def _sb_lead_stato(lead_id: str, stato: str) -> bool:
+    """`nuova` | `contattata` | `ignorata`. E' lo stato intermedio che non
+    corrisponde a nessun fatto osservabile — «l'ho chiamato, non ho ancora
+    deciso» — e per questo, a differenza degli altri, ha bisogno di una colonna."""
+    r = req.patch(f"{SUPABASE_URL}/rest/v1/contact_requests", headers=_SB_H, timeout=10,
+                  json={"status": stato}, params={"id": f"eq.{lead_id}"})
+    return r.status_code < 300
+
+
 _ADMIN_AZIONE = "admin_action"
 
 
 def _sb_admin_traccia(attore: str, azione: str, bersaglio: str = "") -> bool:
     """Registra un'azione del pannello: chi, cosa, su chi, quando.
 
-    ⚠️ Sta in `tracking_event` e non in una tabella sua perche' crearla vuole un
-    DDL, che le chiavi di servizio non fanno. E' lo stesso compromesso gia' preso
-    per i voti della roadmap, con lo stesso limite: `tracking_event` sta
-    diventando un registro eventi generico, e quando queste righe conteranno
-    davvero — un audit di sicurezza, una contestazione — vorranno una tabella
-    con i vincoli giusti. **Il punto da cui migrare sono queste tre funzioni.**
+    Stava in `tracking_event` finche' `admin_audit_log` non esisteva — quella
+    tabella e' nata per il traffico di un sito e stava diventando un registro
+    eventi generico. Ora ha la sua casa, con le colonne giuste al posto di un
+    JSON libero: `actor_email` e `action_type` sono `NOT NULL`, quindi una riga
+    monca non ci entra.
     """
-    r = req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
-                 json={"event_name": _ADMIN_AZIONE,
-                       "properties": {"attore": attore, "azione": azione,
-                                      "bersaglio": bersaglio}})
+    r = req.post(f"{SUPABASE_URL}/rest/v1/admin_audit_log", headers=_SB_H, timeout=10,
+                 json={"actor_email": attore or "?", "action_type": azione,
+                       "target": bersaglio or None})
     return r.status_code < 300
 
 
 def _sb_admin_azioni(limit: int = 200) -> list:
     """Lo storico delle azioni del pannello, le piu' recenti per prime."""
-    r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=15,
-                params={"event_name": f"eq.{_ADMIN_AZIONE}",
-                        "select": "properties,created_at",
+    r = req.get(f"{SUPABASE_URL}/rest/v1/admin_audit_log", headers=_SB_H, timeout=15,
+                params={"select": "actor_email,action_type,target,created_at",
                         "order": "created_at.desc", "limit": str(limit)})
     return r.json() if r.ok else []
 
@@ -170,7 +251,7 @@ def _sb_admin_azioni(limit: int = 200) -> list:
 def _sb_contact_requests(limit: int = 300) -> list:
     """Tutte le richieste, le piu' recenti per prime. Solo per il pannello del team."""
     r = req.get(f"{SUPABASE_URL}/rest/v1/contact_requests", headers=_SB_H, timeout=15,
-                params={"select": "id,email,phone,domain,audit_id,overall,grade,created_at",
+                params={"select": "id,email,phone,domain,audit_id,overall,grade,status,created_at",
                         "order": "created_at.desc", "limit": str(limit)})
     return r.json() if r.ok else []
 

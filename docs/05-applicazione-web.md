@@ -649,13 +649,41 @@ registro eventi generico**, e quando queste righe conteranno davvero — un audi
 di sicurezza, una contestazione — vorranno una tabella con i vincoli giusti. Il
 punto da cui migrare sono `_sb_admin_traccia` / `_sb_admin_azioni`.
 
-### Cosa questo pannello non fa ancora
+### La scheda del singolo cliente (`/admin/clienti/{id}`)
 
-- **Il dettaglio del singolo cliente** (note interne, storico accessi): richiede
-  due tabelle nuove, quindi un DDL.
-- **Rilanciare un job fallito** dal Job log: oggi un audit che fallisce **non
-  lascia una riga** — l'eccezione viene catturata prima — quindi non c'è niente
-  da rilanciare. La schermata lo dichiara invece di far sembrare che tutto giri:
-  salvare anche la riga fallita è il primo intervento da fare lì.
-- **Promemoria tracking** e **segna contattato**: entrambi vogliono una tabella
-  per non rimandare lo stesso messaggio a raffica.
+Progetti col punteggio, **note interne**, **storico accessi**, e le azioni:
+rimanda il link, abilita/disabilita.
+
+**Le note non si modificano e non si cancellano.** Una nota commerciale che
+qualcuno può riscrivere dopo non è più una traccia: `client_notes` è
+append-only per scelta, e ogni riga porta l'email di chi l'ha scritta —
+denormalizzata, così resta leggibile anche se quell'account sparisce.
+
+**Lo storico accessi** distingue due momenti: `link_richiesto` e
+`accesso_riuscito`. Presi insieme dicono una cosa che nessuno dei due direbbe da
+solo — **quanti link non vengono mai cliccati**, cioè quante email non arrivano.
+È la risposta alla domanda che ci si fa quando un cliente dice «non riesco a
+entrare». Supabase espone solo `last_sign_in_at`: l'ultima volta, e basta.
+
+⚠️ **Con lo storico vuoto la scheda NON scrive «mai entrato».** Il nostro
+registro parte da settembre 2026, mentre Supabase sa da sempre qual è stato
+l'ultimo accesso: dire «mai entrato» a chi è entrato quaranta giorni fa
+significherebbe far passare «non lo sappiamo» per «non è successo», e su questa
+scheda si prendono decisioni commerciali.
+
+### Le altre azioni sbloccate
+
+| Azione | Dove | Cosa impedisce |
+|---|---|---|
+| **Segna contattato** | coda lead | è l'unico stato che ha bisogno di una colonna: gli altri due — in attesa, approvato — sono fatti che si leggono dall'esistenza dell'account |
+| **Invia promemoria** | tracking non installato | dopo l'invio il bottone sparisce e resta «mandato N giorni fa»: `tracking_reminders` esiste per non riscrivere a raffica alla stessa persona |
+
+Il promemoria non sollecita: spiega **la conseguenza** (senza snippet la scheda
+AI Traffic resterà vuota) e dà la riga da incollare. Chi non l'ha installato
+quasi mai l'ha dimenticato — non sa che serve.
+
+### Il registro delle azioni ha la sua tabella
+
+`admin_audit_log`, non più `tracking_event`: colonne vere al posto di un JSON
+libero, con `actor_email` e `action_type` `NOT NULL` — una riga monca non ci
+entra.

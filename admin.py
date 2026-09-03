@@ -211,6 +211,16 @@ def schermata_lead(lead: list) -> str:
                  if in_ritardo else "")
 
         corpo_lead = json.dumps({"email": email})
+        # Lo stato intermedio: l'ho chiamato ma non ho ancora deciso. Quando c'e'
+        # gia', il bottone sparisce e resta l'etichetta — ripremerlo non direbbe
+        # niente di nuovo.
+        if (l.get("status") or "nuova") == "contattata":
+            contattato = '<span class="pill neutro">già contattato</span>'
+        else:
+            corpo_contatto = json.dumps({"lead_id": l.get("id"), "stato": "contattata"})
+            contattato = (
+                '<button class="btn" data-azione="/admin/lead/contattato" '
+                f"data-corpo='{corpo_contatto}'>Segna come contattato</button>")
         carte.append(
             f'<div class="lead-card{" overdue" if in_ritardo else ""}">'
             '<div class="lead-top"><div class="lead-info">'
@@ -230,7 +240,8 @@ def schermata_lead(lead: list) -> str:
             f'{" disabled" if not pronto else ""}>'
             '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
             'stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Valida cliente</button>'
-            '</div></div>'
+            + contattato
+            + '</div></div>'
         )
 
     avviso = ""
@@ -282,7 +293,8 @@ def schermata_clienti(clienti: list, chi_sono: str = "") -> str:
             azione = '<span class="pill neutro">sei tu</span>'
 
         righe.append(
-            f'<tr><td><b>{geo_audit.esc(c["email"])}</b></td>'
+            f'<tr><td><a href="/admin/clienti/{c["id"]}" style="color:var(--accent-primary)">'
+            f'<b>{geo_audit.esc(c["email"])}</b></a></td>'
             f'<td>{len(c["progetti"])}</td>'
             f'<td>{accesso}</td>'
             f'<td>{stato}</td>'
@@ -383,16 +395,19 @@ def schermata_log(azioni: list) -> str:
         "approva_lead": "ha attivato l'accesso di",
         "abilita_cliente": "ha riabilitato",
         "disabilita_cliente": "ha disabilitato",
+        "segna_contattato": "ha segnato come contattato",
+        "nota_cliente": "ha scritto una nota su",
+        "promemoria_tracking": "ha mandato il promemoria tracking a",
+        "magic_link_manuale": "ha rimandato il link di accesso a",
     }
     righe = []
     for a in azioni:
-        p = a.get("properties") or {}
-        azione = NOMI.get(p.get("azione"), p.get("azione") or "—")
+        azione = NOMI.get(a.get("action_type"), a.get("action_type") or "—")
         righe.append(
             f'<tr><td>{_quando(a.get("created_at"))}</td>'
-            f'<td><b>{geo_audit.esc(p.get("attore") or "—")}</b></td>'
+            f'<td><b>{geo_audit.esc(a.get("actor_email") or "—")}</b></td>'
             f'<td>{geo_audit.esc(azione)}</td>'
-            f'<td>{geo_audit.esc(p.get("bersaglio") or "")}</td></tr>'
+            f'<td>{geo_audit.esc(a.get("target") or "")}</td></tr>'
         )
     return ('<div class="tab-wrap"><table class="tab"><thead><tr>'
             '<th>Quando</th><th>Chi</th><th>Cosa</th><th>Su</th>'
@@ -444,7 +459,8 @@ def schermata_job(audit: list) -> str:
             f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
 
 
-def schermata_tracking(progetti: list, con_tracking: set, clienti: list) -> str:
+def schermata_tracking(progetti: list, con_tracking: set, clienti: list,
+                       promemoria: dict | None = None) -> str:
     """I progetti che non hanno mai mandato un evento.
 
     È il dato che dice dove il prodotto non sta ancora misurando niente — e
@@ -456,22 +472,39 @@ def schermata_tracking(progetti: list, con_tracking: set, clienti: list) -> str:
         return _vuoto("Tutti i progetti mandano dati",
                       "Ogni progetto ha almeno un evento registrato.")
 
+    promemoria = promemoria or {}
     righe = []
     for p in sorted(senza, key=lambda x: x.get("created_at") or ""):
         giorni = _giorni_da(p.get("created_at"))
         etichetta = (f'<span class="pill warn">{giorni} giorni</span>'
                      if giorni and giorni > 14 else f"{giorni if giorni is not None else '—'} giorni")
+
+        # ⚠️ Se gli si è già scritto, lo si dice invece di offrire un bottone
+        # che manderebbe lo stesso messaggio una seconda volta.
+        gia = promemoria.get(p["id"])
+        if gia:
+            azione = (f'<span class="pill neutro">mandato {_quando(gia.get("sent_at"))}</span>')
+        else:
+            corpo = json.dumps({"project_id": p["id"]})
+            destinatario = per_utente.get(p.get("user_id"), "")
+            azione = ('<button class="btn" data-azione="/admin/tracking/promemoria" '
+                      f"data-corpo='{corpo}' "
+                      f'data-conferma="Mandare a {geo_audit.esc(destinatario)} il promemoria '
+                      f'per installare il tracking su {geo_audit.esc(p.get("domain") or "")}?">'
+                      'Invia promemoria</button>')
+
         righe.append(
             f'<tr><td><b>{geo_audit.esc(p.get("domain") or "")}</b></td>'
             f'<td>{geo_audit.esc(per_utente.get(p.get("user_id"), "—"))}</td>'
-            f'<td>{etichetta}</td></tr>'
+            f'<td>{etichetta}</td>'
+            f'<td style="text-align:right">{azione}</td></tr>'
         )
     return ('<div class="avviso"><div>📉</div><div>'
             f'<b>{len(senza)} progetti su {len(progetti)} non hanno mai mandato un evento.</b> '
             'Senza lo snippet installato la scheda AI Traffic resta vuota, e il cliente '
             'non vedrà mai un numero.</div></div>'
             '<div class="tab-wrap"><table class="tab"><thead><tr>'
-            '<th>Sito</th><th>Cliente</th><th>Dalla creazione</th>'
+            '<th>Sito</th><th>Cliente</th><th>Dalla creazione</th><th></th>'
             f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
 
 
@@ -511,3 +544,155 @@ def schermata_interesse(richieste: list, audit_per_id: dict, account: set) -> st
     return ('<div class="tab-wrap"><table class="tab"><thead><tr>'
             '<th>Quando</th><th>Email</th><th>Sito</th><th>Punteggio</th><th>Telefono</th><th></th>'
             f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
+
+
+def schermata_cliente(c: dict, accessi: list, note: list, audit: list,
+                      con_tracking: set, chi_sono: str) -> str:
+    """La scheda di un singolo cliente: chi è, cosa segue, come sta andando.
+
+    È la schermata che il pannello non poteva avere finché non esistevano le
+    tabelle per le note e per gli accessi.
+    """
+    email = c["email"]
+    progetti = c["progetti"]
+
+    ultimi = [a for a in audit if a.get("overall") is not None]
+    media = round(sum(a["overall"] for a in ultimi) / len(ultimi)) if ultimi else None
+    senza_tracking = [p for p in progetti if p["id"] not in con_tracking]
+    accessi_riusciti = [a for a in accessi if a.get("event_type") == "accesso_riuscito"]
+    link_chiesti = [a for a in accessi if a.get("event_type") == "link_richiesto"]
+
+    def tessera(valore, etichetta, sotto="", colore=""):
+        stile = f' style="color:{colore}"' if colore else ""
+        return ('<div style="background:var(--bg-surface);border:1px solid var(--border-subtle);'
+                'border-radius:var(--radius-lg);padding:16px 18px">'
+                f'<div style="font-size:11.5px;color:var(--text-muted)">{etichetta}</div>'
+                f'<div style="font-family:var(--font-display);font-size:26px;font-weight:600;'
+                f'line-height:1.15;margin-top:5px"{stile}>{valore}</div>'
+                + (f'<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px">{sotto}</div>'
+                   if sotto else "") + '</div>')
+
+    kpi = ('<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));'
+           'gap:12px;margin-bottom:22px">'
+           + tessera(len(progetti), "Progetti",
+                     f"{len(senza_tracking)} senza tracking" if senza_tracking else "tutti tracciati",
+                     "var(--state-warn)" if senza_tracking else "")
+           + tessera(media if media is not None else "—", "Punteggio medio",
+                     "sui progetti con un audit", _colore_punteggio(media))
+           # ⚠️ Con lo storico vuoto NON si scrive «mai entrato»: il nostro
+           # registro parte da settembre 2026, mentre Supabase sa da sempre
+           # qual è stato l'ultimo accesso. Dire «mai entrato» a chi è entrato
+           # quaranta giorni fa sarebbe far passare «non lo sappiamo» per «non
+           # è successo» — e su questa scheda si prendono decisioni commerciali.
+           + (tessera(len(accessi_riusciti), "Accessi",
+                      _quando(accessi_riusciti[0]["created_at"]) + " l'ultimo")
+              if accessi_riusciti else
+              tessera("—", "Accessi",
+                      (f'ultimo: {_quando(c["ultimo_accesso"])}' if c["ultimo_accesso"]
+                       else "non è mai entrato"),
+                      "" if c["ultimo_accesso"] else "var(--state-critical)"))
+           + tessera("attivo" if c["attivo"] else "disabilitato", "Stato",
+                     "membro del team" if c["admin"] else "cliente",
+                     "var(--state-good)" if c["attivo"] else "var(--state-critical)")
+           + '</div>')
+
+    if progetti:
+        per_progetto = {}
+        for a in audit:
+            if a.get("project_id") and a["project_id"] not in per_progetto:
+                per_progetto[a["project_id"]] = a
+        righe = []
+        for p in progetti:
+            a = per_progetto.get(p["id"])
+            punteggio = a.get("overall") if a else None
+            tracc = ('<span class="pill ok">sì</span>' if p["id"] in con_tracking
+                     else '<span class="pill warn">no</span>')
+            righe.append(
+                f'<tr><td><b>{geo_audit.esc(p.get("domain") or "")}</b></td>'
+                f'<td style="color:{_colore_punteggio(punteggio)}">'
+                f'{punteggio if punteggio is not None else "—"}</td>'
+                f'<td>{_quando(a.get("created_at")) if a else "nessun audit"}</td>'
+                f'<td>{tracc}</td></tr>')
+        blocco_progetti = ('<div class="tab-wrap" style="margin-bottom:22px">'
+                           '<table class="tab"><thead><tr>'
+                           '<th>Sito</th><th>Punteggio</th><th>Ultimo audit</th><th>Tracking</th>'
+                           f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
+    else:
+        blocco_progetti = ('<div class="vuoto" style="margin-bottom:22px">'
+                           '<b>Nessun progetto</b>Ha accesso ma non ha ancora analizzato niente.</div>')
+
+    if note:
+        voci = "".join(
+            '<div style="border-left:2px solid var(--accent-primary-dim);padding:2px 0 2px 12px;'
+            'margin-bottom:14px">'
+            f'<div style="font-size:13px;color:var(--text-secondary);white-space:pre-wrap">'
+            f'{geo_audit.esc(n.get("text") or "")}</div>'
+            f'<div style="font-size:11px;color:var(--text-muted);margin-top:4px">'
+            f'{geo_audit.esc(n.get("author_email") or "")} · {_quando(n.get("created_at"))}</div>'
+            '</div>' for n in note)
+    else:
+        voci = ('<p style="color:var(--text-muted);font-size:13px">'
+                'Nessuna nota. Quello che si scrive qui resta: le note non si '
+                'modificano e non si cancellano.</p>')
+
+    blocco_note = (
+        '<div style="background:var(--bg-surface);border:1px solid var(--border-subtle);'
+        'border-radius:var(--radius-lg);padding:20px 22px;margin-bottom:22px">'
+        '<div style="font-family:var(--font-display);font-size:16px;font-weight:600;'
+        'margin-bottom:14px">Note interne</div>'
+        f'{voci}'
+        '<form method="post" action="/admin/clienti/nota" style="margin-top:16px">'
+        f'<input type="hidden" name="client_id" value="{geo_audit.esc(c["id"])}">'
+        '<textarea name="testo" rows="3" required placeholder="Cosa è emerso parlandoci…" '
+        'style="width:100%;background:var(--bg-surface-raised);border:1px solid var(--border-subtle);'
+        'border-radius:var(--radius-sm);padding:10px 12px;color:var(--text-primary);'
+        'font-family:var(--font-body);font-size:13.5px;outline:none;resize:vertical"></textarea>'
+        '<button class="btn" type="submit" style="margin-top:10px">Aggiungi nota</button>'
+        '</form></div>')
+
+    if accessi:
+        NOMI = {"link_richiesto": "ha chiesto il link", "accesso_riuscito": "è entrato"}
+        righe_acc = "".join(
+            f'<tr><td>{_quando(a.get("created_at"))}</td>'
+            f'<td>{NOMI.get(a.get("event_type"), a.get("event_type") or "")}</td></tr>'
+            for a in accessi[:20])
+        nota_divario = ""
+        if len(link_chiesti) > len(accessi_riusciti):
+            perduti = len(link_chiesti) - len(accessi_riusciti)
+            nota_divario = (
+                '<div class="avviso" style="margin-top:12px"><div>&#9993;</div><div>'
+                f'<b>{perduti} link {"chiesto" if perduti == 1 else "chiesti"} '
+                f'{"non ha" if perduti == 1 else "non hanno"} portato a un accesso.</b> '
+                'Può voler dire che le email non arrivano, o che ci ripensa: se '
+                'succede spesso, vale la pena chiedergli se le riceve.</div></div>')
+        blocco_accessi = ('<div class="tab-wrap"><table class="tab"><thead><tr>'
+                          '<th>Quando</th><th>Cosa</th></tr></thead>'
+                          f'<tbody>{righe_acc}</tbody></table></div>{nota_divario}')
+    else:
+        blocco_accessi = _vuoto("Nessun accesso registrato",
+                                "Lo storico parte da settembre 2026: prima non veniva "
+                                "tenuto, quindi qui non c'è ciò che è successo prima.")
+
+    corpo_link = json.dumps({"email": email})
+    corpo_stato = json.dumps({"user_id": c["id"], "attivo": not c["attivo"]})
+    verbo = "Disabilita" if c["attivo"] else "Riabilita"
+    bottone_stato = "" if c["id"] == chi_sono else (
+        f'<button class="btn btn-ghost" data-azione="/admin/clienti/stato" '
+        f"data-corpo='{corpo_stato}' "
+        f'data-conferma="{verbo} l&apos;accesso di {geo_audit.esc(email)}?">'
+        f'{verbo} accesso</button>')
+    azioni = ('<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px">'
+              f'<button class="btn" data-azione="/admin/clienti/magic-link" '
+              f"data-corpo='{corpo_link}' "
+              f'data-conferma="Mandare a {geo_audit.esc(email)} un nuovo link di accesso?">'
+              'Rimanda il link di accesso</button>'
+              f'{bottone_stato}</div>')
+
+    return ('<div style="margin-bottom:18px">'
+            '<a class="back-link" href="/admin/clienti">&larr; Tutti i clienti</a></div>'
+            + kpi + azioni
+            + '<div style="font-family:var(--font-display);font-size:17px;font-weight:600;'
+              'margin:4px 0 12px">Progetti</div>' + blocco_progetti
+            + blocco_note
+            + '<div style="font-family:var(--font-display);font-size:17px;font-weight:600;'
+              'margin:4px 0 12px">Accessi</div>' + blocco_accessi)
