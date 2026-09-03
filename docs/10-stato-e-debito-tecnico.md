@@ -430,3 +430,28 @@ Il vincolo più stretto è `maxDuration`, che non è dichiarato in `vercel.json`
 vale quindi il default del piano. Va alzato dal dashboard Vercel — vedi
 [08 · Setup e deploy](08-setup-e-deploy.md#il-vincolo-fra-budget-e-maxduration)
 per il calcolo e la ragione per cui non va messo in `vercel.json`.
+
+---
+
+## Gli audit falliti ora lasciano traccia (3 settembre 2026)
+
+Fino a questa data un audit che falliva **non lasciava una riga**: l'errore
+finiva in un `print`, cioè nei log della function su Vercel — che nessuno guarda
+e che scadono. La conseguenza era che **se il monitoraggio automatico falliva su
+un cliente, non lo sapeva nessuno**, e il pannello non poteva mostrarlo perché
+non c'era niente da mostrare.
+
+Ora i quattro punti che eseguono un audit (`/api/cron`, `/scan`,
+`/project/{id}/rerun` e l'audit preliminare dei lead) scrivono una riga con
+`status = 'failed'` e l'errore in `error`. Nessuna migrazione: quei valori erano
+già previsti dallo schema.
+
+⚠️ **La conseguenza da non sbagliare.** Aggiungendo righe fallite, «l'ultimo
+audit» di un progetto sarebbe diventato il fallimento, e la dashboard avrebbe
+mostrato un punteggio vuoto su un progetto sano — cioè la correzione avrebbe
+rotto la schermata principale. Per questo `_sb_audits_by_project()` **esclude i
+falliti di default**; chi li vuole (il Job log) passa `solo_riusciti=False`.
+
+⚠️ **Vale da qui in avanti.** Quello che è fallito prima è perduto: non c'è modo
+di ricostruirlo. Un elenco senza fallimenti significa «nessun fallimento da
+settembre 2026», non «non è mai fallito niente».

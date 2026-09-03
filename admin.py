@@ -415,13 +415,14 @@ def schermata_log(azioni: list) -> str:
 
 
 def schermata_job(audit: list) -> str:
-    """Le esecuzioni del motore, le fallite per prime.
+    """Le esecuzioni del motore, con i fallimenti in evidenza.
 
-    ⚠️ `status` in pratica è sempre `done`: sia gli audit manuali sia il cron
-    inseriscono righe già completate, e un audit che fallisce **non lascia una
-    riga** — l'eccezione viene catturata prima. Quindi qui un elenco vuoto di
-    fallimenti non significa «va tutto bene», significa «non ne abbiamo traccia»,
-    e la schermata lo dice invece di far sembrare che tutto giri.
+    ⚠️ Fino al 3 settembre 2026 un audit che falliva **non lasciava una riga**:
+    l'errore finiva in un `print`, cioè nei log della function, che nessuno
+    guarda e che scadono. Questa schermata poteva solo dichiarare di non sapere.
+    Ora la riga c'è (`_sb_audit_fallito`), quindi un elenco senza fallimenti
+    significa davvero che non ce ne sono stati — **da quella data in poi**: quello
+    che è fallito prima resta perduto, e non c'è modo di recuperarlo.
     """
     falliti = [a for a in audit if a.get("status") == "failed" or a.get("error")]
     righe = []
@@ -443,17 +444,23 @@ def schermata_job(audit: list) -> str:
             f'{geo_audit.esc((a.get("error") or "")[:70])}</td></tr>'
         )
 
-    nota = (
-        '<div class="avviso"><div>ℹ️</div><div>'
-        '<b>Un audit che fallisce non lascia una riga.</b> Oggi l\'errore viene '
-        'catturato e la riga non viene scritta, quindi questo elenco mostra le '
-        'esecuzioni riuscite: un elenco senza fallimenti non vuol dire che non ce '
-        'ne siano stati. Per vederli davvero va salvata anche la riga fallita — '
-        'è il primo intervento da fare su questa schermata.'
-        '</div></div>'
-    )
+    if falliti:
+        nota = ('<div class="avviso"><div>⚠️</div><div>'
+                f'<b>{len(falliti)} esecuzion{"e" if len(falliti) == 1 else "i"} '
+                f'{"fallita" if len(falliti) == 1 else "fallite"} fra le ultime {len(audit)}.</b> '
+                'La colonna «Errore» dice cosa è successo: un dominio che non risolve e un '
+                'timeout del crawler vogliono interventi diversi.'
+                '</div></div>')
+    else:
+        nota = ('<div class="avviso" style="background:var(--state-good-dim);'
+                'border-color:var(--state-good-dim)"><div>✓</div><div>'
+                '<b>Nessuna esecuzione fallita.</b> La traccia dei fallimenti esiste '
+                'dal 3 settembre 2026: prima gli errori finivano solo nei log della '
+                'piattaforma, quindi su ciò che è successo prima questa schermata non '
+                'può dire nulla.</div></div>')
+
     if not audit:
-        return nota + _vuoto("Nessuna esecuzione", "Il motore non ha ancora prodotto audit.")
+        return _vuoto("Nessuna esecuzione", "Il motore non ha ancora prodotto audit.")
     return (nota + '<div class="tab-wrap"><table class="tab"><thead><tr>'
             '<th>Quando</th><th>Sito</th><th>Origine</th><th>Punteggio</th><th>Esito</th><th>Errore</th>'
             f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
