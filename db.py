@@ -12,6 +12,7 @@ verificare project["user_id"] == user["id"].
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
 import requests as req
 
 from config import SUPABASE_URL, SUPABASE_SVC, SUPABASE_ANON
@@ -241,14 +242,56 @@ _AUDIT_FULL_FIELDS = ("id,url,domain,status,overall,grade,band,pages_count,engin
                        "created_at,completed_at")
 
 
-def _sb_audits_by_project(project_id: str, limit: int = 50, full: bool = False) -> list:
-    r = req.get(f"{SUPABASE_URL}/rest/v1/audits",
-                headers=_SB_H,
-                params={"project_id": f"eq.{project_id}",
-                        "select": _AUDIT_FULL_FIELDS if full else _AUDIT_LIGHT_FIELDS,
-                        "order": "created_at.desc", "limit": str(limit)},
-                timeout=10)
+def _sb_audits_by_project(project_id: str, limit: int = 50, full: bool = False,
+                          solo_riusciti: bool = True) -> list:
+    """Gli audit del progetto, dal piu' recente.
+
+    ⚠️ **Di default esclude quelli falliti**, e non e' un dettaglio: da settembre
+    2026 un audit che fallisce lascia una riga (prima spariva in un `print`).
+    Senza questo filtro «l'ultimo audit» del progetto diventerebbe il fallimento,
+    e la dashboard mostrerebbe un punteggio vuoto su un progetto che sta
+    benissimo — cioe' la correzione avrebbe rotto la schermata principale.
+
+    Chi vuole vedere anche i fallimenti — il Job log del pannello — passa
+    `solo_riusciti=False`.
+    """
+    params = {"project_id": f"eq.{project_id}",
+              "select": _AUDIT_FULL_FIELDS if full else _AUDIT_LIGHT_FIELDS,
+              "order": "created_at.desc", "limit": str(limit)}
+    if solo_riusciti:
+        params["status"] = "neq.failed"
+    r = req.get(f"{SUPABASE_URL}/rest/v1/audits", headers=_SB_H, params=params, timeout=10)
     return r.json() if r.ok else []
+
+
+def _sb_audit_fallito(url: str, errore: str, project_id: str | None = None,
+                      user_id: str | None = None, origine: str = "auto") -> None:
+    """Lascia traccia di un audit che non e' riuscito.
+
+    ⚠️ Prima non la lasciava: l'errore finiva in un `print`, cioe' nei log della
+    function su Vercel — che nessuno guarda e che scadono. Il risultato era che
+    **se il monitoraggio automatico falliva su un cliente, non lo sapeva
+    nessuno**, e il pannello non poteva mostrarlo perche' non c'era niente da
+    mostrare.
+
+    Non solleva mai: sta nel ramo di errore di qualcos'altro, e un registro che
+    fa fallire cio' che stava gia' fallendo peggiora le cose e basta.
+    """
+    try:
+        ora = datetime.now(timezone.utc).isoformat()
+        dominio = ""
+        try:
+            dominio = (urlparse(url).netloc or "").lower()
+        except Exception:
+            pass
+        req.post(f"{SUPABASE_URL}/rest/v1/audits", headers=_SB_H, timeout=8,
+                 json={"url": url, "domain": dominio or None, "status": "failed",
+                       "source": origine if origine in ("manual", "auto") else "auto",
+                       "project_id": project_id, "user_id": user_id,
+                       "error": (errore or "")[:500],
+                       "created_at": ora, "completed_at": ora})
+    except Exception:
+        pass
 
 
 def _sb_audits_without_project(user_id: str) -> list:

@@ -157,6 +157,11 @@ async def _run_project_scan(project: dict) -> dict:
         # uccisa" resta con la lease breve e viene ritentato al giro dopo.
         body = getattr(getattr(e, "response", None), "text", "")
         print(f"[/api/cron] audit periodico fallito per {domain}: {e!r} {body}".strip())
+        # ⚠️ Il `print` da solo non basta: finisce nei log della function, che
+        # nessuno guarda e che scadono. Senza una riga nel database, un
+        # monitoraggio automatico che fallisce su un cliente non lo sa nessuno.
+        _sb_audit_fallito(url, f"{e!r} {body}".strip(), project_id=project_id,
+                          user_id=project.get("user_id"), origine="auto")
         try:
             _sb_project_bump_scan(project_id, frequency)
         except Exception:
@@ -949,11 +954,12 @@ async def _audit_preliminare(lead_id: str, sito: str) -> None:
             "completed_at": datetime.now(timezone.utc).isoformat(),
         })
         _sb_lead_attach_audit(lead_id, row["id"], res.get("overall"), res.get("grade"))
-    except Exception:
+    except Exception as e:
         # Un audit che non riesce non deve far perdere il lead: la richiesta è
-        # già salvata e il team l'ha già ricevuta per email. Resterà senza
-        # punteggio, che è un'informazione onesta.
-        pass
+        # già salvata e il team l'ha già ricevuta per email. Ma la traccia serve,
+        # o nella coda lead resterebbe per sempre uno «analisi in corso» che non
+        # finirà mai, senza che nessuno sappia perché.
+        _sb_audit_fallito(sito, repr(e), origine="auto")
 
 
 @app.get("/richiedi-accesso", response_class=HTMLResponse)
@@ -1483,6 +1489,10 @@ async def scan(request: Request, url: str = Form(...)):
     try:
         res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
     except Exception as e:
+        # Qui l'errore l'utente lo vede, quindi non è invisibile a lui — ma resta
+        # invisibile a noi: senza questa riga non sapremmo mai su quali siti
+        # l'analisi non riesce, che è il dato per capire cosa non regge nel motore.
+        _sb_audit_fallito(url, repr(e), user_id=user["id"], origine="manual")
         resp = HTMLResponse(
             _page("Errore",
                   f"<h2>Non riesco ad analizzare questo sito</h2>"
@@ -1872,6 +1882,8 @@ async def project_rerun(project_id: str, request: Request):
     except Exception as e:
         body = getattr(getattr(e, "response", None), "text", "")
         print(f"[/project/{project_id}/rerun] audit fallito: {e!r} {body}".strip())
+        _sb_audit_fallito(url, f"{e!r} {body}".strip(), project_id=project["id"],
+                          user_id=user["id"], origine="manual")
         resp = RedirectResponse(f"/project/{project_id}?tab=audit&rerun_error=1", status_code=303)
         return _apply_refresh(resp, refreshed)
 
