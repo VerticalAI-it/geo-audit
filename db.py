@@ -87,6 +87,61 @@ def _sb_lead_insert(email: str, phone: str, sito: str) -> dict | None:
     })
 
 
+_ADMIN_AZIONE = "admin_action"
+
+
+def _sb_admin_traccia(attore: str, azione: str, bersaglio: str = "") -> bool:
+    """Registra un'azione del pannello: chi, cosa, su chi, quando.
+
+    ⚠️ Sta in `tracking_event` e non in una tabella sua perche' crearla vuole un
+    DDL, che le chiavi di servizio non fanno. E' lo stesso compromesso gia' preso
+    per i voti della roadmap, con lo stesso limite: `tracking_event` sta
+    diventando un registro eventi generico, e quando queste righe conteranno
+    davvero — un audit di sicurezza, una contestazione — vorranno una tabella
+    con i vincoli giusti. **Il punto da cui migrare sono queste tre funzioni.**
+    """
+    r = req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                 json={"event_name": _ADMIN_AZIONE,
+                       "properties": {"attore": attore, "azione": azione,
+                                      "bersaglio": bersaglio}})
+    return r.status_code < 300
+
+
+def _sb_admin_azioni(limit: int = 200) -> list:
+    """Lo storico delle azioni del pannello, le piu' recenti per prime."""
+    r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=15,
+                params={"event_name": f"eq.{_ADMIN_AZIONE}",
+                        "select": "properties,created_at",
+                        "order": "created_at.desc", "limit": str(limit)})
+    return r.json() if r.ok else []
+
+
+def _sb_contact_requests(limit: int = 300) -> list:
+    """Tutte le richieste, le piu' recenti per prime. Solo per il pannello del team."""
+    r = req.get(f"{SUPABASE_URL}/rest/v1/contact_requests", headers=_SB_H, timeout=15,
+                params={"select": "id,email,phone,domain,audit_id,overall,grade,created_at",
+                        "order": "created_at.desc", "limit": str(limit)})
+    return r.json() if r.ok else []
+
+
+def _sb_audits_recenti(limit: int = 500) -> list:
+    """Audit di tutti, per il pannello. `site_checks` serve all'anteprima delle
+    criticita' nella coda lead; l'HTML no, e pesa decine di KB per riga."""
+    r = req.get(f"{SUPABASE_URL}/rest/v1/audits", headers=_SB_H, timeout=20,
+                params={"select": "id,user_id,project_id,domain,url,status,overall,grade,"
+                                  "source,site_checks,error,created_at,completed_at",
+                        "order": "created_at.desc", "limit": str(limit)})
+    return r.json() if r.ok else []
+
+
+def _sb_progetti_tutti(limit: int = 1000) -> list:
+    """Tutti i progetti, di tutti gli utenti. Solo per il pannello del team."""
+    r = req.get(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=15,
+                params={"select": "id,user_id,name,domain,scan_frequency,next_scan_at,created_at",
+                        "order": "created_at.desc", "limit": str(limit)})
+    return r.json() if r.ok else []
+
+
 def _sb_lead_attach_audit(lead_id: str, audit_id: str, overall, grade) -> None:
     """Aggancia al lead l'audit preliminare appena finito, col suo punteggio.
 
@@ -467,7 +522,13 @@ def _sb_auth_magiclink(email: str, redirect_to: str) -> str | None:
     funzione e non solo in chi la chiama: una difesa che dipende dal fatto che
     tutti si ricordino di controllare prima, prima o poi cede.
     """
-    if not _sb_auth_find_by_email(email):
+    utente = _sb_auth_find_by_email(email)
+    if not utente:
+        return None
+    # Un cliente disabilitato ha un account, quindi supererebbe il controllo di
+    # esistenza: il divieto va applicato qui, dove il link nasce, altrimenti
+    # «disabilita» sarebbe solo una spunta che non impedisce niente.
+    if not _e_attivo(utente):
         return None
 
     r = req.post(f"{SUPABASE_URL}/auth/v1/admin/generate_link", headers=_SB_H, timeout=15,
@@ -479,6 +540,57 @@ def _sb_auth_magiclink(email: str, redirect_to: str) -> str | None:
         return None
     d = r.json()
     return d.get("action_link") or (d.get("properties") or {}).get("action_link")
+
+
+def _e_admin(user: dict | None) -> bool:
+    """Questo utente fa parte del team?
+
+    ⚠️ **Il ruolo si legge da `app_metadata`, mai da `user_metadata`.** Sono due
+    campi che si somigliano e fanno cose opposte: `user_metadata` lo puo'
+    riscrivere l'utente stesso con la sua chiave (e' li' che sta il tema), mentre
+    `app_metadata` lo tocca solo chi ha la service role. Metterci il ruolo nel
+    campo sbagliato vorrebbe dire lasciare che chiunque si promuova admin da solo.
+
+    Non serve una tabella `team_members`: crearla vuole un DDL, che le chiavi di
+    servizio non fanno. `app_metadata` e' il posto che Supabase prevede per
+    l'autorizzazione, ed e' gia' li'.
+    """
+    if not user:
+        return False
+    meta = user.get("app_metadata") or {}
+    return meta.get("role") == "admin" or bool(meta.get("is_admin"))
+
+
+def _sb_auth_set_admin(user_id: str, admin: bool = True) -> bool:
+    """Promuove (o rimuove) un membro del team. Solo con la service role."""
+    r = req.put(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=_SB_H, timeout=15,
+                json={"app_metadata": {"role": "admin" if admin else None}})
+    return r.ok
+
+
+def _sb_auth_users(limit: int = 200) -> list:
+    """Tutti gli account. E' l'elenco clienti: essere qui significa essere approvati."""
+    r = req.get(f"{SUPABASE_URL}/auth/v1/admin/users", headers=_SB_H, timeout=15,
+                params={"per_page": str(limit)})
+    return (r.json().get("users") or []) if r.ok else []
+
+
+def _sb_auth_set_attivo(user_id: str, attivo: bool) -> bool:
+    """Abilita o disabilita l'accesso di un cliente.
+
+    ⚠️ Deve **impedire davvero il login**, non solo nascondere il cliente da un
+    elenco: sta in `app_metadata`, e chi genera il magic link lo legge.
+    """
+    r = req.put(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=_SB_H, timeout=15,
+                json={"app_metadata": {"disabled": (not attivo) or None}})
+    return r.ok
+
+
+def _e_attivo(user: dict | None) -> bool:
+    """L'accesso di questo cliente e' abilitato?"""
+    if not user:
+        return False
+    return not (user.get("app_metadata") or {}).get("disabled")
 
 
 def _sb_auth_create_user(email: str) -> dict | None:

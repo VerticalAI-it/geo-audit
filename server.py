@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 
+import admin
 import geo_audit
 
 # ── moduli interni ───────────────────────────────────────────────────────────
@@ -24,7 +25,10 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_audits_by_user_grouped, _sb_projects_with_tracking, \
     _sb_projects_by_user, _sb_roadmap_iscrivi, _sb_roadmap_vota, _sb_roadmap_voti, \
     _sb_user_theme, _sb_user_theme_set, \
-    _LEAD_SOURCE, _sb_auth_find_by_email, _sb_auth_magiclink, _sb_lead_attach_audit, _sb_lead_insert
+    _LEAD_SOURCE, _sb_auth_find_by_email, _sb_auth_magiclink, _sb_lead_attach_audit, _sb_lead_insert, \
+    _e_admin, _sb_admin_azioni, _sb_admin_traccia, _sb_auth_create_user, _sb_auth_set_attivo, \
+    _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
+    _sb_projects_with_tracking
 from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, \
     _coming_soon_tab, _roadmap_colonne_html, _roadmap_live_html, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
@@ -50,6 +54,7 @@ ROADMAP_HTML  = open(os.path.join(_HERE, "templates", "roadmap.html"),       enc
 LOGIN_HTML    = open(os.path.join(_HERE, "templates", "login.html"),         encoding="utf-8").read()
 LEAD_HTML     = open(os.path.join(_HERE, "templates", "lead.html"),          encoding="utf-8").read()
 LEAD_OK_HTML  = open(os.path.join(_HERE, "templates", "lead_ok.html"),       encoding="utf-8").read()
+ADMIN_HTML    = open(os.path.join(_HERE, "templates", "admin.html"),         encoding="utf-8").read()
 AUTH_CB_HTML  = open(os.path.join(_HERE, "templates", "auth_callback.html"), encoding="utf-8").read()
 DASHBOARD_HTML = open(os.path.join(_HERE, "templates", "dashboard.html"),    encoding="utf-8").read()
 PROJECT_HTML   = open(os.path.join(_HERE, "templates", "project.html"),      encoding="utf-8").read()
@@ -994,6 +999,236 @@ def richiesta_ricevuta(email: str = "", sito: str = ""):
     return HTMLResponse(_render(LEAD_OK_HTML,
                                 EMAIL=geo_audit.esc(email),
                                 SITO=geo_audit.esc(sito)))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pannello interno del team
+#
+# ⚠️ Queste pagine mostrano i dati di TUTTI i clienti. Il controllo del ruolo sta
+# qui, sul server, prima di ogni route: un redirect JavaScript non e' un
+# controllo, e non lo e' nemmeno nascondere un link dal menu.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _admin_o_no(request: Request):
+    """(utente, refreshed) se e' del team, altrimenti (None, risposta da dare).
+
+    A chi non e' del team si risponde **404, non 403**: un 403 confermerebbe che
+    a quell'indirizzo c'e' qualcosa. Un pannello interno e' meglio che non
+    risulti nemmeno esistere.
+    """
+    user, refreshed = _current_user(request)
+    if not user:
+        return None, refreshed, RedirectResponse("/login?next=/admin", status_code=303)
+    if not _e_admin(user):
+        return None, refreshed, HTMLResponse(
+            _page("Non trovato", "<h2>Pagina non trovata.</h2>"), status_code=404)
+    return user, refreshed, None
+
+
+def _admin_traccia(user: dict, azione: str, bersaglio: str = "") -> None:
+    """Ogni azione del pannello lascia una riga. Non deve poter far fallire
+    l'azione stessa: se il registro non risponde, l'approvazione resta valida."""
+    try:
+        _sb_admin_traccia(user.get("email") or user.get("id") or "?", azione, bersaglio)
+    except Exception:
+        pass
+
+
+def _admin_conteggi(lead: list | None = None) -> dict:
+    """I numeri nei badge del menu. Sono dati veri: un badge che mostra un numero
+    inventato e' peggio di un badge assente."""
+    try:
+        n_lead = len(lead if lead is not None else admin._lead_in_attesa())
+    except Exception:
+        n_lead = 0
+    return {"lead": n_lead}
+
+
+def _admin_pagina(request: Request, user: dict, attiva: str, titolo: str,
+                  sotto: str, contenuto: str, conteggi: dict | None = None) -> str:
+    c = conteggi or {}
+
+    def badge(n, classe="") -> str:
+        if not n:
+            return ""
+        return f'<span class="nav-count {classe}">{n}</span>'
+
+    voci = ("OVERVIEW", "LEAD", "CLIENTI", "JOB", "TRACKING", "INTERESSE", "LOG")
+    kv = {f"ATT_{v}": ("active" if v.lower() == attiva else "") for v in voci}
+    return _render(
+        ADMIN_HTML,
+        TITOLO=geo_audit.esc(titolo),
+        SOTTO=sotto,
+        CONTENUTO=contenuto,
+        CHI=geo_audit.esc(user.get("email") or ""),
+        BADGE_LEAD=badge(c.get("lead")),
+        BADGE_JOB=badge(c.get("job"), "warn"),
+        BADGE_TRACKING=badge(c.get("tracking"), "warn"),
+        BADGE_INTERESSE=badge(c.get("interesse"), "neutro"),
+        **kv,
+    )
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_overview(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    lead = admin._lead_in_attesa()
+    clienti = admin._clienti()
+    contenuto = admin.schermata_overview(lead, clienti)
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "overview", "Overview",
+        "Come sta andando il prodotto, in una schermata.",
+        contenuto, _admin_conteggi(lead))), refreshed)
+
+
+@app.get("/admin/lead", response_class=HTMLResponse)
+def admin_lead(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    lead = admin._lead_in_attesa()
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "lead", "Lead da approvare",
+        "Richieste di accesso dal form «Richiedi l'analisi» — approvarle attiva il login del cliente.",
+        admin.schermata_lead(lead), _admin_conteggi(lead))), refreshed)
+
+
+@app.post("/admin/lead/approva")
+async def admin_lead_approva(request: Request):
+    """L'atto che trasforma un lead in cliente: **creare l'account**.
+
+    ⚠️ Non c'e' uno stato da aggiornare da qualche parte: l'account E'
+    l'approvazione (vedi `db.py`, «Chi puo' entrare»). E subito dopo si manda il
+    link di accesso, perche' un cliente approvato che non riceve niente non sa
+    di esserlo.
+    """
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    email = (body.get("email") or "").strip().lower()
+    if "@" not in email:
+        return JSONResponse({"esito": "email_non_valida"}, status_code=400)
+
+    if _sb_auth_find_by_email(email):
+        return JSONResponse({"esito": "gia_attivo"})
+
+    nuovo = _sb_auth_create_user(email)
+    if not nuovo:
+        return JSONResponse({"esito": "errore"}, status_code=502)
+
+    link = _sb_auth_magiclink(email, f"{SITE_URL or ''}/auth/callback")
+    if link:
+        _send_magic_link(email, link)
+    _admin_traccia(user, "approva_lead", email)
+    return JSONResponse({"esito": "ok"})
+
+
+@app.get("/admin/clienti", response_class=HTMLResponse)
+def admin_clienti(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "clienti", "Clienti",
+        "Chi ha un accesso attivo, quanti progetti segue e quando è entrato l'ultima volta.",
+        admin.schermata_clienti(admin._clienti(), user.get("id", "")), _admin_conteggi())), refreshed)
+
+
+@app.post("/admin/clienti/stato")
+async def admin_clienti_stato(request: Request):
+    """Abilita o disabilita un cliente. Deve **impedire davvero il login**: lo
+    stato sta in `app_metadata` e lo legge chi genera il magic link."""
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    user_id = (body.get("user_id") or "").strip()
+    attivo = bool(body.get("attivo"))
+    if not user_id:
+        return JSONResponse({"esito": "manca_utente"}, status_code=400)
+    if user_id == user.get("id"):
+        # Disabilitandosi da solo si chiuderebbe fuori dal pannello, e non c'e'
+        # una schermata per rientrare.
+        return JSONResponse({"esito": "non_su_di_te"}, status_code=400)
+
+    if not _sb_auth_set_attivo(user_id, attivo):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    _admin_traccia(user, "abilita_cliente" if attivo else "disabilita_cliente", user_id)
+    return JSONResponse({"esito": "ok"})
+
+
+@app.get("/admin/job-log", response_class=HTMLResponse)
+def admin_job_log(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    audit = _sb_audits_recenti(limit=200)
+    falliti = len([a for a in audit if a.get("status") == "failed" or a.get("error")])
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "job", "Job & Scan log",
+        "Le esecuzioni del motore di audit, di tutti i progetti.",
+        admin.schermata_job(audit),
+        {**_admin_conteggi(), "job": falliti})), refreshed)
+
+
+@app.get("/admin/tracking", response_class=HTMLResponse)
+def admin_tracking(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    progetti = _sb_progetti_tutti()
+    con = _sb_projects_with_tracking([p["id"] for p in progetti]) if progetti else set()
+    clienti = admin._clienti()
+    senza = len([p for p in progetti if p["id"] not in con])
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "tracking", "Tracking non installato",
+        "I progetti che non hanno ancora mandato un solo evento.",
+        admin.schermata_tracking(progetti, con, clienti),
+        {**_admin_conteggi(), "tracking": senza})), refreshed)
+
+
+@app.get("/admin/interesse", response_class=HTMLResponse)
+def admin_interesse(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    richieste = _sb_contact_requests()
+    audit = {a["id"]: a for a in _sb_audits_recenti(limit=1000)}
+    account = {(u.get("email") or "").lower() for u in _sb_auth_users()}
+    contenuto = admin.schermata_interesse(richieste, audit, account)
+    quante = contenuto.count("<tr><td>")
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "interesse", "Interesse commerciale",
+        "Chi ha chiesto di essere ricontattato dal report esterno.",
+        contenuto, {**_admin_conteggi(), "interesse": quante})), refreshed)
+
+
+@app.get("/admin/log", response_class=HTMLResponse)
+def admin_log(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "log", "Log azioni admin",
+        "Chi ha fatto cosa in questo pannello.",
+        admin.schermata_log(_sb_admin_azioni()), _admin_conteggi())), refreshed)
 
 @app.get("/auth/logout")
 def auth_logout():
