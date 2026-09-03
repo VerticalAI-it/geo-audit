@@ -248,7 +248,7 @@ def schermata_lead(lead: list) -> str:
     return avviso + f'<div class="lead-list">{"".join(carte)}</div>'
 
 
-def schermata_clienti(clienti: list) -> str:
+def schermata_clienti(clienti: list, chi_sono: str = "") -> str:
     if not clienti:
         return _vuoto("Nessun cliente", "Gli account approvati compaiono qui.")
 
@@ -273,10 +273,13 @@ def schermata_clienti(clienti: list) -> str:
                     if c["attivo"] else f'Riabilitare l\'accesso di {c["email"]}?')
         azione = (f'<button class="btn btn-ghost" data-azione="/admin/clienti/stato" '
                   f"data-corpo='{corpo}' data-conferma=\"{geo_audit.esc(conferma)}\">{etichetta}</button>")
-        if c["admin"]:
-            # Un membro del team che si disabilita da solo si chiude fuori dal
-            # pannello, e non c'è una schermata per rientrare.
-            azione = '<span class="pill neutro">—</span>'
+        # ⚠️ Il divieto vero è disabilitare **sé stessi** — ci si chiuderebbe
+        # fuori dal pannello senza una via di rientro — e quello lo applica il
+        # server. Bloccare l'azione su tutti gli admin, come faceva il primo
+        # taglio, oggi che il team coincide coi clienti renderebbe nessuno
+        # disabilitabile.
+        if c["id"] == chi_sono:
+            azione = '<span class="pill neutro">sei tu</span>'
 
         righe.append(
             f'<tr><td><b>{geo_audit.esc(c["email"])}</b></td>'
@@ -297,7 +300,13 @@ def schermata_overview(lead: list, clienti: list) -> str:
     Niente stime e niente medie su dati assenti: dove un numero non c'è si
     scrive che non c'è, come nel resto del prodotto.
     """
-    attivi = [c for c in clienti if c["attivo"] and not c["admin"]]
+    # ⚠️ Gli account del team NON si escludono dal conteggio. Il primo taglio li
+    # toglieva, dando per scontato che il team fosse gente diversa dai clienti;
+    # con tutti gli account promossi la schermata diceva «Clienti attivi 0»
+    # accanto a «27 progetti in tutto», che è palesemente falso. Un account è un
+    # cliente: chi è del team ha in più le chiavi del pannello, e nell'elenco si
+    # riconosce dal suo badge.
+    attivi = [c for c in clienti if c["attivo"]]
     progetti = [p for c in clienti for p in c["progetti"]]
     mai_entrati = [c for c in attivi if not c["ultimo_accesso"]]
     fermi = [c for c in attivi

@@ -1140,7 +1140,7 @@ def admin_clienti(request: Request):
     return _apply_refresh(HTMLResponse(_admin_pagina(
         request, user, "clienti", "Clienti",
         "Chi ha un accesso attivo, quanti progetti segue e quando è entrato l'ultima volta.",
-        admin.schermata_clienti(admin._clienti()), _admin_conteggi())), refreshed)
+        admin.schermata_clienti(admin._clienti(), user.get("id", "")), _admin_conteggi())), refreshed)
 
 
 @app.post("/admin/clienti/stato")
