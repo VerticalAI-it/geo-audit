@@ -591,3 +591,71 @@ richiedono login.
 
 `llms.txt` è la nostra stessa raccomandazione applicata a noi: descrive il
 prodotto in linguaggio naturale per gli assistenti AI che leggono il sito.
+
+---
+
+## Il pannello del team (`/admin`)
+
+Sette schermate a uso interno, in `admin.py` + `templates/admin.html`. Chiudono
+il cerchio del flusso di accesso: i lead diventano clienti qui.
+
+| Route | Cosa fa |
+|---|---|
+| `/admin` | Overview: clienti attivi, lead in attesa, chi non è mai entrato, chi è fermo |
+| `/admin/lead` | Coda delle richieste, con l'audit preliminare e «Valida cliente» |
+| `/admin/clienti` | Elenco account, abilita/disabilita |
+| `/admin/job-log` | Esecuzioni del motore |
+| `/admin/tracking` | Progetti che non hanno mai mandato un evento |
+| `/admin/interesse` | Richieste «voglio essere contattato» dal report esterno |
+| `/admin/log` | Chi ha fatto cosa nel pannello |
+
+### Il ruolo, che prima non esisteva
+
+⚠️ Il ruolo vive in **`app_metadata`**, mai in `user_metadata`. Si somigliano e
+fanno cose opposte: `user_metadata` lo riscrive l'utente stesso con la sua chiave
+(è lì che sta il tema), `app_metadata` lo tocca solo la service role. Metterlo
+nel campo sbagliato vorrebbe dire lasciare che chiunque **si promuova admin da
+solo**.
+
+Non serve una tabella `team_members`: crearla vuole un DDL, e `app_metadata` è il
+posto che Supabase prevede per l'autorizzazione.
+
+⚠️ **Il controllo sta prima di ogni route, sul server** (`_admin_o_no`). Nascondere
+un link dal menu non è un controllo, e non lo è un redirect JavaScript: queste
+pagine mostrano i dati di tutti i clienti. **Anche le azioni POST** verificano il
+ruolo, non solo le pagine.
+
+A chi non è del team si risponde **404, non 403**: un 403 confermerebbe che a
+quell'indirizzo c'è qualcosa.
+
+### Approvare, disabilitare
+
+**Approvare un lead = creare l'account** (`_sb_auth_create_user`), e subito dopo
+gli si manda il link: un cliente approvato che non riceve niente non sa di
+esserlo. Non c'è nessuno stato da aggiornare — l'account *è* l'approvazione.
+
+**Disabilitare** scrive `app_metadata.disabled`, che `_sb_auth_magiclink()`
+legge: il divieto è applicato dove il link nasce, quindi «disabilita» impedisce
+davvero il login invece di essere una spunta che non fa niente. ⚠️ Non ci si può
+disabilitare da soli: ci si chiuderebbe fuori dal pannello, e non c'è una
+schermata per rientrare.
+
+### Il registro delle azioni
+
+Ogni approvazione o disabilitazione scrive in `tracking_event` con
+`event_name = 'admin_action'`. ⚠️ È lo stesso compromesso già preso per i voti
+della roadmap, con lo stesso limite: **`tracking_event` sta diventando un
+registro eventi generico**, e quando queste righe conteranno davvero — un audit
+di sicurezza, una contestazione — vorranno una tabella con i vincoli giusti. Il
+punto da cui migrare sono `_sb_admin_traccia` / `_sb_admin_azioni`.
+
+### Cosa questo pannello non fa ancora
+
+- **Il dettaglio del singolo cliente** (note interne, storico accessi): richiede
+  due tabelle nuove, quindi un DDL.
+- **Rilanciare un job fallito** dal Job log: oggi un audit che fallisce **non
+  lascia una riga** — l'eccezione viene catturata prima — quindi non c'è niente
+  da rilanciare. La schermata lo dichiara invece di far sembrare che tutto giri:
+  salvare anche la riga fallita è il primo intervento da fare lì.
+- **Promemoria tracking** e **segna contattato**: entrambi vogliono una tabella
+  per non rimandare lo stesso messaggio a raffica.
