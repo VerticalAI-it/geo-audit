@@ -26,7 +26,9 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_projects_by_user, _sb_roadmap_iscrivi, _sb_roadmap_vota, _sb_roadmap_voti, \
     _sb_user_theme, _sb_user_theme_set, \
     _LEAD_SOURCE, _sb_auth_find_by_email, _sb_auth_magiclink, _sb_lead_attach_audit, _sb_lead_insert, \
-    _sb_link_richiesto, _sb_link_troppo_spesso, \
+    _sb_link_richiesto, _sb_link_troppo_spesso, _sb_login_riuscito, \
+    _sb_accessi_cliente, _sb_note_cliente, _sb_nota_aggiungi, _sb_lead_stato, \
+    _sb_promemoria_inviati, _sb_promemoria_registra, \
     _e_admin, _sb_admin_azioni, _sb_admin_traccia, _sb_auth_create_user, _sb_auth_set_attivo, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
     _sb_projects_with_tracking
@@ -495,6 +497,70 @@ def _send_magic_link(to: str, link: str, next_path: str = "/dashboard") -> None:
     _resend_post([to], "Il tuo link di accesso a GEO Audit", html)
 
 
+def _send_promemoria_tracking(to: str, dominio: str, project_id: str) -> None:
+    """«Manca lo snippet»: un promemoria che dice cosa fare, non che sollecita.
+
+    Chi lo riceve non ha dimenticato per pigrizia: quasi sempre non sa che senza
+    quello snippet la scheda AI Traffic gli resterà vuota per sempre. Quindi si
+    spiega la conseguenza e si dà lo snippet, invece di chiedere di fare una cosa.
+    """
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    src = f"{SITE_URL}/static/js/geo-track.js" if SITE_URL else "/static/js/geo-track.js"
+    snippet = f'&lt;script src="{src}" data-project="{project_id}" async&gt;&lt;/script&gt;'
+
+    html = f"""<!doctype html>
+<html lang="it">
+<head>{_EMAIL_HEAD}<title>Manca un passaggio su {dominio}</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F1F1F6">
+  Senza lo snippet non possiamo dirti se le AI ti stanno leggendo.&nbsp;&zwnj;
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("GEO Audit")}
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-card brd" style="background:#FFFFFF;border:1px solid #E6E6EF;border-radius:20px;overflow:hidden">
+
+        <tr><td class="px" style="padding:34px 36px 6px">
+          <div class="t-ink h1" style="font-size:22px;font-weight:600;color:#16151E;font-family:'Space Grotesk',Arial,sans-serif">Su {geo_audit.esc(dominio)} manca un passaggio</div>
+          <p class="t-2" style="font-size:15px;line-height:1.6;color:#4A4A5A;margin:12px 0 0;font-family:'Inter',Arial,sans-serif">
+            L'analisi del sito funziona già. Quello che non possiamo ancora dirti è
+            <b>se le AI ti stanno leggendo e se ti mandano visite</b>: per quello serve
+            una riga di codice nelle pagine.
+          </p>
+        </td></tr>
+
+        <tr><td class="px" style="padding:20px 36px 6px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                 style="background:#F7F7FB;border-radius:12px">
+            <tr><td style="padding:16px 18px;font-family:Consolas,Monaco,monospace;font-size:12px;
+                       color:#4A4A5A;line-height:1.6;word-break:break-all">{snippet}</td></tr>
+          </table>
+          <p class="t-3" style="font-size:12.5px;line-height:1.7;color:#76768A;margin:10px 0 0;font-family:'Inter',Arial,sans-serif">
+            Va incollata prima della chiusura di <b>&lt;/body&gt;</b> su ogni pagina. Se il sito è in
+            WordPress la mette il tuo tema o un plugin di intestazioni; se te ne occupi tu, è
+            una riga sola.
+          </p>
+        </td></tr>
+
+        <tr><td class="px" style="padding:18px 36px 34px">
+          <p class="t-2" style="font-size:14px;line-height:1.6;color:#4A4A5A;margin:0;font-family:'Inter',Arial,sans-serif">
+            Da quel momento vedrai <b>quali assistenti AI leggono il tuo sito</b> e chi arriva da loro.
+            Se preferisci che ce ne occupiamo noi, rispondi a questa email.
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+    {_email_footer()}
+  </table>
+</td></tr>
+</table>
+</body></html>"""
+    _resend_post([to], f"Manca un passaggio su {dominio}", html)
+
 def _send_lead_notif(email: str, phone: str, sito: str, lead_id: str) -> None:
     """Avvisa il team che c'è una richiesta di accesso da lavorare.
 
@@ -895,6 +961,12 @@ async def auth_set_session(request: Request, response: Response):
     if not user:
         return Response(status_code=401)
 
+    # Qui la sessione si apre davvero: è il solo momento in cui possiamo dirlo.
+    # Insieme al `link_richiesto` dice quanti link non vengono mai cliccati —
+    # cioè quante email non arrivano, che è la domanda che ci si fa quando un
+    # cliente dice «non riesco a entrare».
+    _sb_login_riuscito(user.get("email") or "", user.get("id"))
+
     _set_auth_cookies(response, access_token, refresh_token)
     return {"redirect": next_path}
 
@@ -1213,7 +1285,8 @@ def admin_tracking(request: Request):
     return _apply_refresh(HTMLResponse(_admin_pagina(
         request, user, "tracking", "Tracking non installato",
         "I progetti che non hanno ancora mandato un solo evento.",
-        admin.schermata_tracking(progetti, con, clienti),
+        admin.schermata_tracking(progetti, con, clienti,
+                                 _sb_promemoria_inviati([p["id"] for p in progetti])),
         {**_admin_conteggi(), "tracking": senza})), refreshed)
 
 
@@ -1233,6 +1306,135 @@ def admin_interesse(request: Request):
         "Chi ha chiesto di essere ricontattato dal report esterno.",
         contenuto, {**_admin_conteggi(), "interesse": quante})), refreshed)
 
+
+@app.get("/admin/clienti/{client_id}", response_class=HTMLResponse)
+def admin_cliente(request: Request, client_id: str):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    clienti = admin._clienti()
+    c = next((x for x in clienti if x["id"] == client_id), None)
+    if not c:
+        return _apply_refresh(HTMLResponse(
+            _page("Non trovato", "<h2>Cliente non trovato.</h2>"), status_code=404), refreshed)
+
+    suoi = [p["id"] for p in c["progetti"]]
+    audit = [a for a in _sb_audits_recenti(limit=1000) if a.get("project_id") in suoi]
+    con = _sb_projects_with_tracking(suoi) if suoi else set()
+
+    contenuto = admin.schermata_cliente(
+        c,
+        _sb_accessi_cliente(client_id, c["email"]),
+        _sb_note_cliente(client_id),
+        audit, con, user.get("id", ""),
+    )
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "clienti", c["email"],
+        "Scheda del cliente: progetti, note interne e storico degli accessi.",
+        contenuto, _admin_conteggi())), refreshed)
+
+
+@app.post("/admin/clienti/nota")
+async def admin_nota(request: Request, client_id: str = Form(...), testo: str = Form(...)):
+    """Aggiunge una nota interna. È un form vero, non una chiamata JavaScript:
+    così funziona anche se lo script non parte, e il testo lungo non ha limiti
+    di lunghezza dell'URL."""
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    testo = (testo or "").strip()
+    if testo:
+        _sb_nota_aggiungi(client_id, testo, user.get("id", ""), user.get("email", ""))
+        _admin_traccia(user, "nota_cliente", client_id)
+    return _apply_refresh(
+        RedirectResponse(f"/admin/clienti/{client_id}", status_code=303), refreshed)
+
+
+@app.post("/admin/clienti/magic-link")
+async def admin_magic_link(request: Request):
+    """Rimanda il link di accesso a un cliente. Scorciatoia per il team quando
+    qualcuno dice «non mi arriva»."""
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    email = (body.get("email") or "").strip().lower()
+    if "@" not in email:
+        return JSONResponse({"esito": "email_non_valida"}, status_code=400)
+
+    link = _sb_auth_magiclink(email, f"{SITE_URL or ''}/auth/callback")
+    if not link:
+        # Nessun link: o l'account non c'è, o è disabilitato. In entrambi i casi
+        # mandarlo sarebbe sbagliato, e il pannello lo dice invece di far finta.
+        return JSONResponse({"esito": "non_inviabile"}, status_code=409)
+
+    _sb_link_richiesto(email)
+    _send_magic_link(email, link)
+    _admin_traccia(user, "magic_link_manuale", email)
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/admin/lead/contattato")
+async def admin_lead_contattato(request: Request):
+    """Lo stato intermedio: «l'ho chiamato, non ho ancora deciso».
+
+    È l'unico stato del lead che ha bisogno di una colonna: gli altri due —
+    in attesa, approvato — sono fatti che si leggono dall'esistenza dell'account.
+    """
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    lead_id = (body.get("lead_id") or "").strip()
+    stato = body.get("stato") or "contattata"
+    if not lead_id or stato not in ("nuova", "contattata", "ignorata"):
+        return JSONResponse({"esito": "richiesta_non_valida"}, status_code=400)
+
+    if not _sb_lead_stato(lead_id, stato):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    _admin_traccia(user, "segna_contattato", lead_id)
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/admin/tracking/promemoria")
+async def admin_promemoria(request: Request):
+    """Manda al cliente il promemoria per installare il tracking, e ne tiene
+    traccia: così non gli si riscrive a raffica."""
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    project_id = (body.get("project_id") or "").strip()
+    if not project_id:
+        return JSONResponse({"esito": "manca_progetto"}, status_code=400)
+
+    progetto = _sb_project_get(project_id)
+    if not progetto:
+        return JSONResponse({"esito": "progetto_non_trovato"}, status_code=404)
+
+    proprietario = next((u for u in _sb_auth_users() if u.get("id") == progetto.get("user_id")), None)
+    a_chi = (proprietario or {}).get("email")
+    if not a_chi:
+        return JSONResponse({"esito": "nessun_destinatario"}, status_code=409)
+
+    _send_promemoria_tracking(a_chi, progetto.get("domain") or "", project_id)
+    _sb_promemoria_registra(project_id, user.get("id", ""), a_chi)
+    _admin_traccia(user, "promemoria_tracking", a_chi)
+    return JSONResponse({"esito": "ok"})
 
 @app.get("/admin/log", response_class=HTMLResponse)
 def admin_log(request: Request):
