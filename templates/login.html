@@ -28,6 +28,16 @@
     justify-content:center;
     padding:var(--sp-6);
   }
+  /* ⚠️ Il gradiente qui sopra era fisso, senza variante per il tema chiaro:
+     il fondo restava scuro mentre i testi diventavano scuri, e il titolo
+     spariva. Il tema chiaro è quello predefinito del prodotto, quindi era la
+     pagina di accesso a essere illeggibile per la maggior parte di chi arriva.
+     Trovato guardando lo screenshot: il controllo automatico non lo vedeva,
+     perché confronta il colore del testo col fondo dell'elemento — e qui il
+     fondo sta sul body, non sull'elemento. */
+  [data-theme="light"] body {
+    background:radial-gradient(140% 100% at 70% -5%, #EFEDFA 0%, #F6F6FA 60%);
+  }
   .wrap { width:100%; max-width:440px }
   .logo-row {
     display:flex;
@@ -160,6 +170,36 @@
     color:var(--text-3);
     text-align:center;
   }
+
+  .suggerimenti {
+    text-align:left;
+    background:var(--canvas);
+    border-radius:var(--r-md);
+    padding:var(--sp-4);
+    margin-top:var(--sp-5);
+  }
+  .sugg-titolo {
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--text-3);
+    margin-bottom:var(--sp-2);
+  }
+  .sugg { font-size:12.5px; color:var(--text-2); line-height:1.6 }
+  .rinvia-riga { font-size:12.5px; color:var(--text-3); margin-top:var(--sp-4) }
+  .rinvia-btn {
+    background:none;
+    border:none;
+    padding:0;
+    font-family:var(--font-sans);
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--brand-text);
+    cursor:pointer;
+  }
+  .rinvia-btn:disabled { color:var(--text-3); cursor:not-allowed }
+  .rinvia-btn:focus-visible { outline:2px solid var(--focus); outline-offset:2px }
 </style>
 </head>
 <body>
@@ -192,6 +232,16 @@
         <div class="check" aria-hidden="true">✓</div>
         <h2>Email inviata</h2>
         <p>Controlla la casella e clicca il link per accedere. Puoi chiudere questa pagina.</p>
+        <div class="suggerimenti">
+          <div class="sugg-titolo">Nel frattempo</div>
+          <div class="sugg">Guarda anche nello spam o nelle promozioni: a volte finisce lì.</div>
+          <div class="sugg">Il link vale 60 minuti e si usa una volta sola.</div>
+        </div>
+        <p class="rinvia-riga">
+          Non è arrivata?
+          <button type="button" class="rinvia-btn" id="rinvia">Invia di nuovo</button>
+        </p>
+        <div class="err" id="err-rinvia" role="alert"></div>
       </div>
 
       <p class="note" id="note">Riceverai solo il link di accesso, niente altro.</p>
@@ -264,6 +314,64 @@
       document.getElementById("login-form").style.display = "none";
       document.getElementById("note").style.display = "none";
       document.getElementById("ok-state").style.display = "block";
+      avviaAttesa();
+    });
+
+    /* ── Invia di nuovo ──────────────────────────────────────────────────
+       Il conto alla rovescia serve a chi aspetta l'email: dice «non è ancora
+       il momento» invece di lasciare premere a vuoto. ⚠️ Non è una difesa —
+       basta ricaricare la pagina per azzerarlo — e infatti il limite vero sta
+       sul server, che risponde 429 dopo qualche richiesta ravvicinata. */
+    let attesa = 0;
+    const btnRinvia = document.getElementById("rinvia");
+    const errRinvia = document.getElementById("err-rinvia");
+
+    function avviaAttesa() {
+      attesa = 30;
+      btnRinvia.disabled = true;
+      (function tic() {
+        if (attesa > 0) {
+          btnRinvia.textContent = "Invia di nuovo tra " + attesa + "s";
+          attesa--;
+          setTimeout(tic, 1000);
+        } else {
+          btnRinvia.disabled = false;
+          btnRinvia.textContent = "Invia di nuovo";
+        }
+      })();
+    }
+
+    btnRinvia.addEventListener("click", async function () {
+      const email = document.getElementById("email").value.trim();
+      errRinvia.style.display = "none";
+      btnRinvia.disabled = true;
+      btnRinvia.textContent = "Invio…";
+
+      let dati = {};
+      try {
+        const r = await fetch("/auth/richiedi-link", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({email: email, next: NEXT})
+        });
+        dati = await r.json();
+      } catch (e) {
+        dati = {esito: "errore"};
+      }
+
+      if (dati.esito === "link_inviato") {
+        avviaAttesa();
+        return;
+      }
+
+      /* Il limite del server si dice per quello che è: non «errore», ma
+         «ne hai chiesti troppi, aspetta». */
+      errRinvia.textContent = dati.esito === "troppi_tentativi"
+        ? "Hai chiesto il link diverse volte di seguito. Aspetta qualche minuto: se non è arrivato, controlla lo spam o scrivici."
+        : "Non siamo riusciti a inviare l'email. Riprova fra un minuto.";
+      errRinvia.style.display = "block";
+      btnRinvia.disabled = false;
+      btnRinvia.textContent = "Invia di nuovo";
     });
   </script>
 </body>
