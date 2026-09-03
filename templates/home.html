@@ -99,6 +99,14 @@ body{
   -webkit-font-smoothing:antialiased;
   overflow-x:hidden;
 }
+/* ⚠️ `overflow-x:hidden` sul solo body NON basta: l'elemento <html> resta
+   scorrevole e la pagina scorre lateralmente lo stesso. Su mobile la landing
+   scorreva di 288px — la portavano fuori i blob decorativi dell'hero — e
+   nessuno se n'era accorto perché a 1280px il difetto non esiste.
+   `clip` invece di `hidden`: taglia senza creare un contenitore di scorrimento,
+   quindi non romperebbe un eventuale `position:sticky` più avanti. Il `hidden`
+   sopra resta come ripiego per i browser che non conoscono `clip`. */
+html{overflow-x:hidden;overflow-x:clip}
 img,svg{display:block;max-width:100%}
 a{color:inherit;text-decoration:none}
 button{font-family:inherit;cursor:pointer;border:none;background:none}
