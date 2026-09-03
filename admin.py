@@ -425,6 +425,19 @@ def schermata_job(audit: list) -> str:
     che è fallito prima resta perduto, e non c'è modo di recuperarlo.
     """
     falliti = [a for a in audit if a.get("status") == "failed" or a.get("error")]
+
+    # ⚠️ Un fallimento è «ancora aperto» solo se dopo di lui, per quel progetto,
+    # non è più riuscito niente. È questo che rende «Rilancia» idempotente senza
+    # bisogno di lucchetti: se qualcuno ha già rilanciato — o se il cron è
+    # ripassato da solo — il bottone semplicemente non c'è più, perché non c'è
+    # più niente da rilanciare.
+    ultimo_ok: dict = {}
+    for a in audit:
+        if a.get("status") != "failed" and not a.get("error"):
+            chiave = a.get("project_id") or a.get("url")
+            if chiave and chiave not in ultimo_ok:
+                ultimo_ok[chiave] = a.get("created_at") or ""
+
     righe = []
     for a in audit[:80]:
         rotto = a.get("status") == "failed" or a.get("error")
@@ -433,6 +446,21 @@ def schermata_job(audit: list) -> str:
         origine = {"auto": "automatico", "manual": "manuale",
                    _LEAD_SOURCE: "lead"}.get(a.get("source"), a.get("source") or "n.d.")
         punteggio = a.get("overall")
+
+        azione = ""
+        if rotto:
+            chiave = a.get("project_id") or a.get("url")
+            risolto = (ultimo_ok.get(chiave) or "") > (a.get("created_at") or "")
+            if risolto:
+                azione = '<span class="pill ok">poi riuscito</span>'
+            elif a.get("url"):
+                corpo = json.dumps({"audit_id": a["id"]})
+                azione = ('<button class="btn" data-azione="/admin/job/rilancia" '
+                          f"data-corpo='{corpo}' "
+                          f'data-conferma="Rilanciare l&apos;analisi di '
+                          f'{geo_audit.esc(a.get("domain") or a.get("url") or "")}?">'
+                          'Rilancia</button>')
+
         righe.append(
             f'<tr><td>{_quando(a.get("created_at"))}</td>'
             f'<td><b>{geo_audit.esc(a.get("domain") or a.get("url") or "—")}</b></td>'
@@ -441,7 +469,8 @@ def schermata_job(audit: list) -> str:
             f'{punteggio if punteggio is not None else "—"}</td>'
             f'<td>{stato}</td>'
             f'<td style="color:var(--text-muted);font-size:12px">'
-            f'{geo_audit.esc((a.get("error") or "")[:70])}</td></tr>'
+            f'{geo_audit.esc((a.get("error") or "")[:70])}</td>'
+            f'<td style="text-align:right">{azione}</td></tr>'
         )
 
     if falliti:
@@ -462,7 +491,7 @@ def schermata_job(audit: list) -> str:
     if not audit:
         return _vuoto("Nessuna esecuzione", "Il motore non ha ancora prodotto audit.")
     return (nota + '<div class="tab-wrap"><table class="tab"><thead><tr>'
-            '<th>Quando</th><th>Sito</th><th>Origine</th><th>Punteggio</th><th>Esito</th><th>Errore</th>'
+            '<th>Quando</th><th>Sito</th><th>Origine</th><th>Punteggio</th><th>Esito</th><th>Errore</th><th></th>'
             f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
 
 

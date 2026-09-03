@@ -682,6 +682,26 @@ Il promemoria non sollecita: spiega **la conseguenza** (senza snippet la scheda
 AI Traffic resterà vuota) e dà la riga da incollare. Chi non l'ha installato
 quasi mai l'ha dimenticato — non sa che serve.
 
+### Rilanciare un audit fallito
+
+Il bottone **Rilancia** nel Job log ha senso solo da quando i fallimenti lasciano
+una riga: prima non c'era niente da rilanciare.
+
+⚠️ **Come si ottiene l'idempotenza senza lucchetti:** il bottone compare solo se
+quel fallimento è *ancora l'ultima parola* per quel progetto. Se qualcuno ha già
+rilanciato — o se il cron è ripassato da solo — al suo posto c'è «poi riuscito»,
+perché non c'è più niente da fare. Il documento chiedeva che il rilancio «non
+crei risultati duplicati né si confonda con l'esecuzione fallita precedente»: la
+regola risponde a entrambe le cose senza stato aggiuntivo.
+
+Il rilancio **non ripara la riga fallita**: ne scrive una nuova. Il fallimento
+resta dov'è, ed è giusto — sapere che quel sito ha dato problemi prima di
+riuscire vale più di una storia ripulita. E se rifallisce, si scrive di nuovo,
+così si vede che il problema è ricorrente.
+
+Gira in `BackgroundTasks`: un audit richiede un paio di minuti, e la richiesta
+HTTP non può restare aperta tanto.
+
 ### Il registro delle azioni ha la sua tabella
 
 `admin_audit_log`, non più `tracking_event`: colonne vere al posto di un JSON

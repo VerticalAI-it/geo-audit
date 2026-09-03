@@ -31,6 +31,7 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_promemoria_inviati, _sb_promemoria_registra, \
     _e_admin, _sb_admin_azioni, _sb_admin_traccia, _sb_auth_create_user, _sb_auth_set_attivo, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
+    _sb_audit_fallito, \
     _sb_projects_with_tracking
 from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, \
     _coming_soon_tab, _roadmap_colonne_html, _roadmap_live_html, \
@@ -1271,6 +1272,89 @@ def admin_job_log(request: Request):
         admin.schermata_job(audit),
         {**_admin_conteggi(), "job": falliti})), refreshed)
 
+
+async def _rilancia_audit(audit_id: str, url: str, project_id: str | None,
+                          user_id: str | None) -> None:
+    """Riesegue un audit fallito. Gira dopo la risposta, come l'audit dei lead.
+
+    ⚠️ Non «ripara» la riga fallita: ne scrive una nuova. Il fallimento resta
+    dov'è, ed è giusto — è successo, e sapere che quel sito ha dato problemi
+    prima di riuscire vale più di una storia ripulita. Il bottone sparisce da
+    solo, perché una riga riuscita più recente lo rende inutile.
+    """
+    try:
+        res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
+        row = _sb_insert({
+            "user_id": user_id,
+            "project_id": project_id,
+            "url": url,
+            "status": "done",
+            "source": "manual",
+            "domain": res.get("domain"),
+            "overall": res.get("overall"),
+            "grade": res.get("grade"),
+            "band": res.get("band"),
+            "pages_count": len(res.get("pages", [])),
+            "html": res["html"],
+            "engine_version": res.get("engine_version"),
+            "areas": res.get("areas"),
+            "site_checks": res.get("site_checks"),
+            "pages_detail": res.get("pages"),
+            "actions": res.get("actions"),
+            "issues_count": res.get("issues_count"),
+            "critical_count": res.get("critical_count"),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        # Le criticità si aggiornano solo se l'audit appartiene a un progetto:
+        # un rilancio su un audit senza progetto (i vecchi report anonimi) non
+        # ha uno storico di issue da sincronizzare.
+        if project_id and user_id:
+            checks = list(res.get("site_checks") or [])
+            for p in (res.get("pages") or []):
+                checks.extend(p.get("checks") or [])
+            _sb_issue_sync(project_id, user_id, row["id"], checks)
+    except Exception as e:
+        # Rifallisce: si scrive di nuovo, così il pannello mostra che il
+        # problema è ricorrente invece di far sparire il tentativo.
+        _sb_audit_fallito(url, repr(e), project_id=project_id, user_id=user_id,
+                          origine="manual")
+
+
+@app.post("/admin/job/rilancia")
+async def admin_job_rilancia(request: Request, background: BackgroundTasks):
+    """Rilancia un audit fallito dal Job log.
+
+    Ha senso solo da quando i fallimenti lasciano una riga: prima non c'era
+    niente da rilanciare.
+    """
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    audit_id = (body.get("audit_id") or "").strip()
+    if not audit_id:
+        return JSONResponse({"esito": "manca_audit"}, status_code=400)
+
+    riga = _sb_get(audit_id)
+    if not riga:
+        return JSONResponse({"esito": "non_trovato"}, status_code=404)
+    if riga.get("status") != "failed" and not riga.get("error"):
+        # Non è un fallimento: rilanciarlo sarebbe solo un audit in più, e non
+        # è quello che chi preme il bottone si aspetta.
+        return JSONResponse({"esito": "non_e_fallito"}, status_code=409)
+
+    url = riga.get("url")
+    if not url:
+        return JSONResponse({"esito": "senza_indirizzo"}, status_code=409)
+
+    background.add_task(_rilancia_audit, audit_id, url,
+                        riga.get("project_id"), riga.get("user_id"))
+    _admin_traccia(user, "rilancia_job", riga.get("domain") or url)
+    return JSONResponse({"esito": "avviato"})
 
 @app.get("/admin/tracking", response_class=HTMLResponse)
 def admin_tracking(request: Request):
