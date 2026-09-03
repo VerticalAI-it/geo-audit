@@ -222,21 +222,39 @@
       btn.textContent = "Invio in corso…";
 
       const email = document.getElementById("email").value.trim();
-      /* niente query string nel redirect_to: alcune configurazioni di
-         whitelist su Supabase falliscono il match se l'URL non è esatto.
-         "next" viaggia via localStorage (sopravvive anche se il link
-         del magic link si apre in una nuova scheda, a differenza di
-         sessionStorage). */
+      /* "next" viaggia via localStorage (sopravvive anche se il magic link
+         si apre in una nuova scheda, a differenza di sessionStorage). */
       localStorage.setItem("geo_login_next", NEXT);
-      const redirectTo = window.location.origin + "/auth/callback";
 
-      const { error } = await sb.auth.signInWithOtp({
-        email: email,
-        options: { emailRedirectTo: redirectTo, shouldCreateUser: true }
-      });
+      /* ⚠️ Qui prima si chiamava `sb.auth.signInWithOtp(..., shouldCreateUser: true)`:
+         il browser parlava direttamente con Supabase e **creava l'account da
+         solo**, così chiunque inserisse un'email riceveva il link ed entrava.
+         Ora si chiede al nostro server, che è l'unico posto dove un controllo
+         di accesso è davvero un controllo — quello che sta in una pagina lo può
+         saltare chiunque apra la console. */
+      let dati = {};
+      try {
+        const r = await fetch("/auth/richiedi-link", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({email: email, next: NEXT})
+        });
+        dati = await r.json();
+      } catch (e) {
+        dati = {esito: "errore"};
+      }
 
-      if (error) {
-        err.textContent = "Non siamo riusciti a inviare l'email. Riprova.";
+      if (dati.esito === "serve_richiesta") {
+        /* Nessun account: si va a chiedere l'accesso, con l'email già compilata
+           così non va riscritta. */
+        window.location.href = "/richiedi-accesso?email=" + encodeURIComponent(email);
+        return;
+      }
+
+      if (dati.esito !== "link_inviato") {
+        err.textContent = dati.esito === "email_non_valida"
+          ? "Controlla l'indirizzo email e riprova."
+          : "Non siamo riusciti a inviare l'email. Riprova fra un minuto.";
         err.style.display = "block";
         btn.disabled = false;
         btn.textContent = "Inviami il link di accesso →";

@@ -2,12 +2,12 @@
 GEO Audit — servizio web
 Scan sincrono → salva su Supabase via REST → report oscurato → sblocco via email.
 """
-import os, time, hmac, hashlib, json
+import os, re, time, hmac, hashlib, json
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 import requests as req
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import BackgroundTasks, FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 
@@ -23,7 +23,8 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_project_claim_due, _sb_project_get, _sb_project_patch, _sb_project_upsert, \
     _sb_audits_by_user_grouped, _sb_projects_with_tracking, \
     _sb_projects_by_user, _sb_roadmap_iscrivi, _sb_roadmap_vota, _sb_roadmap_voti, \
-    _sb_user_theme, _sb_user_theme_set
+    _sb_user_theme, _sb_user_theme_set, \
+    _LEAD_SOURCE, _sb_auth_find_by_email, _sb_auth_magiclink, _sb_lead_attach_audit, _sb_lead_insert
 from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, \
     _coming_soon_tab, _roadmap_colonne_html, _roadmap_live_html, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
@@ -47,6 +48,8 @@ PRIVACY_HTML  = open(os.path.join(_HERE, "templates", "privacy.html"),       enc
 COOKIE_HTML   = open(os.path.join(_HERE, "templates", "cookie.html"),        encoding="utf-8").read()
 ROADMAP_HTML  = open(os.path.join(_HERE, "templates", "roadmap.html"),       encoding="utf-8").read()
 LOGIN_HTML    = open(os.path.join(_HERE, "templates", "login.html"),         encoding="utf-8").read()
+LEAD_HTML     = open(os.path.join(_HERE, "templates", "lead.html"),          encoding="utf-8").read()
+LEAD_OK_HTML  = open(os.path.join(_HERE, "templates", "lead_ok.html"),       encoding="utf-8").read()
 AUTH_CB_HTML  = open(os.path.join(_HERE, "templates", "auth_callback.html"), encoding="utf-8").read()
 DASHBOARD_HTML = open(os.path.join(_HERE, "templates", "dashboard.html"),    encoding="utf-8").read()
 PROJECT_HTML   = open(os.path.join(_HERE, "templates", "project.html"),      encoding="utf-8").read()
@@ -421,6 +424,113 @@ def _send_contact_notif(job_id: str, domain: str, overall: int, grade: str,
     r.raise_for_status()
 
 
+def _send_magic_link(to: str, link: str, next_path: str = "/dashboard") -> None:
+    """Il link di accesso, spedito da noi.
+
+    ⚠️ Non lo manda Supabase: lo generiamo e lo spediamo con Resend. Vedi
+    `_sb_auth_magiclink` in db.py per il perché — in breve, la posta predefinita
+    di Supabase non consegna, ed è il motivo per cui il login non funzionava.
+    """
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    if next_path and next_path != "/dashboard":
+        sep = "&" if "?" in link else "?"
+        link = f"{link}{sep}next={next_path}"
+
+    html = f"""<!doctype html>
+<html lang="it">
+<head>{_EMAIL_HEAD}<title>Il tuo link di accesso</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F1F1F6">
+  Entra in GEO Audit con un clic. Il link vale 60 minuti.&nbsp;&zwnj;&nbsp;&zwnj;
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("GEO Audit")}
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-card brd" style="background:#FFFFFF;border:1px solid #E6E6EF;border-radius:20px;overflow:hidden">
+
+        <tr><td class="px" style="padding:36px 36px 8px">
+          <div class="t-ink h1" style="font-size:23px;font-weight:600;color:#16151E;font-family:'Space Grotesk',Arial,sans-serif">Ci siamo quasi.</div>
+          <p class="t-2" style="font-size:15px;line-height:1.6;color:#4A4A5A;margin:12px 0 0;font-family:'Inter',Arial,sans-serif">
+            Premi il bottone qui sotto ed entri in GEO Audit. Nessuna password da ricordare.
+          </p>
+        </td></tr>
+
+        <tr><td class="px" style="padding:24px 36px 8px">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="background:#5A45D8;border-radius:10px">
+              <a href="{link}" style="display:inline-block;padding:14px 26px;color:#ffffff;font-size:15px;font-weight:600;
+                 text-decoration:none;font-family:'Inter',Arial,sans-serif">Entra in GEO Audit &rarr;</a>
+            </td>
+          </tr></table>
+        </td></tr>
+
+        <tr><td class="px" style="padding:18px 36px 32px">
+          <p class="t-3" style="font-size:12.5px;line-height:1.7;color:#76768A;margin:0;font-family:'Inter',Arial,sans-serif">
+            Il link vale <b>60 minuti</b> e si usa una volta sola.<br>
+            Se non hai chiesto tu di entrare, puoi ignorare questo messaggio: senza il clic non succede nulla.
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+    {_email_footer()}
+  </table>
+</td></tr>
+</table>
+</body></html>"""
+    _resend_post([to], "Il tuo link di accesso a GEO Audit", html)
+
+
+def _send_lead_notif(email: str, phone: str, sito: str, lead_id: str) -> None:
+    """Avvisa il team che c'è una richiesta di accesso da lavorare.
+
+    Va a `FROM_EMAIL`, che è la casella del prodotto: è l'unico indirizzo
+    aziendale che il codice conosce già. Il destinatario definitivo lo decide il
+    team — cambiarlo è una riga, ma inventarne uno qui sarebbe peggio che
+    mandarlo a una casella presidiata.
+    """
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    tel = phone or "non lasciato"
+    html = f"""<!doctype html>
+<html lang="it">
+<head>{_EMAIL_HEAD}<title>Nuova richiesta di accesso</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("GEO Audit")}
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-card brd" style="background:#FFFFFF;border:1px solid #E6E6EF;border-radius:20px;overflow:hidden">
+        <tr><td class="px" style="padding:32px 36px 6px">
+          <div class="t-ink h1" style="font-size:21px;font-weight:600;color:#16151E;font-family:'Space Grotesk',Arial,sans-serif">Nuova richiesta di accesso</div>
+          <p class="t-2" style="font-size:14.5px;line-height:1.6;color:#4A4A5A;margin:10px 0 0;font-family:'Inter',Arial,sans-serif">
+            L'audit preliminare di <b>{geo_audit.esc(sito)}</b> è già stato avviato: quando è pronto,
+            il punteggio compare accanto alla richiesta e si può richiamare avendo già i numeri in mano.
+          </p>
+        </td></tr>
+        <tr><td class="px" style="padding:20px 36px 34px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                 style="background:#F7F7FB;border-radius:12px">
+            <tr><td style="padding:16px 18px;font-family:'Inter',Arial,sans-serif;font-size:14px;color:#4A4A5A;line-height:1.9">
+              <b style="color:#16151E">Email</b> · {geo_audit.esc(email)}<br>
+              <b style="color:#16151E">Telefono</b> · {geo_audit.esc(tel)}<br>
+              <b style="color:#16151E">Sito da analizzare</b> · {geo_audit.esc(sito)}
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </td></tr>
+    {_email_footer()}
+  </table>
+</td></tr>
+</table>
+</body></html>"""
+    _resend_post([FROM_EMAIL], f"Richiesta di accesso · {sito}", html)
+
 def _send_unlock_email(to: str, job_id: str, domain: str, overall: int, grade: str):
     if not RESEND_KEY or not FROM_EMAIL:
         return
@@ -705,6 +815,47 @@ def login_page(request: Request, next: str = "/audit"):
     return _render(LOGIN_HTML, SUPABASE_URL=SUPABASE_URL, SUPABASE_ANON_KEY=SUPABASE_ANON)
 
 
+@app.post("/auth/richiedi-link")
+async def auth_richiedi_link(request: Request):
+    """Il cuore del controllo accessi: qui si decide se il link parte o no.
+
+    ⚠️ **Prima si guarda chi e', poi si manda.** Nell'ordine inverso il link
+    sarebbe gia' partito e il controllo non servirebbe a niente.
+
+    ⚠️ E il controllo sta **qui e non nel browser**, perche' nel browser non e' un
+    controllo: la pagina di login portava la chiave pubblica di Supabase e
+    chiamava `signInWithOtp` da sola con `shouldCreateUser: true` — cioe'
+    chiunque inserisse un'email **si creava l'account da solo** e riceveva il
+    link. Era questo, in una riga, il motivo per cui entrava chiunque.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    email = (body.get("email") or "").strip().lower()
+    next_path = body.get("next") or "/dashboard"
+    if not next_path.startswith("/"):
+        next_path = "/dashboard"
+
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return JSONResponse({"esito": "email_non_valida"}, status_code=400)
+
+    utente = _sb_auth_find_by_email(email)
+    if not utente:
+        # Nessun account: non parte nessuna mail, e si passa alla richiesta di
+        # accesso. È una scelta di prodotto dichiarata dall'analista — questo
+        # flusso lascia capire se un'email è già abilitata, e per un caso B2B va
+        # bene: qui non si difende un'identità personale, si smista un contatto.
+        return JSONResponse({"esito": "serve_richiesta"})
+
+    link = _sb_auth_magiclink(email, f"{SITE_URL or ''}/auth/callback")
+    if not link:
+        return JSONResponse({"esito": "errore"}, status_code=502)
+
+    _send_magic_link(email, link, next_path)
+    return JSONResponse({"esito": "link_inviato"})
+
+
 @app.get("/auth/callback", response_class=HTMLResponse)
 def auth_callback_page():
     return _render(AUTH_CB_HTML, SUPABASE_URL=SUPABASE_URL, SUPABASE_ANON_KEY=SUPABASE_ANON)
@@ -728,6 +879,121 @@ async def auth_set_session(request: Request, response: Response):
     _set_auth_cookies(response, access_token, refresh_token)
     return {"redirect": next_path}
 
+
+def _normalizza_sito(raw: str) -> str | None:
+    """Il sito così come lo scrive una persona → un URL su cui si può lanciare
+    un audit, oppure None se non è un indirizzo.
+
+    Serve perché il campo è libero e quasi nessuno scrive `https://`: senza
+    questo, metà degli audit preliminari partirebbe su URL che non rispondono e
+    il team richiamerebbe senza il dato che gli avevamo promesso.
+    """
+    s = (raw or "").strip().lower()
+    if not s:
+        return None
+    s = s.split()[0]
+    if s.startswith("//"):
+        s = "https:" + s
+    elif not s.startswith(("http://", "https://")):
+        s = "https://" + s
+    try:
+        p = urlparse(s)
+    except Exception:
+        return None
+    host = (p.netloc or "").split("@")[-1].split(":")[0]
+    # Un host vero ha almeno un punto e un dominio di primo livello di lettere.
+    if "." not in host or not re.match(r"^[a-z0-9.-]+\.[a-z]{2,}$", host):
+        return None
+    return f"{p.scheme}://{host}{p.path or ''}".rstrip("/")
+
+
+async def _audit_preliminare(lead_id: str, sito: str) -> None:
+    """L'analisi promessa al lead, eseguita davvero.
+
+    ⚠️ È il punto su cui l'analista insiste: la schermata dice «avviamo subito
+    l'analisi», quindi deve partire davvero un audit — non è una frase di
+    cortesia. Gira **dopo** che la risposta è stata mandata (BackgroundTask), che
+    è l'unico modo per non far aspettare un minuto a chi ha appena compilato.
+
+    ⚠️ `user_id` resta NULL: il lead non ha un account, e non deve averlo finché
+    il team non lo approva. `source='lead'` è ciò che distingue questi audit — e
+    quindi queste richieste — da quelle del form del report esterno.
+
+    Poche pagine (4 invece di 6): serve un punteggio da mettere in mano al
+    commerciale, non l'analisi completa, e un audit breve ha molte più
+    probabilità di finire entro i limiti di tempo della piattaforma.
+    """
+    try:
+        res = await run_in_threadpool(geo_audit.run_audit, sito, 4, False, False)
+        row = _sb_insert({
+            "url": sito,
+            "status": "done",
+            "source": _LEAD_SOURCE,
+            "domain": res.get("domain"),
+            "overall": res.get("overall"),
+            "grade": res.get("grade"),
+            "band": res.get("band"),
+            "pages_count": len(res.get("pages", [])),
+            "html": res["html"],
+            "areas": res.get("areas"),
+            "site_checks": res.get("site_checks"),
+            "pages_detail": res.get("pages"),
+            "actions": res.get("actions"),
+            "issues_count": res.get("issues_count"),
+            "critical_count": res.get("critical_count"),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        _sb_lead_attach_audit(lead_id, row["id"], res.get("overall"), res.get("grade"))
+    except Exception:
+        # Un audit che non riesce non deve far perdere il lead: la richiesta è
+        # già salvata e il team l'ha già ricevuta per email. Resterà senza
+        # punteggio, che è un'informazione onesta.
+        pass
+
+
+@app.get("/richiedi-accesso", response_class=HTMLResponse)
+def richiedi_accesso_form(request: Request, email: str = ""):
+    user, refreshed = _current_user(request)
+    if user:
+        return _apply_refresh(RedirectResponse("/dashboard", status_code=303), refreshed)
+    return HTMLResponse(_render(LEAD_HTML, EMAIL=geo_audit.esc(email)))
+
+
+@app.post("/richiedi-accesso")
+async def richiedi_accesso(request: Request, background: BackgroundTasks,
+                           email: str = Form(...), sito: str = Form(...),
+                           telefono: str = Form("")):
+    email = (email or "").strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return HTMLResponse(_render(LEAD_HTML, EMAIL=geo_audit.esc(email)), status_code=400)
+
+    sito_ok = _normalizza_sito(sito)
+    if not sito_ok:
+        return HTMLResponse(_render(LEAD_HTML, EMAIL=geo_audit.esc(email)), status_code=400)
+
+    lead = None
+    try:
+        lead = _sb_lead_insert(email, telefono, sito_ok)
+    except Exception:
+        pass
+
+    # L'audit parte a risposta già mandata; la mail al team esce subito, così il
+    # commerciale sa della richiesta anche se l'analisi dovesse fallire.
+    if lead:
+        background.add_task(_audit_preliminare, lead["id"], sito_ok)
+    _send_lead_notif(email, telefono, sito_ok, (lead or {}).get("id", ""))
+
+    return RedirectResponse(
+        f"/richiesta-ricevuta?email={quote(email)}&sito={quote(sito_ok)}",
+        status_code=303,
+    )
+
+
+@app.get("/richiesta-ricevuta", response_class=HTMLResponse)
+def richiesta_ricevuta(email: str = "", sito: str = ""):
+    return HTMLResponse(_render(LEAD_OK_HTML,
+                                EMAIL=geo_audit.esc(email),
+                                SITO=geo_audit.esc(sito)))
 
 @app.get("/auth/logout")
 def auth_logout():

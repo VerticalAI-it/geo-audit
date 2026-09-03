@@ -47,10 +47,55 @@ def _sb_get(job_id: str) -> dict | None:
     return d[0] if d else None
 
 
-def _sb_insert_contact(data: dict):
+def _sb_insert_contact(data: dict) -> dict | None:
     r = req.post(f"{SUPABASE_URL}/rest/v1/contact_requests",
                  json=data, headers=_SB_H, timeout=10)
     r.raise_for_status()
+    righe = r.json()
+    return righe[0] if righe else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# I lead: chi ha chiesto l'accesso e aspetta
+#
+# Stanno in `contact_requests`, che nasce proprio come raccolta lead e ha gia'
+# tutti i campi che servono — `email`, `phone`, `domain` (il sito da analizzare),
+# `audit_id` piu' lo snapshot di `overall`/`grade`, cioe' il collegamento
+# all'audit preliminare e il suo esito.
+#
+# ⚠️ Perche' NON una tabella nuova, che pure il documento propone: crearla vuole
+# un DDL, e le chiavi di servizio non fanno DDL — servirebbe qualcuno che apre il
+# pannello Supabase, e la funzionalita' resterebbe ferma li'. Il prezzo di
+# riusare questa tabella e' che le due sorgenti (il form del report esterno e il
+# form di richiesta accesso) vanno distinte: si distinguono dal `source`
+# dell'audit collegato, che per i lead vale `lead`.
+# ⚠️ **Lo stato del lead non e' una colonna, e' un fatto**: se l'email ha un
+# account, il lead e' stato approvato; se non ce l'ha, sta ancora aspettando.
+# Cosi' non esistono due verita' da tenere allineate.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LEAD_SOURCE = "lead"
+
+
+def _sb_lead_insert(email: str, phone: str, sito: str) -> dict | None:
+    """Registra la richiesta di accesso. L'audit arriva dopo, e la aggiorna."""
+    return _sb_insert_contact({
+        "email": (email or "").strip().lower(),
+        "phone": (phone or "").strip() or None,
+        "domain": sito,
+        "preference": "email",
+    })
+
+
+def _sb_lead_attach_audit(lead_id: str, audit_id: str, overall, grade) -> None:
+    """Aggancia al lead l'audit preliminare appena finito, col suo punteggio.
+
+    E' quello che permette al team di richiamare avendo gia' il risultato in
+    mano invece di una telefonata a freddo — cioe' il senso della funzionalita'.
+    """
+    req.patch(f"{SUPABASE_URL}/rest/v1/contact_requests", headers=_SB_H, timeout=10,
+              json={"audit_id": audit_id, "overall": overall, "grade": grade},
+              params={"id": f"eq.{lead_id}"})
 
 
 def _sb_get_by_email(email: str) -> list:
@@ -365,6 +410,85 @@ def _sb_auth_user(access_token: str) -> dict | None:
     r = req.get(f"{SUPABASE_URL}/auth/v1/user",
                 headers={"apikey": SUPABASE_ANON, "Authorization": f"Bearer {access_token}"},
                 timeout=10)
+    return r.json() if r.ok else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chi puo' entrare
+#
+# ⭐ L'invariante, e vale la pena dirla in un posto solo: **essere in
+# `auth.users` E' essere approvati.** Non c'e' un secondo stato da tenere
+# allineato — chi ha un account entra, chi non ce l'ha e' un lead. Un solo
+# concetto invece di due che possono divergere.
+#
+# Ne discende che la migrazione degli utenti attuali **non serve**: i sei
+# account che esistono oggi sono approvati per costruzione.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _sb_auth_find_by_email(email: str) -> dict | None:
+    """L'utente con questa email, o None se non ha un account.
+
+    ⚠️ Il filtro dell'admin API di GoTrue cerca «contiene», non «uguale»: senza
+    il confronto esatto qui sotto, `mario@x.it` verrebbe trovato da una ricerca
+    per `ario@x.it` e a quel punto chiunque scelga un'email che contiene quella
+    di un cliente riceverebbe un link di accesso.
+    """
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    r = req.get(f"{SUPABASE_URL}/auth/v1/admin/users", headers=_SB_H, timeout=10,
+                params={"filter": email, "per_page": "50"})
+    if not r.ok:
+        return None
+    for u in (r.json().get("users") or []):
+        if (u.get("email") or "").strip().lower() == email:
+            return u
+    return None
+
+
+def _sb_auth_magiclink(email: str, redirect_to: str) -> str | None:
+    """Genera il link di accesso **senza far mandare l'email a Supabase**.
+
+    ⚠️ Due motivi, e il secondo e' il piu' importante:
+      1. il contenuto della mail resta nostro (lingua, design, mittente);
+      2. **la posta predefinita di Supabase non consegna** — e' il difetto per
+         cui da giorni nessuno riesce ad accedere: la chiamata risponde 200 e la
+         mail non arriva mai. Generando il link qui e spedendolo con Resend, che
+         gia' funziona per tutte le altre email del prodotto, il problema sparisce
+         senza dover configurare l'SMTP nel pannello Supabase.
+
+    ⚠️⚠️ **`generate_link` con `type=magiclink` CREA L'ACCOUNT se non esiste.**
+    Non fallisce: risponde 200, restituisce un link valido, e da quel momento
+    l'indirizzo e' un utente a tutti gli effetti — cioe' esattamente cio' che
+    questo controllo deve impedire. Verificato sul campo il 03/09/2026: una
+    chiamata con un indirizzo inventato ha creato l'utente, che e' stato poi
+    cancellato a mano. Per questo il controllo di esistenza sta **dentro** questa
+    funzione e non solo in chi la chiama: una difesa che dipende dal fatto che
+    tutti si ricordino di controllare prima, prima o poi cede.
+    """
+    if not _sb_auth_find_by_email(email):
+        return None
+
+    r = req.post(f"{SUPABASE_URL}/auth/v1/admin/generate_link", headers=_SB_H, timeout=15,
+                 # `redirect_to` va al primo livello: dentro `options` viene
+                 # ignorato in silenzio e il link porta all'indirizzo predefinito
+                 # del progetto invece che al nostro callback.
+                 json={"type": "magiclink", "email": email, "redirect_to": redirect_to})
+    if not r.ok:
+        return None
+    d = r.json()
+    return d.get("action_link") or (d.get("properties") or {}).get("action_link")
+
+
+def _sb_auth_create_user(email: str) -> dict | None:
+    """Crea l'account: e' l'atto con cui un lead diventa cliente.
+
+    `email_confirm=True` perche' l'indirizzo lo abbiamo gia' verificato noi
+    parlandoci: senza, Supabase manderebbe una sua mail di conferma.
+    """
+    r = req.post(f"{SUPABASE_URL}/auth/v1/admin/users", headers=_SB_H, timeout=15,
+                 json={"email": (email or "").strip().lower(), "email_confirm": True})
     return r.json() if r.ok else None
 
 

@@ -49,6 +49,9 @@ riquadro esiste.
 | Route | Metodo | Cosa fa |
 |---|---|---|
 | `/login` | GET | Form magic link; se già loggato redirige a `next` |
+| `/auth/richiedi-link` | POST | Decide se il magic link parte: e' qui il controllo accessi |
+| `/richiedi-accesso` | GET/POST | Form lead + avvio dell'audit preliminare |
+| `/richiesta-ricevuta` | GET | Conferma al lead |
 | `/auth/callback` | GET | Pagina che estrae i token dal fragment dell'URL |
 | `/auth/set-session` | POST | Scambia i token con i cookie HttpOnly server-side |
 | `/auth/logout` | GET | Cancella i cookie, redirige a `/` |
@@ -91,13 +94,82 @@ punto dove aggiungere un limite per IP è segnato in `server.py`.
 
 ---
 
+## Chi può entrare
+
+> **L'invariante, e sta scritta in un posto solo: essere in `auth.users` **è**
+> essere approvati.** Non esiste un secondo stato da tenere allineato — chi ha un
+> account entra, chi non ce l'ha è un lead. Ne discende che la migrazione degli
+> utenti esistenti **non serve**: chi c'è oggi è approvato per costruzione.
+
+Fino al 3 settembre 2026 entrava chiunque, e il motivo stava in una riga di
+`templates/login.html`: il browser chiamava Supabase per conto suo con
+`signInWithOtp(..., shouldCreateUser: true)`, quindi **ogni email inserita si
+creava l'account da sola** e riceveva il link.
+
+Ora la pagina chiede al server (`POST /auth/richiedi-link`), che decide:
+
+| Caso | Cosa succede |
+|---|---|
+| l'email ha un account | si genera il link e si spedisce **con Resend** |
+| l'email non ha un account | **nessuna mail**, si va a `/richiedi-accesso` con l'email già scritta |
+
+⚠️ **Il controllo sta sul server perché in una pagina non sarebbe un
+controllo:** la chiave pubblica di Supabase è visibile a chiunque apra il
+sorgente. Per questo la difesa non è una sola:
+
+1. il nostro flusso non chiama più Supabase dal browser;
+2. `_sb_auth_magiclink()` **verifica l'esistenza dell'account al proprio
+   interno**, non si fida di chi la chiama.
+
+⚠️⚠️ **`generate_link` con `type=magiclink` CREA l'account se non esiste.** Non
+fallisce: risponde 200 e restituisce un link valido. Verificato il 03/09/2026 —
+una chiamata con un indirizzo inventato ha creato l'utente. È il motivo per cui
+il controllo è dentro la funzione: una difesa che dipende dal fatto che tutti si
+ricordino di controllare prima, prima o poi cede.
+
+### Il link lo spediamo noi, non Supabase
+
+`_sb_auth_magiclink()` usa l'**admin API** per *generare* il link, e la mail
+parte con Resend. Due motivi, e il secondo è quello che risolve un problema
+aperto: la posta predefinita di Supabase **non consegna** — la chiamata risponde
+200 e la mail non arriva mai, ed è per questo che il login non funzionava. Così
+non serve più configurare l'SMTP nel pannello Supabase.
+
+⚠️ `redirect_to` va al **primo livello** del corpo JSON: dentro `options` viene
+ignorato in silenzio e il link porta all'indirizzo predefinito del progetto
+invece che a `/auth/callback`.
+
+### Chi non ha un account: il lead
+
+`/richiedi-accesso` raccoglie email, telefono (facoltativo) e **sito da
+analizzare**. Al salvataggio:
+
+1. la richiesta finisce in `contact_requests` (vedi [04 · Modello
+   dati](04-data-model.md#contact_requests));
+2. **parte davvero un audit preliminare** sul sito indicato — con lo stesso
+   motore dei clienti attivi, in `BackgroundTasks` per non far aspettare chi ha
+   compilato, e con `source = 'lead'`. Non è una frase di cortesia: la schermata
+   promette che l'analisi è già partita, e deve essere vero;
+3. il team riceve la notifica via email;
+4. quando l'audit finisce, punteggio e `audit_id` si agganciano alla richiesta —
+   così chi richiama ha già i numeri in mano.
+
+L'URL scritto da una persona viene normalizzato (`_normalizza_sito`): senza,
+metà degli audit partirebbe su indirizzi che non rispondono.
+
+**Chi approva un lead** lo fa creando l'account (`_sb_auth_create_user`,
+verificato: la service role può). L'Admin Dashboard è la schermata che lo farà;
+finché non c'è, si fa da script.
+
+---
+
 ## Autenticazione: magic link con sessione server-side
 
-Nessuna password. Supabase Auth manda un magic link via email; il flusso poi
-sposta la sessione **dal client ai cookie HttpOnly**:
+Nessuna password. Il magic link porta la sessione **dal client ai cookie
+HttpOnly**:
 
 ```
-1. /login                → il JS chiama supabase.auth.signInWithOtp()
+1. /login                → POST /auth/richiedi-link → il server genera e spedisce
                            redirect_to = {SITE_URL}/auth/callback   (senza query string)
 
 2. l'utente clicca il link nell'email
