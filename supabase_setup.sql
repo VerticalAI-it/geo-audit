@@ -193,3 +193,117 @@ CREATE INDEX IF NOT EXISTS audits_user_created ON public.audits (user_id, create
 -- IMPORTANTE: come sopra, senza questo reload PostgREST continua a rispondere
 -- PGRST204 sulla colonna nuova finché non ricarica lo schema da sé.
 NOTIFY pgrst, 'reload schema';
+
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- GEO Audit · Fase D — Pannello del team (settembre 2026)
+-- Migration incrementale, idempotente come le precedenti.
+--
+-- Sblocca le tre cose che il pannello /admin oggi non può fare: le note interne
+-- su un cliente, lo storico dei suoi accessi, e i promemoria a chi non ha
+-- installato il tracking. Più lo stato «contattato» sulla coda dei lead.
+--
+-- ⚠️ NON esiste una tabella `clients`: i clienti SONO `auth.users`. Il documento
+-- funzionale ne proponeva una, ma il prodotto non ce l'ha e non serve — «essere
+-- in auth.users è essere approvati». Le chiavi esterne qui sotto puntano quindi
+-- ad auth.users, non a una tabella intermedia.
+--
+-- ⚠️ RLS attiva su tutte: sono dati interni, e nessuna policy significa che
+-- nessun utente autenticato ci arriva. Il pannello legge con la service role,
+-- che le RLS le bypassa per definizione.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── Note interne su un cliente ──────────────────────────────────────────────
+-- Elenco che si aggiunge e basta: nessuna modifica, nessuna cancellazione. Una
+-- nota commerciale che qualcuno può riscrivere dopo non è più una traccia.
+CREATE TABLE IF NOT EXISTS public.client_notes (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id   UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    author_id   UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
+    author_email TEXT,      -- denormalizzato: la nota resta leggibile anche se
+                            -- l'account di chi l'ha scritta viene rimosso
+    text        TEXT        NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.client_notes ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS client_notes_client ON public.client_notes (client_id, created_at DESC);
+
+
+-- ── Storico degli accessi ───────────────────────────────────────────────────
+-- ⚠️ Supabase Auth non espone uno storico per-utente: `last_sign_in_at` dice
+-- solo l'ultima volta. Queste righe le scrive l'applicazione, nei due momenti
+-- in cui sa cosa sta succedendo: quando parte un link e quando la sessione si
+-- apre davvero. Le due cose insieme dicono anche quanti link non vengono mai
+-- cliccati, che è un dato che oggi non abbiamo.
+CREATE TABLE IF NOT EXISTS public.login_events (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id   UUID        REFERENCES auth.users(id) ON DELETE CASCADE,
+    email       TEXT,       -- serve per i tentativi di chi un account non ce l'ha
+    event_type  TEXT        NOT NULL,   -- 'link_richiesto' | 'accesso_riuscito'
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.login_events ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS login_events_client ON public.login_events (client_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS login_events_email  ON public.login_events (email, created_at DESC);
+
+
+-- ── Promemoria «installa il tracking» ───────────────────────────────────────
+-- Esiste per NON rimandare lo stesso messaggio a raffica: prima di scrivere a
+-- qualcuno si guarda quando gli si è scritto l'ultima volta.
+CREATE TABLE IF NOT EXISTS public.tracking_reminders (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id  UUID        NOT NULL REFERENCES public.project(id) ON DELETE CASCADE,
+    sent_by     UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
+    sent_to     TEXT,       -- a chi è andato, denormalizzato
+    sent_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.tracking_reminders ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS tracking_reminders_project ON public.tracking_reminders (project_id, sent_at DESC);
+
+
+-- ── Lo stato di una richiesta ───────────────────────────────────────────────
+-- Oggi lo stato di un lead è un fatto e non una colonna: se l'email ha un
+-- account, è stato approvato. Regge per «in attesa» e «approvato», ma non per
+-- lo stato intermedio — «l'ho chiamato, non ho ancora deciso» — che non
+-- corrisponde a nessun fatto osservabile. Solo per quello serve una colonna.
+--
+-- ⚠️ Niente CHECK sul valore, coerentemente col resto dello schema (vedi
+-- `issue.status`): il commento descrive l'uso, non lo impone.
+ALTER TABLE public.contact_requests
+    ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'nuova';  -- nuova | contattata | ignorata
+
+CREATE INDEX IF NOT EXISTS contact_requests_status ON public.contact_requests (status, created_at DESC);
+
+
+-- ── Registro delle azioni del pannello ──────────────────────────────────────
+-- ⚠️ Oggi le azioni admin finiscono in `tracking_event` con
+-- `event_name = 'admin_action'`: funziona, ma quella tabella è nata per il
+-- traffico di un sito e sta diventando un registro eventi generico. Questa è la
+-- sua casa vera. Le righe già scritte si portano dietro con la SELECT in fondo,
+-- che è sicura da rieseguire (ON CONFLICT non serve: si filtra per data).
+CREATE TABLE IF NOT EXISTS public.admin_audit_log (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    actor_email TEXT        NOT NULL,   -- chi: l'email, che resta leggibile nel tempo
+    action_type TEXT        NOT NULL,   -- approva_lead | disabilita_cliente | ...
+    target      TEXT,                   -- su chi/cosa
+    metadata    JSONB,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.admin_audit_log ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS admin_audit_log_created ON public.admin_audit_log (created_at DESC);
+
+-- Travaso delle azioni già registrate in tracking_event. Rieseguirlo non crea
+-- doppioni: si copiano solo le righe più vecchie di quelle già presenti qui.
+INSERT INTO public.admin_audit_log (actor_email, action_type, target, created_at)
+SELECT
+    COALESCE(properties->>'attore', '?'),
+    COALESCE(properties->>'azione', '?'),
+    properties->>'bersaglio',
+    created_at
+FROM public.tracking_event
+WHERE event_name = 'admin_action'
+  AND created_at > COALESCE((SELECT MAX(created_at) FROM public.admin_audit_log), '1970-01-01'::timestamptz);
