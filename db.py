@@ -88,6 +88,57 @@ def _sb_lead_insert(email: str, phone: str, sito: str) -> dict | None:
     })
 
 
+_LINK_RICHIESTO = "link_richiesto"
+
+# Quante richieste di link accettare per la stessa email, e in quanti minuti.
+# Non e' una difesa contro un attacco vero — chi vuole cambia email a ogni giro —
+# ma contro il caso normale e piu' probabile: qualcuno che non vede arrivare la
+# mail e preme «invia di nuovo» dieci volte, riempiendo la sua casella e la
+# nostra quota di invii.
+_LINK_MAX = 4
+_LINK_FINESTRA_MIN = 15
+
+
+def _sb_link_richiesto(email: str) -> None:
+    """Segna che per questa email e' partito (o si e' tentato) un link.
+
+    ⚠️ Sta in `tracking_event` come le altre cose di servizio, e per lo stesso
+    motivo: creare `login_events` vuole un DDL. Quando quella tabella esistera'
+    — e' nella migrazione Fase D — questa funzione e la sua gemella si spostano
+    li', e diventano anche lo storico accessi del pannello.
+    """
+    try:
+        req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=6,
+                 json={"event_name": _LINK_RICHIESTO,
+                       "properties": {"email": (email or "").strip().lower()}})
+    except Exception:
+        pass
+
+
+def _sb_link_troppo_spesso(email: str) -> bool:
+    """Questa email ha gia' chiesto troppi link di recente?
+
+    ⚠️ Il conteggio sta nel database e non in memoria di proposito: l'app gira su
+    piu' istanze serverless, e un contatore in memoria verrebbe azzerato a ogni
+    avvio a freddo — cioe' non limiterebbe niente proprio quando serve.
+    """
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    da = (datetime.now(timezone.utc) - timedelta(minutes=_LINK_FINESTRA_MIN)).isoformat()
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event",
+                    headers={**_SB_H, "Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"},
+                    params={"event_name": f"eq.{_LINK_RICHIESTO}", "created_at": f"gte.{da}",
+                            "properties->>email": f"eq.{email}", "select": "id"}, timeout=8)
+        quante = int((r.headers.get("content-range") or "*/0").split("/")[-1])
+    except Exception:
+        # Se il conteggio non riesce non si blocca l'accesso: un limite che si
+        # rompe non deve trasformarsi in una porta chiusa in faccia a un cliente.
+        return False
+    return quante >= _LINK_MAX
+
+
 _ADMIN_AZIONE = "admin_action"
 
 

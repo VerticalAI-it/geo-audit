@@ -26,6 +26,7 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_projects_by_user, _sb_roadmap_iscrivi, _sb_roadmap_vota, _sb_roadmap_voti, \
     _sb_user_theme, _sb_user_theme_set, \
     _LEAD_SOURCE, _sb_auth_find_by_email, _sb_auth_magiclink, _sb_lead_attach_audit, _sb_lead_insert, \
+    _sb_link_richiesto, _sb_link_troppo_spesso, \
     _e_admin, _sb_admin_azioni, _sb_admin_traccia, _sb_auth_create_user, _sb_auth_set_attivo, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
     _sb_projects_with_tracking
@@ -858,10 +859,18 @@ async def auth_richiedi_link(request: Request):
         # bene: qui non si difende un'identità personale, si smista un contatto.
         return JSONResponse({"esito": "serve_richiesta"})
 
+    # ⚠️ Il limite sta QUI e non solo nel cooldown della pagina: quello è un
+    # aiuto per chi aspetta l'email, non una difesa — si aggira ricaricando.
+    if _sb_link_troppo_spesso(email):
+        return JSONResponse({"esito": "troppi_tentativi"}, status_code=429)
+
     link = _sb_auth_magiclink(email, f"{SITE_URL or ''}/auth/callback")
     if not link:
+        # Nessun link: o l'account è stato disabilitato, o Supabase non risponde.
+        # Da fuori le due cose non si distinguono, ed è giusto così.
         return JSONResponse({"esito": "errore"}, status_code=502)
 
+    _sb_link_richiesto(email)
     _send_magic_link(email, link, next_path)
     return JSONResponse({"esito": "link_inviato"})
 
