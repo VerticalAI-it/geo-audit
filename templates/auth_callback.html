@@ -1,6 +1,17 @@
 <!doctype html>
-<html lang="it" data-theme="dark">
+<html lang="it">
 <head>
+<script>
+/* ⚠️ Senza questo, la pagina resta al tema scritto nell'HTML e IGNORA la
+   preferenza dell'utente. Sta in testa apposta: se girasse dopo, si vedrebbe
+   il lampo del tema sbagliato. Il tema predefinito del prodotto è il chiaro,
+   quindi l'assenza di attributo vale «chiaro». */
+(function(){
+  var t = null;
+  try{ t = localStorage.getItem('geo-theme'); }catch(e){}
+  if (t) document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Accesso in corso · verticalai</title>

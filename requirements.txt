@@ -7,3 +7,4 @@ lxml>=5.0
 supabase>=2.3,<3
 resend>=0.7
 tzdata
+openpyxl>=3.1

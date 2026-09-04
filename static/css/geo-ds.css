@@ -367,6 +367,13 @@ h1{font-family:var(--font-display); font-size:26px; font-weight:600; letter-spac
   .hamburger{display:flex;}
   .btn span.btn-label{display:none;}
   .user-chip{display:none;}
+  /* ⚠️ Il menu utente prende il posto della vecchia targhetta, che qui era
+     nascosta del tutto. Nasconderlo però toglierebbe di nuovo il logout da
+     mobile — il difetto che stiamo correggendo. Si restringe invece all'avatar:
+     l'email per intero faceva sbordare la pagina di 32px. */
+  .topbar .menu-utente .email,
+  .topbar .menu-utente .freccia{display:none;}
+  .topbar .menu-utente > summary{padding:4px;}
   .btn{padding:9px 11px;}
   h1{font-size:22px;}
   .ai-summary{padding:14px 16px; gap:11px;}
@@ -1095,3 +1102,54 @@ h1{font-family:var(--font-display); font-size:26px; font-weight:600; letter-spac
   display:flex; justify-content:space-between;
   margin-top:6px; font-size:11px; color:var(--text-muted);
 }
+
+/* ── Menu utente ────────────────────────────────────────────────────────────
+   Sta in fondo alla sidebar e nella barra della dashboard. Prima il logout
+   esisteva SOLO nel menu mobile: da computer non c'era modo di uscire.
+   È un <details>, quindi si apre con la tastiera senza bisogno di JS; il JS
+   serve solo a chiuderlo quando si clicca altrove. */
+.menu-utente{position:relative;}
+.menu-utente > summary{display:flex; align-items:center; gap:8px; cursor:pointer; list-style:none; padding:4px 6px; border-radius:8px;}
+.menu-utente > summary::-webkit-details-marker{display:none;}
+.menu-utente > summary:hover{background:var(--bg-surface-hover, rgba(127,127,127,.10));}
+.menu-utente > summary:focus-visible{outline:2px solid var(--accent-primary); outline-offset:1px;}
+.menu-utente .freccia{width:12px; height:12px; flex-shrink:0; opacity:.6; transition:transform .12s ease;}
+.menu-utente[open] .freccia{transform:rotate(180deg);}
+.menu-utente-voci{position:absolute; right:0; bottom:calc(100% + 6px); min-width:190px; background:var(--bg-surface); border:1px solid var(--border-medium); border-radius:12px; padding:5px; box-shadow:0 10px 30px rgba(0,0,0,.18); z-index:80;}
+.menu-utente.giu .menu-utente-voci{bottom:auto; top:calc(100% + 6px);}
+.menu-utente-voci a{display:flex; align-items:center; gap:9px; padding:9px 11px; border-radius:8px; font-size:13px; color:var(--text-secondary, var(--text-2)); text-decoration:none; white-space:nowrap;}
+.menu-utente-voci a:hover{background:var(--bg-surface-raised, rgba(127,127,127,.10)); color:var(--text-primary, var(--text));}
+.menu-utente-voci a svg{width:15px; height:15px; flex-shrink:0; opacity:.75;}
+.menu-utente-voci hr{border:none; border-top:1px solid var(--border-subtle); margin:5px 8px;}
+.menu-utente-email{padding:8px 11px 4px; font-size:11.5px; color:var(--text-muted); word-break:break-all;}
+
+/* ── Riga issue che si apre ──────────────────────────────────────────────────
+   Il solo titolo del check («Completezza proprietà schema») dice cosa non va,
+   non cosa fare: chi deve intervenire da solo resta fermo lì. */
+tr.riga-issue{cursor:pointer;}
+tr.riga-issue:hover{background:var(--bg-surface-hover, rgba(127,127,127,.06));}
+tr.riga-issue .apri-riga{display:inline-block; width:14px; color:var(--text-muted); transition:transform .12s ease; font-size:15px; line-height:1;}
+tr.riga-issue.aperta .apri-riga{transform:rotate(90deg);}
+tr.riga-rimedio > td{padding:0 !important; border-top:none !important;}
+.rimedio{padding:14px 18px 16px 34px; background:var(--bg-surface-raised, rgba(127,127,127,.05)); border-left:3px solid var(--accent-primary);}
+.rimedio-titolo{font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:600; color:var(--text-muted); margin-bottom:5px;}
+.rimedio-testo{font-size:13px; line-height:1.55; color:var(--text-secondary, var(--text-2));}
+.rimedio-assente{font-style:italic; color:var(--text-muted);}
+.rimedio-dove{margin-top:8px; font-size:11.5px; color:var(--text-muted);}
+.rimedio-dove code{font-family:var(--font-mono); font-size:11px; word-break:break-all;}
+
+/* ── Conteggi che portano da qualche parte ───────────────────────────────────
+   Un numero mostrato all'utente deve poter aprire l'elenco di ciò che conta:
+   prima erano cartelli, e per sapere QUALI problemi avesse una pagina bisognava
+   cercarla a mano nell'elenco generale. */
+.conta-link{text-decoration:none; border-bottom:1px dashed var(--border-medium);}
+.conta-link:hover{border-bottom-color:var(--accent-primary);}
+.conta-link:hover .issue-count,
+.conta-link:hover .score-cell{color:var(--accent-primary);}
+.kpi-filtro{cursor:pointer; transition:border-color .12s ease, background .12s ease;}
+.kpi-filtro:hover{border-color:var(--accent-primary);}
+.kpi-filtro:focus-visible{outline:2px solid var(--accent-primary); outline-offset:2px;}
+.kpi-filtro.attivo{border-color:var(--accent-primary); background:var(--accent-primary-dim);}
+.kpi-filtro.attivo .kpi-label::after{content:' · filtro attivo'; opacity:.75;}
+.mostra-altro{margin-top:10px; width:100%; padding:9px; border:1px dashed var(--border-medium); border-radius:10px; background:none; color:var(--text-secondary, var(--text-2)); font-family:var(--font-body); font-size:12.5px; font-weight:600; cursor:pointer;}
+.mostra-altro:hover{border-color:var(--accent-primary); color:var(--accent-primary);}

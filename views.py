@@ -928,7 +928,7 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
 
 
 
-def _tab_audit(latest: dict | None, history: list) -> str:
+def _tab_audit(latest: dict | None, history: list, project_id: str = "") -> str:
     """Riepilogo dell'audit: sintesi, punteggio per area, interventi, storico."""
     if not latest:
         return ('<div class="data-card"><div class="no-rows">Nessun audit ancora eseguito. '
@@ -952,8 +952,16 @@ def _tab_audit(latest: dict | None, history: list) -> str:
         f'<span class="grade">GRADE {geo_audit.esc(latest.get("grade") or "?")}</span></div>'
         '<div class="score-summary-text">'
         '<div class="headline">'
-        f'<b>{issues_count}</b> problemi \u00b7 '
-        f'<span class="crit">{critical_count}</span> critici'
+        # ⚠️ Erano due numeri fermi. Chi legge «32 problemi» vuole sapere QUALI:
+        # portano all'elenco, quello dei critici già filtrato sulla severità.
+        + (f'<a class="conta-link" href="/project/{project_id}?tab=opportunities'
+           f'&stato=tutte"><b>{issues_count}</b> problemi</a> \u00b7 '
+           if project_id and issues_count else
+           f'<b>{issues_count}</b> problemi \u00b7 ')
+        + (f'<a class="conta-link" href="/project/{project_id}?tab=opportunities'
+           f'&stato=tutte&sev=critical"><span class="crit">{critical_count}</span> critici</a>'
+           if project_id and critical_count else
+           f'<span class="crit">{critical_count}</span> critici')
         + (f' \u00b7 {pct_ok}% controlli superati' if pct_ok is not None else '') +
         '</div>'
         f'<div class="score-summary-meta">Ultimo audit {_fmt_date(latest.get("created_at"))}'
@@ -974,10 +982,16 @@ def _tab_audit(latest: dict | None, history: list) -> str:
         for a in aree
     ) or '<div class="no-rows">Nessun punteggio per area disponibile.</div>'
 
-    interventi = (latest.get("actions") or [])[:8]
+    # ⚠️ Prima erano `[:8]` e basta: gli interventi dal nono in poi non erano
+    # raggiungibili da nessuna parte in questa schermata, e nulla diceva che
+    # esistessero. Ora ci sono tutti, con i primi sette in vista.
+    tutti_interventi = latest.get("actions") or []
+    VISIBILI = 7
+    interventi = tutti_interventi
     sev_cls = {"critical": "high", "high": "high", "medium": "medium", "low": "low", "info": "low"}
     righe_interventi = "".join(
-        '<div class="interv-item">'
+        f'<div class="interv-item{" oltre" if i >= VISIBILI else ""}"'
+        f'{" hidden" if i >= VISIBILI else ""}>'
         f'<div class="interv-num">{i + 1:02d}</div>'
         '<div class="interv-body"><div class="interv-top">'
         f'<span class="interv-title">{geo_audit.esc(a["title"])}</span>'
@@ -1012,7 +1026,11 @@ def _tab_audit(latest: dict | None, history: list) -> str:
         + '<div class="data-card">'
           '<div class="section-header"><div class="section-title">Interventi prioritari</div>'
           '<div class="card-desc">In ordine di impatto sul punteggio</div></div>'
-          f'<div style="padding:4px 20px 14px"><div class="interv-list">{righe_interventi}</div></div>'
+          f'<div style="padding:4px 20px 14px"><div class="interv-list">{righe_interventi}</div>'
+          + (f'<button type="button" class="mostra-altro" data-quanti="{len(tutti_interventi) - VISIBILI}">'
+             f'Mostra gli altri {len(tutti_interventi) - VISIBILI}</button>'
+             if len(tutti_interventi) > VISIBILI else '')
+          + '</div>'
           '</div>'
         + '<div class="data-card">'
           '<div class="section-header"><div class="section-title">Storico audit</div></div>'
@@ -1020,11 +1038,19 @@ def _tab_audit(latest: dict | None, history: list) -> str:
           '<th>Data</th><th>Score</th><th>Grade</th><th>Critici</th><th>Origine</th>'
           f'</tr></thead><tbody>{righe_storico}</tbody></table></div>'
           '</div>'
+        + '<script>'
+        '(function(){'
+        'var b=document.querySelector(".mostra-altro"); if(!b) return;'
+        'b.addEventListener("click",function(){'
+        'document.querySelectorAll(".interv-item.oltre").forEach(function(e){e.hidden=false;});'
+        'b.remove();});'
+        '})();'
+        '</script>'
     )
 
 
 
-def _tab_pages(latest: dict | None) -> str:
+def _tab_pages(latest: dict | None, project_id: str = "") -> str:
     """Elenco delle pagine analizzate: ricerca, filtri, ordinamento, CSV.
 
     Ordinamento e filtri sono lato client: il dataset e' una manciata di righe
@@ -1072,8 +1098,10 @@ def _tab_pages(latest: dict | None) -> str:
         f'<select id="pgTipo" aria-label="Filtra per tipo"><option value="">Tipo: tutti</option>{opzioni}</select>'
         '</label>'
         '<button class="filter-chip" id="pgSoloCritici" aria-pressed="false">Solo con critici</button>'
-        '<button class="filter-chip" id="pgCsv">\u2193 Esporta CSV</button>'
-        '</div></div>'
+        '<button class="filter-chip" id="pgCsv">\u2193 CSV</button>'
+        + (f'<a class="filter-chip" href="/project/{project_id}/export.xlsx?cosa=pagine">'
+           '\u2193 Excel</a>' if project_id else '')
+        + '</div></div>'
 
         '<div class="table-scroll">'
         '<table class="data-grid">'
@@ -1093,6 +1121,7 @@ def _tab_pages(latest: dict | None) -> str:
 
         '<script>'
         f'const PG_DATI = {json.dumps(dati)};'
+        f'const PG_PROGETTO = {json.dumps(project_id)};'
         r"""
         (function(){
           let ordine = {col: "score", verso: 1};   // 1 = crescente, -1 = decrescente
@@ -1136,9 +1165,24 @@ def _tab_pages(latest: dict | None) -> str:
                 + '<td><span class="url-type">' + esc(d.tipo || "\u2014") + '</span></td>'
                 + '<td><div class="score-bar-wrap"><span class="score-cell ' + cls + '">'
                 +   punteggio + '</span>' + barra + '</div></td>'
-                + '<td><span class="issue-count">' + d.issue + '</span></td>'
-                + '<td><span class="score-cell ' + (d.critici ? "critical" : "good") + '">'
-                +   d.critici + '</span></td>'
+                /* ⚠️ Un conteggio che l'utente vede deve portare all'elenco di
+                   ciò che conta: qui erano due numeri fermi, e per sapere QUALI
+                   problemi avesse quella pagina bisognava cercarla a mano in
+                   Opportunities. Il filtro passa dall'indirizzo, così il link
+                   resta valido anche se lo si condivide. */
+                + '<td>' + (d.issue && PG_PROGETTO
+                    ? '<a class="conta-link" href="/project/' + encodeURIComponent(PG_PROGETTO)
+                      + '?tab=opportunities&stato=tutte&pagina=' + encodeURIComponent(d.url)
+                      + '" title="Vedi le criticità di questa pagina">'
+                      + '<span class="issue-count">' + d.issue + '</span></a>'
+                    : '<span class="issue-count">' + d.issue + '</span>') + '</td>'
+                + '<td>' + (d.critici && PG_PROGETTO
+                    ? '<a class="conta-link" href="/project/' + encodeURIComponent(PG_PROGETTO)
+                      + '?tab=opportunities&stato=tutte&sev=critical&pagina='
+                      + encodeURIComponent(d.url)
+                      + '" title="Vedi solo i problemi critici di questa pagina">'
+                      + '<span class="score-cell critical">' + d.critici + '</span></a>'
+                    : '<span class="score-cell good">' + d.critici + '</span>') + '</td>'
                 + '<td class="row-action"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">Apri \u2192</a></td>'
                 + '</tr>';
             }).join("") || '<tr><td colspan="6" class="no-rows">Nessuna pagina corrisponde ai filtri.</td></tr>';
@@ -1174,7 +1218,10 @@ def _tab_pages(latest: dict | None) -> str:
           });
 
           /* CSV generato in pagina: i dati sono gia' tutti qui, un endpoint
-             dedicato non aggiungerebbe nulla. */
+             dedicato non aggiungerebbe nulla.
+             Per le CRITICITA' l'export sta invece sul server (Excel), perche'
+             deve portarsi dietro il testo «come si risolve» — vedi
+             `/project/<id>/export.xlsx`. */
           document.getElementById("pgCsv").addEventListener("click", function(){
             const righe = visibili();
             const csv = ["URL;Tipo;Score;Issue;Critici"].concat(
@@ -1218,7 +1265,7 @@ def _check_table(righe: list, titolo: str, sottotitolo: str) -> str:
     if not righe:
         return ""
     corpo = "".join(
-        '<tr>'
+        f'<tr data-stato="{"ok" if r["status"] == "ok" else "ko"}">'
         f'<td class="check-name">{geo_audit.esc(r["title"])}</td>'
         f'<td>{_status_pill(r["status"])}</td>'
         f'<td class="detail-text">{geo_audit.esc(r.get("detail") or "\u2014")}</td>'
@@ -1227,7 +1274,7 @@ def _check_table(righe: list, titolo: str, sottotitolo: str) -> str:
         for r in righe
     )
     schede = "".join(
-        '<div class="check-card">'
+        f'<div class="check-card" data-stato="{"ok" if r["status"] == "ok" else "ko"}">'
         f'<div class="check-card-top"><span class="check-name">{geo_audit.esc(r["title"])}</span>'
         f'{_status_pill(r["status"])}</div>'
         f'<div class="check-card-detail">{geo_audit.esc(r.get("detail") or "")}</div>'
@@ -1248,7 +1295,7 @@ def _check_table(righe: list, titolo: str, sottotitolo: str) -> str:
     )
 
 
-def _tab_technical(latest: dict | None) -> str:
+def _tab_technical(latest: dict | None, project_id: str = "") -> str:
     if not latest:
         return '<div class="data-card"><div class="no-rows">Nessun audit ancora eseguito.</div></div>'
 
@@ -1279,9 +1326,16 @@ def _tab_technical(latest: dict | None) -> str:
 
     riepilogo = (
         '<div class="tech-summary">'
-        '<div class="kpi"><div class="kpi-label">Check superati</div>'
+        # ⚠️ I due conteggi filtrano le tabelle qui sotto, invece di essere
+        # decorazioni: le righe ci sono già nella stessa pagina, non serve
+        # portare l'utente altrove — basta mostrargli solo quelle che ha chiesto.
+        '<div class="kpi kpi-filtro" data-filtro="ok" role="button" tabindex="0" '
+        'title="Mostra solo i controlli superati">'
+        '<div class="kpi-label">Check superati</div>'
         f'<div class="kpi-value good">{superati} / {len(tutti)}</div></div>'
-        '<div class="kpi"><div class="kpi-label">Da migliorare</div>'
+        '<div class="kpi kpi-filtro" data-filtro="ko" role="button" tabindex="0" '
+        'title="Mostra solo i controlli da migliorare">'
+        '<div class="kpi-label">Da migliorare</div>'
         f'<div class="kpi-value {"warn" if da_migliorare else "good"}">{da_migliorare}</div></div>'
         '<div class="kpi"><div class="kpi-label">Ultimo controllo</div>'
         f'<div class="kpi-value" style="font-size:16px">{_fmt_date(latest.get("created_at"))}</div></div>'
@@ -1294,11 +1348,80 @@ def _tab_technical(latest: dict | None) -> str:
                        "Verifica che i crawler AI possano raggiungere e leggere il sito.")
         + _check_table(strutturati, "Dati strutturati ed entity signals",
                        "Quanto il sito si fa capire: schema, contatti, profili, semantica.")
+        + '<script>'
+        r"""
+        (function(){
+          /* I due conteggi in cima filtrano le tabelle sotto. Cliccare di nuovo
+             sullo stesso toglie il filtro: senza, l'unico modo per tornare a
+             vedere tutto sarebbe ricaricare la pagina. */
+          let attivo = null;
+          const kpi = document.querySelectorAll(".kpi-filtro");
+
+          function applica(){
+            document.querySelectorAll("tr[data-stato], .check-card[data-stato]")
+              .forEach(el => { el.hidden = !!attivo && el.dataset.stato !== attivo; });
+            kpi.forEach(k => k.classList.toggle("attivo", k.dataset.filtro === attivo));
+            /* Una tabella rimasta senza righe visibili dice perche', invece di
+               presentarsi vuota e sembrare rotta. */
+            document.querySelectorAll(".data-card").forEach(box => {
+              const righe = box.querySelectorAll("tr[data-stato]");
+              if (!righe.length) return;
+              const viste = [...righe].filter(r => !r.hidden).length;
+              let nota = box.querySelector(".filtro-vuoto");
+              if (!viste){
+                if (!nota){
+                  nota = document.createElement("div");
+                  nota.className = "no-rows filtro-vuoto";
+                  box.appendChild(nota);
+                }
+                nota.textContent = attivo === "ok"
+                  ? "Qui nessun controllo risulta superato."
+                  : "Qui va tutto bene: nessun controllo da migliorare.";
+                nota.hidden = false;
+              } else if (nota) { nota.hidden = true; }
+            });
+          }
+
+          kpi.forEach(k => {
+            const scatta = () => {
+              attivo = attivo === k.dataset.filtro ? null : k.dataset.filtro;
+              applica();
+            };
+            k.addEventListener("click", scatta);
+            k.addEventListener("keydown", e => {
+              if (e.key === "Enter" || e.key === " "){ e.preventDefault(); scatta(); }
+            });
+          });
+        })();
+        """
+        '</script>'
     )
 
 
 
-def _tab_opportunities(project_id: str) -> str:
+def _rimedi_per_check(latest: dict | None) -> dict:
+    """Da `check_id` al testo che dice cosa fare, letto dall'ultimo audit.
+
+    ⚠️ Non si salva sulla riga della issue: la raccomandazione descrive il TIPO
+    di problema, non quella singola occorrenza. Copiarla su ogni riga vorrebbe
+    dire che, migliorando il testo in `geo_audit.py`, le issue già aperte
+    continuerebbero a mostrare la versione vecchia.
+    """
+    if not latest:
+        return {}
+    rimedi = {}
+    fonti = list(latest.get("site_checks") or [])
+    for p in (latest.get("pages_detail") or []):
+        fonti.extend(p.get("checks") or [])
+    for c in fonti:
+        cid = c.get("check_id") or c.get("id")
+        testo = (c.get("recommendation") or "").strip()
+        if cid and testo and cid not in rimedi:
+            rimedi[cid] = testo
+    return rimedi
+
+
+def _tab_opportunities(project_id: str, latest: dict | None = None) -> str:
     """Criticità del progetto: filtri, raggruppamento e paginazione reale.
 
     Manca l'azione "Segna risolto" prevista dal redesign: richiede un terzo
@@ -1312,11 +1435,16 @@ def _tab_opportunities(project_id: str) -> str:
         return ('<div class="data-card"><div class="no-rows">Nessuna criticità registrata: '
                 'esegui un audit per popolare questa sezione.</div></div>')
 
+    rimedi = _rimedi_per_check(latest)
+
     dati = []
     for i in issues:
         stato = i.get("status")
         dati.append({
             "id": i.get("id"),
+            # Cosa fare per risolverlo. Vuoto quando il check non porta una
+            # raccomandazione: si scrive che manca, invece di inventarla.
+            "rimedio": rimedi.get(i.get("check_id") or "", ""),
             "titolo": i.get("title") or i.get("check_id") or "",
             "check": i.get("check_id") or "",
             "sev": i.get("severity") or "",
@@ -1343,7 +1471,12 @@ def _tab_opportunities(project_id: str) -> str:
         '<button class="filter-chip on" id="opAperte" aria-pressed="true">Solo aperte</button>'
         '<button class="filter-chip" id="opCritiche" aria-pressed="false">Solo gravi</button>'
         '<div class="filter-spacer"></div>'
-        '<div class="group-toggle" role="group" aria-label="Raggruppamento">'
+        # ⚠️ Da qui non si poteva esportare niente: l'unico export del
+        # prodotto stava in Pages e riguardava le pagine, non le criticita'.
+        + (f'<a class="filter-chip" href="/project/{project_id}/export.xlsx?cosa=criticita" '
+           'title="Scarica le criticità con dentro come si risolvono">↓ Excel</a>'
+           if project_id else '')
+        + '<div class="group-toggle" role="group" aria-label="Raggruppamento">'
         '<button id="opPerPagina" class="active">Per pagina</button>'
         '<button id="opPerCheck">Per check</button>'
         '</div>'
@@ -1372,6 +1505,34 @@ def _tab_opportunities(project_id: str) -> str:
             c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
           const sevCls = s => ({critical:"high", high:"high", medium:"medium"}[s] || "low");
 
+          /* I filtri possono arrivare dall'indirizzo: ?pagina=<url> o ?sev=critical.
+             Servono ai numeri cliccabili delle altre schermate, e hanno il
+             vantaggio di rendere il link condivisibile — chi lo riceve vede la
+             stessa lista, non la lista intera. */
+          (function daIndirizzo(){
+            const p = new URLSearchParams(location.search);
+            const pagina = p.get("pagina");
+            const sev = p.get("sev");
+            if (pagina){
+              document.getElementById("opCerca").value = pagina;
+              perPagina = true;
+              document.getElementById("opPerPagina").classList.add("active");
+              document.getElementById("opPerCheck").classList.remove("active");
+            }
+            if (sev === "critical"){
+              soloGravi = true;
+              const b = document.getElementById("opCritiche");
+              b.classList.add("on");
+              b.setAttribute("aria-pressed", "true");
+            }
+            if (p.get("stato") === "tutte"){
+              soloAperte = false;
+              const b = document.getElementById("opAperte");
+              b.classList.remove("on");
+              b.setAttribute("aria-pressed", "false");
+            }
+          })();
+
           function filtrate(){
             const q = document.getElementById("opCerca").value.trim().toLowerCase();
             return OP_DATI.filter(d => {
@@ -1395,8 +1556,12 @@ def _tab_opportunities(project_id: str) -> str:
           }
 
           function tabella(righe){
-            const corpo = righe.map(d => '<tr>'
-              + '<td class="check-name">' + esc(d.titolo) + '</td>'
+            /* Ogni riga ne porta una seconda, nascosta, con la spiegazione.
+               ⚠️ Il solo titolo del check non basta a chi deve agire da solo:
+               «Completezza proprietà schema» dice cosa non va, non cosa fare. */
+            const corpo = righe.map(d => '<tr class="riga-issue" data-id="' + esc(d.id) + '">'
+              + '<td class="check-name"><span class="apri-riga" aria-hidden="true">›</span>'
+              +   esc(d.titolo) + '</td>'
               + (perPagina ? '' : '<td class="detail-text">' + esc(d.url || "livello sito") + '</td>')
               + '<td><span class="badge ' + sevCls(d.sev) + '">' + esc(d.sev || "n.d.") + '</span></td>'
               + '<td class="date-muted">' + esc(d.prima) + '</td>'
@@ -1409,6 +1574,21 @@ def _tab_opportunities(project_id: str) -> str:
                     ? '<button class="row-resolve" data-id="' + esc(d.id) + '">Segna risolto</button>'
                     : '')
               + '</td>'
+              + '</tr>'
+              + '<tr class="riga-rimedio" data-per="' + esc(d.id) + '" hidden>'
+              +   '<td colspan="' + (perPagina ? 6 : 7) + '">'
+              +     '<div class="rimedio">'
+              +       '<div class="rimedio-titolo">Come si risolve</div>'
+              +       '<div class="rimedio-testo">'
+              +         (d.rimedio
+                          ? esc(d.rimedio)
+                          : '<span class="rimedio-assente">Per questo controllo non '
+                            + 'abbiamo ancora scritto una spiegazione operativa.</span>')
+              +       '</div>'
+              +       (d.url ? '<div class="rimedio-dove">Sulla pagina: <code>'
+                               + esc(d.url) + '</code></div>' : '')
+              +     '</div>'
+              +   '</td>'
               + '</tr>').join("");
             return '<div class="table-scroll"><table class="data-grid"><thead><tr>'
               + '<th>Check</th>' + (perPagina ? '' : '<th>Pagina</th>')
@@ -1466,6 +1646,19 @@ def _tab_opportunities(project_id: str) -> str:
 
             cont.querySelectorAll(".row-resolve[data-id]").forEach(b => {
               b.addEventListener("click", () => chiudiAMano(b));
+            });
+
+            /* Aprire la riga per leggere la soluzione. Il clic sul bottone
+               «Segna risolto» non deve aprirla: sono due intenzioni diverse. */
+            cont.querySelectorAll("tr.riga-issue").forEach(tr => {
+              tr.addEventListener("click", e => {
+                if (e.target.closest("button, a")) return;
+                const sotto = cont.querySelector(
+                  'tr.riga-rimedio[data-per="' + CSS.escape(tr.dataset.id) + '"]');
+                if (!sotto) return;
+                sotto.hidden = !sotto.hidden;
+                tr.classList.toggle("aperta", !sotto.hidden);
+              });
             });
           }
 
@@ -2235,8 +2428,50 @@ def _nav_icon(chiave: str) -> str:
             f'stroke-width="2" aria-hidden="true">{_NAV_ICONS.get(chiave, "")}</svg>')
 
 
+def menu_utente(email: str, e_admin: bool = False, verso_basso: bool = False) -> str:
+    """Le azioni sul proprio account: il pannello del team, e l'uscita.
+
+    ⚠️ `e_admin` arriva da chi costruisce la pagina, che lo legge con la STESSA
+    funzione che protegge il pannello (`_e_admin` in `db.py`). Non si ricava qui
+    da un'euristica sull'email: due modi diversi di decidere chi è del team
+    finirebbero per dire cose diverse, e quello sbagliato sarebbe questo —
+    mostrare a un cliente un link che poi gli risponde «pagina non trovata».
+
+    Nascondere il link NON è il controllo: il controllo è sulla route. Questo
+    serve solo a non far vedere una porta che non si può aprire.
+    """
+    voci = []
+    if e_admin:
+        voci.append(
+            '<a href="/admin">'
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+            'aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/>'
+            '<rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>'
+            '<rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Pannello del team</a>')
+    voci.append(
+        '<a href="/auth/logout">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+        'aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>'
+        '<path d="M16 17l5-5-5-5M21 12H9"/></svg>Esci</a>')
+
+    iniziale = geo_audit.esc((email or "?")[:1].upper())
+    return (
+        f'<details class="menu-utente{" giu" if verso_basso else ""}">'
+        '<summary>'
+        f'<div class="avatar">{iniziale}</div>'
+        f'<span class="email" title="{geo_audit.esc(email)}">{geo_audit.esc(email)}</span>'
+        '<svg class="freccia" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'
+        '</summary>'
+        '<div class="menu-utente-voci">'
+        f'<div class="menu-utente-email">{geo_audit.esc(email)}</div><hr>'
+        + "".join(voci) +
+        '</div></details>'
+    )
+
+
 def _sidebar(project: dict, latest: dict | None, open_issues: int,
-             active_tab: str, user_email: str = "") -> str:
+             active_tab: str, user_email: str = "", e_admin: bool = False) -> str:
     """Il menu laterale: identita', progetto corrente, sezioni, utente."""
     pid = project["id"]
     attiva = _category_for_tab(active_tab)
@@ -2261,7 +2496,6 @@ def _sidebar(project: dict, latest: dict | None, open_issues: int,
             f'{coda}</a>'
         )
 
-    iniziale = geo_audit.esc((user_email or "?")[:1].upper())
     return (
         '<aside class="sidebar" id="sidebar">'
         '<button class="sidebar-close" onclick="chiudiMenu()" aria-label="Chiudi il menu">'
@@ -2297,8 +2531,11 @@ def _sidebar(project: dict, latest: dict | None, open_issues: int,
         '</div>'
 
         '<div class="sidebar-footer">'
-        f'<div class="avatar">{iniziale}</div>'
-        f'<div class="email" title="{geo_audit.esc(user_email)}">{geo_audit.esc(user_email)}</div>'
+        # ⚠️ Qui prima c'erano avatar ed email e basta: da questa pagina non si
+        # poteva uscire. Ora sono il bottone di un menu che contiene «Esci» —
+        # e, per chi è del team, il passaggio al pannello.
+        + menu_utente(user_email, e_admin)
+        + 
         '<button class="theme-toggle" onclick="cambiaTema()" aria-label="Cambia tema">'
         '<svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         'stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41'
