@@ -39,6 +39,7 @@ Ultimo allineamento al codice: **18 agosto 2026** (commit `b29a35d`).
 | [05 · Applicazione web](05-applicazione-web.md) | Tutte le route, auth magic link, dashboard, 12 tab di progetto, tracking |
 | [06 · Email](06-email.md) | Inventario delle 8 email transazionali, trigger, quali sono orfane |
 | [07 · Design system](07-design-system.md) | Token, font, componenti, regole per non rompere la coerenza visiva |
+| [12 · Scoring e pesi](12-scoring-e-pesi.md) | Formula di scoring, peso di ogni check, effetto diluizione con numeri, punti da verificare |
 
 ### Come operarlo
 
