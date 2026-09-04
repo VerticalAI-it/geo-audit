@@ -596,17 +596,18 @@ prodotto in linguaggio naturale per gli assistenti AI che leggono il sito.
 
 ## Il pannello del team (`/admin`)
 
-Sette schermate a uso interno, in `admin.py` + `templates/admin.html`. Chiudono
+Otto schermate a uso interno, in `admin.py` + `templates/admin.html`. Chiudono
 il cerchio del flusso di accesso: i lead diventano clienti qui.
 
 | Route | Cosa fa |
 |---|---|
-| `/admin` | Overview: clienti attivi, lead in attesa, chi non è mai entrato, chi è fermo |
+| `/admin` | Overview: KPI, cosa richiede attenzione, andamento nel tempo, attività recente |
 | `/admin/lead` | Coda delle richieste, con l'audit preliminare e «Valida cliente» |
-| `/admin/clienti` | Elenco account, abilita/disabilita |
-| `/admin/job-log` | Esecuzioni del motore |
+| `/admin/clienti` | Elenco account, abilita/disabilita, **aggiungi cliente** |
+| `/admin/clienti/{id}` | Scheda del singolo cliente: note, accessi, progetti |
+| `/admin/job-log` | Esecuzioni del motore, con durata e rilancio (singolo o in blocco) |
 | `/admin/tracking` | Progetti che non hanno mai mandato un evento |
-| `/admin/interesse` | Richieste «voglio essere contattato» dal report esterno |
+| `/admin/interesse` | Segnali commerciali: report esterno **e** roadmap pubblica |
 | `/admin/log` | Chi ha fatto cosa nel pannello |
 
 ### Il ruolo, che prima non esisteva
@@ -642,12 +643,17 @@ schermata per rientrare.
 
 ### Il registro delle azioni
 
-Ogni approvazione o disabilitazione scrive in `tracking_event` con
-`event_name = 'admin_action'`. ⚠️ È lo stesso compromesso già preso per i voti
-della roadmap, con lo stesso limite: **`tracking_event` sta diventando un
-registro eventi generico**, e quando queste righe conteranno davvero — un audit
-di sicurezza, una contestazione — vorranno una tabella con i vincoli giusti. Il
-punto da cui migrare sono `_sb_admin_traccia` / `_sb_admin_azioni`.
+Ogni azione del pannello scrive una riga in **`admin_audit_log`** (vedi più
+avanti). Il registro non deve poter far fallire l'azione che sta registrando: se
+la scrittura non riesce, l'approvazione resta valida e l'errore viene ingoiato.
+
+⚠️ Restano invece in `tracking_event` i **voti e le iscrizioni della roadmap**,
+salvati come `event_name = 'roadmap_vote'` / `'roadmap_signup'` con i dati nel
+JSON `properties`. Il documento funzionale proponeva due tabelle dedicate
+(`roadmap_votes`, `roadmap_signups`): si è preferito non aggiungere DDL per due
+elenchi che oggi sono corti. **Il limite è noto**: nessun vincolo di unicità sul
+votante, e i filtri passano da `properties->>...`. Il punto da cui migrare sono
+`_sb_roadmap_voti` / `_sb_roadmap_iscrizioni` in `db.py`.
 
 ### La scheda del singolo cliente (`/admin/clienti/{id}`)
 
@@ -707,3 +713,72 @@ HTTP non può restare aperta tanto.
 `admin_audit_log`, non più `tracking_event`: colonne vere al posto di un JSON
 libero, con `actor_email` e `action_type` `NOT NULL` — una riga monca non ci
 entra.
+
+### Rilanciare in blocco
+
+`/admin/job/rilancia-tutti` rifà tutti i fallimenti ancora aperti in una volta.
+
+⚠️ **La lista la calcola `admin.falliti_da_rilanciare()`, non la route.** È la
+stessa funzione che decide cosa scrivere sul bottone: se il conto lo facessero
+separatamente, prima o poi il bottone direbbe «rilancia tutti e 5» e il server ne
+rifarebbe sette. Il bottone compare solo con più di un fallimento aperto — con
+uno solo, quello della sua riga fa già la stessa cosa.
+
+⚠️ **C'è un tetto** (`admin.MAX_RILANCIO_BLOCCO`, oggi 10). Ogni audit è un giro
+di crawler da un paio di minuti: farne partire trenta insieme vuol dire vederli
+morire tutti sul limite di durata della function, e ritrovarsi con trenta
+fallimenti nuovi al posto di quelli vecchi. Quando il tetto morde, il bottone lo
+dice: «Rilancia i primi 10 di 23».
+
+### La durata di un'esecuzione
+
+Si calcola da `created_at` → `completed_at`, già presenti sulla riga.
+
+⚠️ **Zero non vuol dire «istantaneo», vuol dire «non lo sappiamo».** Fino al 3
+settembre 2026 i fallimenti registravano inizio e fine nello stesso istante,
+perché l'ora la prendeva il ramo d'errore; su quelle righe la colonna scrive
+«—». Da adesso chi lancia il motore passa `iniziato=` a `_sb_audit_fallito()`,
+così la durata di un timeout è quella vera — che è poi l'unica informazione per
+cui la colonna esiste, perché distingue un timeout da un DNS che non risolve.
+
+### Aggiungere un cliente a mano
+
+`/admin/clienti/aggiungi` crea un account già attivo, saltando la coda lead.
+
+⚠️ La casella **«mandagli subito il link»** esiste perché *avvisare o no* è una
+decisione di prodotto ancora aperta (documento Admin Dashboard §7.2). Finché non
+è presa, non la prende il codice: la prende chi crea l'account, una volta per
+volta. Il valore predefinito è «sì», perché un cliente creato e mai avvisato non
+sa di esistere e resterebbe in elenco come «mai entrato» per sempre.
+
+### Il grafico dell'Overview
+
+Due linee, punteggio medio e fallimenti, sull'intervallo scelto (7/30/90).
+
+⚠️ **Le due linee non coprono lo stesso periodo, e non è un difetto.** Quella dei
+fallimenti comincia dal 3 settembre 2026, da quando i fallimenti lasciano una
+riga: prolungarla indietro a zero direbbe «prima non ne falliva nessuno», che è
+esattamente ciò che non sappiamo. Quando la linea c'è, una nota sotto il grafico
+lo dichiara; quando non c'è, la nota sparisce con lei — una spiegazione senza il
+suo oggetto confonde invece di chiarire.
+
+⚠️ Le **sparkline nei KPI** si disegnano solo dove l'andamento è ricostruibile
+davvero. Per «lead in attesa» non lo è — un lead approvato esce dalla coda e non
+lascia il conteggio di ieri — quindi lì non c'è nessuna sparkline, invece di
+inventarne una piatta.
+
+⚠️ L'intervallo arriva dall'indirizzo (`?giorni=`) e **si valida**: un valore
+fuori dai tre previsti ricade su 30. `?giorni=100000` costruirebbe centomila
+secchi vuoti prima ancora di disegnare qualcosa.
+
+### Indirizzi email: un controllo solo, su sei porte
+
+`email_plausibile()` in `server.py`, usata da tutte e sei le route che accettano
+un indirizzo da fuori (login, richiesta accesso, approva lead, aggiungi cliente,
+link manuale, «avvisami» della roadmap).
+
+⚠️ Cercare la chiocciola non basta: **`@dominio.it` ce l'ha e non è un
+indirizzo**. Nemmeno «chiocciola più un punto» basta, perché guarda solo la parte
+dopo. Senza qualcosa *prima* della chiocciola la richiesta arrivava fino a
+Supabase, che rispondeva con un errore di rete buio — e sul form pubblico quello
+lo vedeva l'utente, senza capire cosa avesse sbagliato.

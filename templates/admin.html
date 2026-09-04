@@ -100,6 +100,106 @@
   .pill.bad{background:var(--state-critical-dim); color:var(--state-critical);}
   .pill.neutro{background:var(--bg-surface-raised); color:var(--text-muted);}
 
+  /* ── Overview ──────────────────────────────────────────────────────────
+     Classi prese dal prototipo `01_overview.html` del documento funzionale:
+     la fonte di verità visiva è quella, non un'invenzione locale. */
+  .kpi-strip{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:28px;}
+  .kpi{background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px 18px; box-shadow:var(--card-shadow);}
+  .kpi-label{font-size:11.5px; color:var(--text-muted); font-weight:500; margin-bottom:8px;}
+  .kpi-value-row{display:flex; align-items:flex-end; justify-content:space-between; gap:8px;}
+  .kpi-value{font-family:var(--font-display); font-size:28px; font-weight:600;}
+  .kpi-value.warn{color:var(--state-warn);}
+  .kpi-value.critical{color:var(--state-critical);}
+  .kpi-value.good{color:var(--state-good);}
+  .kpi-spark{width:64px; height:26px;}
+  .kpi-sub{font-size:11.5px; color:var(--text-muted); margin-top:4px;}
+
+  .section-title{font-family:var(--font-display); font-size:15px; font-weight:600; margin-bottom:14px;}
+  .attention-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:28px;}
+  .attention-card{background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:18px; display:flex; flex-direction:column; gap:10px; cursor:pointer; transition:border-color .15s ease, transform .15s ease; box-shadow:var(--card-shadow);}
+  .attention-card:hover{border-color:var(--accent-primary); transform:translateY(-2px);}
+  .attention-top{display:flex; align-items:flex-start; justify-content:space-between;}
+  .attention-icon{width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .attention-icon.warn{background:var(--state-warn-dim); color:var(--state-warn);}
+  .attention-icon.critical{background:var(--state-critical-dim); color:var(--state-critical);}
+  .attention-icon.accent{background:var(--accent-primary-dim); color:var(--accent-primary);}
+  .attention-badge{font-family:var(--font-display); font-size:24px; font-weight:700;}
+  .attention-badge.warn{color:var(--state-warn);}
+  .attention-badge.critical{color:var(--state-critical);}
+  .attention-badge.accent{color:var(--accent-primary);}
+  .attention-title{font-size:13.5px; font-weight:600;}
+  .attention-desc{font-size:11.5px; color:var(--text-muted); line-height:1.4;}
+  .attention-link{font-size:11.5px; color:var(--accent-primary); font-weight:600; margin-top:2px;}
+
+  .trend-card{background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:22px 24px; margin-bottom:24px; box-shadow:var(--card-shadow);}
+  .trend-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px;}
+  .trend-title{font-family:var(--font-display); font-size:15px; font-weight:600;}
+  .range-toggle{display:flex; gap:2px; background:var(--bg-surface-raised); padding:3px; border-radius:8px;}
+  .range-toggle span{display:block; font-size:11.5px; padding:5px 10px; border-radius:6px; color:var(--text-muted); cursor:pointer;}
+  .range-toggle span.active{background:var(--accent-primary); color:#fff;}
+  .trend-chart{height:150px;}
+  .trend-chart svg{width:100%; height:100%;}
+  .trend-legend{display:flex; gap:16px; margin-top:10px; flex-wrap:wrap;}
+  .legend-item{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-muted);}
+  .legend-dot{width:8px; height:8px; border-radius:2px;}
+
+  .activity-card{background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); overflow:hidden; box-shadow:var(--card-shadow);}
+  .activity-header{display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border-subtle);}
+  .activity-title{font-family:var(--font-display); font-size:15px; font-weight:600;}
+  .activity-link{font-size:12px; color:var(--accent-primary); font-weight:600;}
+  .activity-row{display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border-subtle); font-size:12.5px;}
+  .activity-row:last-child{border-bottom:none;}
+  .activity-dot{width:7px; height:7px; border-radius:50%; flex-shrink:0;}
+  .activity-dot.good{background:var(--state-good);}
+  .activity-dot.warn{background:var(--state-warn);}
+  .activity-dot.accent{background:var(--accent-primary);}
+  .activity-text{flex:1; color:var(--text-secondary);}
+  .activity-text b{color:var(--text-primary); font-weight:600;}
+  .activity-time{font-family:var(--font-mono); font-size:11px; color:var(--text-muted); flex-shrink:0;}
+
+  @media (max-width:1100px){
+    .kpi-strip{grid-template-columns:repeat(2,1fr);}
+    .attention-grid{grid-template-columns:repeat(2,1fr);}
+  }
+  @media (max-width:700px){
+    .kpi-strip, .attention-grid{grid-template-columns:1fr;}
+  }
+
+  /* ── Interesse commerciale ─────────────────────────────────────────────
+     Classi prese dal prototipo `07_interesse.html`. */
+  .kpi-strip.tre{grid-template-columns:repeat(3,1fr);}
+  .section-title .count{font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted); font-weight:400; margin-left:8px;}
+  .sezione{background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); overflow:hidden; box-shadow:var(--card-shadow); margin-bottom:28px;}
+  .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:10.5px; font-weight:600; font-family:var(--font-mono);}
+  .badge::before{content:''; width:5px; height:5px; border-radius:50%;}
+  .badge.new{background:var(--accent-primary-dim); color:var(--accent-primary);}
+  .badge.new::before{background:var(--accent-primary);}
+  .badge.contacted{background:var(--state-good-dim); color:var(--state-good);}
+  .badge.contacted::before{background:var(--state-good);}
+  .vote-row{display:flex; align-items:center; gap:14px; padding:12px 20px; border-bottom:1px solid var(--border-subtle);}
+  .vote-row:last-child{border-bottom:none;}
+  .vote-name{flex:1; font-size:13px; font-weight:500;}
+  .vote-bar-wrap{width:180px; display:flex; align-items:center; gap:10px;}
+  .vote-bar-track{flex:1; height:7px; background:var(--bg-surface-raised); border-radius:10px; overflow:hidden;}
+  .vote-bar-fill{height:100%; background:var(--accent-primary); border-radius:10px;}
+  .vote-conteggio{font-family:var(--font-mono); font-size:12.5px; font-weight:600; color:var(--accent-primary); width:38px; text-align:right;}
+  @media (max-width:900px){ .kpi-strip.tre{grid-template-columns:1fr;} .vote-bar-wrap{width:100px;} }
+
+  /* Finestra a comparsa: si apre con [hidden] tolto, non con display inline,
+     così il CSS resta l'unico posto dove si decide come appare. */
+  .modale{position:fixed; inset:0; background:rgba(10,10,15,.55); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;}
+  .modale[hidden]{display:none;}
+  .modale-corpo{background:var(--bg-surface); border:1px solid var(--border-medium); border-radius:var(--radius-lg); padding:24px; width:100%; max-width:420px; box-shadow:0 12px 40px rgba(0,0,0,.28);}
+  .modale-titolo{font-family:var(--font-display); font-size:17px; font-weight:600; margin-bottom:6px;}
+  .modale-sotto{font-size:12.5px; color:var(--text-muted); margin-bottom:16px; line-height:1.45;}
+  .campo{display:block; margin-bottom:14px;}
+  .campo span{display:block; font-size:12px; color:var(--text-secondary); font-weight:500; margin-bottom:5px;}
+  .campo input[type=email]{width:100%; background:var(--bg-surface-raised); border:1px solid var(--border-medium); border-radius:var(--radius-sm); padding:10px 12px; color:var(--text-primary); font-family:var(--font-body); font-size:13.5px;}
+  .campo input[type=email]:focus{outline:2px solid var(--accent-primary); outline-offset:1px;}
+  .campo-check{display:flex; align-items:flex-start; gap:9px; font-size:12.5px; color:var(--text-secondary); margin-bottom:18px; cursor:pointer;}
+  .campo-check input{margin-top:2px; flex-shrink:0;}
+  .modale-azioni{display:flex; gap:8px; justify-content:flex-end;}
+
   .avviso{display:flex; gap:11px; align-items:flex-start; background:var(--state-warn-dim); border:1px solid var(--state-warn-dim); border-radius:var(--radius-md); padding:13px 16px; font-size:13px; color:var(--text-secondary); margin-bottom:18px;}
   .avviso b{color:var(--text-primary);}
 
@@ -222,6 +322,30 @@
     document.querySelectorAll('.icon-moon').forEach(el => el.style.display = scuro ? 'none' : 'block');
   })();
 
+  /* Apertura e chiusura delle finestre a comparsa. */
+  document.addEventListener('click', function(e){
+    const apri = e.target.closest('[data-apri]');
+    if(apri){
+      e.preventDefault();
+      const m = document.getElementById(apri.getAttribute('data-apri'));
+      if(m){ m.hidden = false; const f = m.querySelector('input'); if(f) f.focus(); }
+      return;
+    }
+    const chiudi = e.target.closest('[data-chiudi]');
+    if(chiudi){
+      e.preventDefault();
+      const m = chiudi.closest('.modale');
+      if(m) m.hidden = true;
+      return;
+    }
+    /* Un clic sullo sfondo chiude, uno dentro il riquadro no. */
+    if(e.target.classList && e.target.classList.contains('modale')) e.target.hidden = true;
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape')
+      document.querySelectorAll('.modale:not([hidden])').forEach(m => m.hidden = true);
+  });
+
   /* Le azioni del pannello cambiano dati veri: si conferma, si aspetta la
      risposta del server, e solo allora si aggiorna la pagina. Mostrare «fatto»
      prima che il server abbia risposto vorrebbe dire mentire quando fallisce. */
@@ -229,6 +353,26 @@
     const b = e.target.closest('[data-azione]');
     if(!b) return;
     e.preventDefault();
+    /* Un bottone dentro una finestra a comparsa manda quello che c'è scritto
+       nei campi, invece di un corpo fisso. La validazione del browser vale
+       come primo filtro — quella vera è sul server. */
+    let corpo = b.getAttribute('data-corpo') || '{}';
+    const conModulo = b.getAttribute('data-campi');
+    if(conModulo){
+      const cassetto = document.getElementById(conModulo);
+      const dati = {};
+      let mancante = null;
+      cassetto.querySelectorAll('[name]').forEach(el => {
+        if(el.type === 'checkbox'){ dati[el.name] = el.checked; return; }
+        const v = (el.value || '').trim();
+        if(!v && el.required && !mancante) mancante = el;
+        if(el.type === 'email' && v && !el.checkValidity() && !mancante) mancante = el;
+        dati[el.name] = v;
+      });
+      if(mancante){ mancante.focus(); mancante.reportValidity(); return; }
+      corpo = JSON.stringify(dati);
+    }
+
     const conferma = b.getAttribute('data-conferma');
     if(conferma && !window.confirm(conferma)) return;
     const testo = b.textContent;
@@ -238,9 +382,15 @@
       const r = await fetch(b.getAttribute('data-azione'), {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: b.getAttribute('data-corpo') || '{}'
+        body: corpo
       });
-      if(!r.ok) throw new Error(await r.text());
+      const esito = await r.json().catch(() => ({}));
+      if(r.status === 409 && esito.esito === 'gia_esiste'){
+        b.disabled = false; b.textContent = testo;
+        alert("Quell'indirizzo ha già un accesso: lo trovi nell'elenco qui sotto.");
+        return;
+      }
+      if(!r.ok) throw new Error(esito.esito || r.status);
       window.location.reload();
     }catch(err){
       b.disabled = false;

@@ -23,7 +23,8 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_issue_resolve_manually, _sb_issue_sync, _sb_issues_by_project, _sb_patch, _sb_project_bump_scan, \
     _sb_project_claim_due, _sb_project_get, _sb_project_patch, _sb_project_upsert, \
     _sb_audits_by_user_grouped, _sb_projects_with_tracking, \
-    _sb_projects_by_user, _sb_roadmap_iscrivi, _sb_roadmap_vota, _sb_roadmap_voti, \
+    _sb_projects_by_user, _sb_roadmap_iscrivi, _sb_roadmap_iscrizioni, \
+    _sb_roadmap_vota, _sb_roadmap_voti, \
     _sb_user_theme, _sb_user_theme_set, \
     _LEAD_SOURCE, _sb_auth_find_by_email, _sb_auth_magiclink, _sb_lead_attach_audit, _sb_lead_insert, \
     _sb_link_richiesto, _sb_link_troppo_spesso, _sb_login_riuscito, \
@@ -38,7 +39,7 @@ from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_C
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
     _project_status, _sidebar, _subtabs, _tab_audit, _tab_campione, _tab_opportunities, \
     _tab_overview, _tab_pages, _tab_reports, _tab_settings, _tab_technical, _tab_traffic, \
-    _ultimi_run_section
+    _ultimi_run_section, roadmap_nomi
 
 
 app = FastAPI(title="GEO Audit · verticalai")
@@ -122,6 +123,7 @@ async def _run_project_scan(project: dict) -> dict:
     url = domain if domain.startswith(("http://", "https://")) else "https://" + domain
 
     try:
+        _iniziato = datetime.now(timezone.utc).isoformat()
         res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
 
         row = _sb_insert({
@@ -165,7 +167,8 @@ async def _run_project_scan(project: dict) -> dict:
         # nessuno guarda e che scadono. Senza una riga nel database, un
         # monitoraggio automatico che fallisce su un cliente non lo sa nessuno.
         _sb_audit_fallito(url, f"{e!r} {body}".strip(), project_id=project_id,
-                          user_id=project.get("user_id"), origine="auto")
+                          user_id=project.get("user_id"), origine="auto",
+                          iniziato=_iniziato)
         try:
             _sb_project_bump_scan(project_id, frequency)
         except Exception:
@@ -915,7 +918,7 @@ async def auth_richiedi_link(request: Request):
     if not next_path.startswith("/"):
         next_path = "/dashboard"
 
-    if "@" not in email or "." not in email.split("@")[-1]:
+    if not email_plausibile(email):
         return JSONResponse({"esito": "email_non_valida"}, status_code=400)
 
     utente = _sb_auth_find_by_email(email)
@@ -1016,6 +1019,7 @@ async def _audit_preliminare(lead_id: str, sito: str) -> None:
     probabilità di finire entro i limiti di tempo della piattaforma.
     """
     try:
+        _iniziato = datetime.now(timezone.utc).isoformat()
         res = await run_in_threadpool(geo_audit.run_audit, sito, 4, False, False)
         row = _sb_insert({
             "url": sito,
@@ -1041,7 +1045,7 @@ async def _audit_preliminare(lead_id: str, sito: str) -> None:
         # già salvata e il team l'ha già ricevuta per email. Ma la traccia serve,
         # o nella coda lead resterebbe per sempre uno «analisi in corso» che non
         # finirà mai, senza che nessuno sappia perché.
-        _sb_audit_fallito(sito, repr(e), origine="auto")
+        _sb_audit_fallito(sito, repr(e), origine="auto", iniziato=_iniziato)
 
 
 @app.get("/richiedi-accesso", response_class=HTMLResponse)
@@ -1057,7 +1061,7 @@ async def richiedi_accesso(request: Request, background: BackgroundTasks,
                            email: str = Form(...), sito: str = Form(...),
                            telefono: str = Form("")):
     email = (email or "").strip().lower()
-    if "@" not in email or "." not in email.split("@")[-1]:
+    if not email_plausibile(email):
         return HTMLResponse(_render(LEAD_HTML, EMAIL=geo_audit.esc(email)), status_code=400)
 
     sito_ok = _normalizza_sito(sito)
@@ -1096,6 +1100,22 @@ def richiesta_ricevuta(email: str = "", sito: str = ""):
 # controllo, e non lo e' nemmeno nascondere un link dal menu.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ⚠️ Non basta cercare la chiocciola: «@dominio.it» ce l'ha, e non è un
+# indirizzo. Nemmeno «chiocciola più un punto» basta, perché guarda solo la
+# parte dopo. Senza qualcosa PRIMA della chiocciola la richiesta arrivava fino a
+# Supabase, che rispondeva con un errore di rete buio invece di dire che
+# l'indirizzo era scritto male — e sul form pubblico quell'errore lo vedeva
+# l'utente, senza capire cosa avesse sbagliato.
+#
+# Non è la grammatica completa di un indirizzo, che sa solo il server di posta:
+# serve a fermare gli errori di battitura prima che diventino errori di rete.
+_EMAIL_PLAUSIBILE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
+
+
+def email_plausibile(email: str) -> bool:
+    return bool(_EMAIL_PLAUSIBILE.match((email or "").strip()))
+
+
 def _admin_o_no(request: Request):
     """(utente, refreshed) se e' del team, altrimenti (None, risposta da dare).
 
@@ -1121,14 +1141,29 @@ def _admin_traccia(user: dict, azione: str, bersaglio: str = "") -> None:
         pass
 
 
-def _admin_conteggi(lead: list | None = None) -> dict:
+def _admin_conteggi(lead: list | None = None, audit: list | None = None,
+                    senza_tracking: int | None = None) -> dict:
     """I numeri nei badge del menu. Sono dati veri: un badge che mostra un numero
-    inventato e' peggio di un badge assente."""
+    inventato e' peggio di un badge assente.
+
+    Chi ha gia' in mano i dati li passa, cosi' non si rilegge il database due
+    volte per la stessa pagina; chi non li ha lascia il valore fuori e il badge
+    semplicemente non compare — meglio nessun numero che un numero a caso.
+    """
     try:
         n_lead = len(lead if lead is not None else admin._lead_in_attesa())
     except Exception:
         n_lead = 0
-    return {"lead": n_lead}
+
+    out = {"lead": n_lead}
+    if audit is not None:
+        try:
+            out["job"] = len(admin.falliti_da_rilanciare(audit))
+        except Exception:
+            pass
+    if senza_tracking is not None:
+        out["tracking"] = senza_tracking
+    return out
 
 
 def _admin_pagina(request: Request, user: dict, attiva: str, titolo: str,
@@ -1157,18 +1192,29 @@ def _admin_pagina(request: Request, user: dict, attiva: str, titolo: str,
 
 
 @app.get("/admin", response_class=HTMLResponse)
-def admin_overview(request: Request):
+def admin_overview(request: Request, giorni: int = 30):
     user, refreshed, stop = _admin_o_no(request)
     if stop is not None:
         return _apply_refresh(stop, refreshed)
 
+    # L'intervallo del grafico arriva dall'indirizzo. Un valore fuori dai tre
+    # previsti si riporta a 30 invece di fidarsene: `?giorni=100000` costruirebbe
+    # centomila secchi vuoti prima ancora di disegnare qualcosa.
+    if giorni not in (7, 30, 90):
+        giorni = 30
+
     lead = admin._lead_in_attesa()
     clienti = admin._clienti()
-    contenuto = admin.schermata_overview(lead, clienti)
+    audit = _sb_audits_recenti(limit=500)
+    progetti = _sb_progetti_tutti()
+    con_tracking = _sb_projects_with_tracking([p["id"] for p in progetti]) if progetti else set()
+    senza_tracking = len([p for p in progetti if p["id"] not in con_tracking])
+    contenuto = admin.schermata_overview(
+        lead, clienti, audit, _sb_admin_azioni(limit=8), senza_tracking, giorni)
     return _apply_refresh(HTMLResponse(_admin_pagina(
         request, user, "overview", "Overview",
         "Come sta andando il prodotto, in una schermata.",
-        contenuto, _admin_conteggi(lead))), refreshed)
+        contenuto, _admin_conteggi(lead, audit, senza_tracking))), refreshed)
 
 
 @app.get("/admin/lead", response_class=HTMLResponse)
@@ -1202,7 +1248,7 @@ async def admin_lead_approva(request: Request):
     except Exception:
         body = {}
     email = (body.get("email") or "").strip().lower()
-    if "@" not in email:
+    if not email_plausibile(email):
         return JSONResponse({"esito": "email_non_valida"}, status_code=400)
 
     if _sb_auth_find_by_email(email):
@@ -1283,6 +1329,7 @@ async def _rilancia_audit(audit_id: str, url: str, project_id: str | None,
     solo, perché una riga riuscita più recente lo rende inutile.
     """
     try:
+        _iniziato = datetime.now(timezone.utc).isoformat()
         res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
         row = _sb_insert({
             "user_id": user_id,
@@ -1317,7 +1364,7 @@ async def _rilancia_audit(audit_id: str, url: str, project_id: str | None,
         # Rifallisce: si scrive di nuovo, così il pannello mostra che il
         # problema è ricorrente invece di far sparire il tentativo.
         _sb_audit_fallito(url, repr(e), project_id=project_id, user_id=user_id,
-                          origine="manual")
+                          origine="manual", iniziato=_iniziato)
 
 
 @app.post("/admin/job/rilancia")
@@ -1356,6 +1403,71 @@ async def admin_job_rilancia(request: Request, background: BackgroundTasks):
     _admin_traccia(user, "rilancia_job", riga.get("domain") or url)
     return JSONResponse({"esito": "avviato"})
 
+@app.post("/admin/job/rilancia-tutti")
+async def admin_job_rilancia_tutti(request: Request, background: BackgroundTasks):
+    """Rilancia in un colpo solo i fallimenti ancora aperti.
+
+    ⚠️ La lista NON si ricalcola qui: la chiede a `admin.falliti_da_rilanciare`,
+    la stessa funzione che decide cosa scrivere sul bottone. Un conteggio fatto
+    due volte in due posti prima o poi da' due numeri diversi, e l'utente si
+    ritrova ad aver rifatto piu' — o meno — di quanto aveva accettato.
+    """
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+
+    aperti = admin.falliti_da_rilanciare(_sb_audits_recenti(limit=200))
+    if not aperti:
+        return JSONResponse({"esito": "niente_da_fare", "quanti": 0})
+
+    parte = aperti[:admin.MAX_RILANCIO_BLOCCO]
+    for a in parte:
+        background.add_task(_rilancia_audit, a["id"], a["url"],
+                            a.get("project_id"), a.get("user_id"))
+    _admin_traccia(user, "rilancia_job", f"{len(parte)} audit falliti")
+    return JSONResponse({"esito": "avviato", "quanti": len(parte)})
+
+
+@app.post("/admin/clienti/aggiungi")
+async def admin_clienti_aggiungi(request: Request):
+    """Crea un cliente saltando la coda lead: l'account nasce gia' attivo.
+
+    ⚠️ Se mandare subito il link di accesso e' una **decisione di prodotto
+    ancora aperta** (documento Admin Dashboard §7.2), e non spetta al codice
+    prenderla: la casella nel modulo la lascia a chi sta creando l'account, con
+    il link acceso di default perche' un cliente creato e mai avvisato non sa di
+    esistere. Quando il team avra' deciso, qui resta una riga da togliere.
+    """
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    email = (body.get("email") or "").strip().lower()
+    avvisa = bool(body.get("avvisa", True))
+    if not email_plausibile(email):
+        return JSONResponse({"esito": "email_non_valida"}, status_code=400)
+
+    # Chi c'e' gia' non si ricrea: `_sb_auth_create_user` risponderebbe con un
+    # errore poco leggibile, e chi guarda il pannello merita di sapere che quel
+    # cliente esiste gia' invece di vedere «errore».
+    if _sb_auth_find_by_email(email):
+        return JSONResponse({"esito": "gia_esiste"}, status_code=409)
+
+    if not _sb_auth_create_user(email):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+
+    if avvisa:
+        link = _sb_auth_magiclink(email, f"{SITE_URL or ''}/auth/callback")
+        if link:
+            _send_magic_link(email, link)
+    _admin_traccia(user, "aggiungi_cliente", email + ("" if avvisa else " (senza avviso)"))
+    return JSONResponse({"esito": "ok"})
+
+
 @app.get("/admin/tracking", response_class=HTMLResponse)
 def admin_tracking(request: Request):
     user, refreshed, stop = _admin_o_no(request)
@@ -1383,12 +1495,23 @@ def admin_interesse(request: Request):
     richieste = _sb_contact_requests()
     audit = {a["id"]: a for a in _sb_audits_recenti(limit=1000)}
     account = {(u.get("email") or "").lower() for u in _sb_auth_users()}
-    contenuto = admin.schermata_interesse(richieste, audit, account)
-    quante = contenuto.count("<tr><td>")
+    iscrizioni = _sb_roadmap_iscrizioni()
+    contenuto = admin.schermata_interesse(
+        richieste, audit, account, _sb_roadmap_voti(), iscrizioni, roadmap_nomi())
+
+    # ⚠️ Il badge conta le richieste ANCORA DA LAVORARE, non tutte le righe
+    # della pagina. Il primo taglio contava i `<tr><td>` dell'HTML: con le
+    # iscrizioni roadmap in fondo alla stessa pagina quel numero sarebbe salito
+    # da solo, e il menu avrebbe segnalato lavoro arretrato che non c'era.
+    da_fare = len([r for r in richieste
+                   if r.get("audit_id")
+                   and (r.get("status") or "") != "contattata"
+                   and (r.get("email") or "").lower() not in account
+                   and (audit.get(r["audit_id"]) or {}).get("source") != admin._LEAD_SOURCE])
     return _apply_refresh(HTMLResponse(_admin_pagina(
         request, user, "interesse", "Interesse commerciale",
-        "Chi ha chiesto di essere ricontattato dal report esterno.",
-        contenuto, {**_admin_conteggi(), "interesse": quante})), refreshed)
+        "Segnali raccolti dal report esterno e dalla Roadmap pubblica.",
+        contenuto, {**_admin_conteggi(), "interesse": da_fare})), refreshed)
 
 
 @app.get("/admin/clienti/{client_id}", response_class=HTMLResponse)
@@ -1449,7 +1572,7 @@ async def admin_magic_link(request: Request):
     except Exception:
         body = {}
     email = (body.get("email") or "").strip().lower()
-    if "@" not in email:
+    if not email_plausibile(email):
         return JSONResponse({"esito": "email_non_valida"}, status_code=400)
 
     link = _sb_auth_magiclink(email, f"{SITE_URL or ''}/auth/callback")
@@ -1612,7 +1735,7 @@ async def roadmap_avvisami(request: Request):
         return Response(status_code=400)
 
     email = str((corpo or {}).get("email") or "")[:160].strip().lower()
-    if "@" not in email or "." not in email.split("@")[-1]:
+    if not email_plausibile(email):
         return Response(status_code=400)
 
     try:
@@ -1782,12 +1905,14 @@ async def scan(request: Request, url: str = Form(...)):
         url = "https://" + url
 
     try:
+        _iniziato = datetime.now(timezone.utc).isoformat()
         res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
     except Exception as e:
         # Qui l'errore l'utente lo vede, quindi non è invisibile a lui — ma resta
         # invisibile a noi: senza questa riga non sapremmo mai su quali siti
         # l'analisi non riesce, che è il dato per capire cosa non regge nel motore.
-        _sb_audit_fallito(url, repr(e), user_id=user["id"], origine="manual")
+        _sb_audit_fallito(url, repr(e), user_id=user["id"], origine="manual",
+                          iniziato=_iniziato)
         resp = HTMLResponse(
             _page("Errore",
                   f"<h2>Non riesco ad analizzare questo sito</h2>"
@@ -2144,6 +2269,7 @@ async def project_rerun(project_id: str, request: Request):
     url = domain if domain.startswith(("http://", "https://")) else "https://" + domain
 
     try:
+        _iniziato = datetime.now(timezone.utc).isoformat()
         res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
 
         row = _sb_insert({
@@ -2178,7 +2304,8 @@ async def project_rerun(project_id: str, request: Request):
         body = getattr(getattr(e, "response", None), "text", "")
         print(f"[/project/{project_id}/rerun] audit fallito: {e!r} {body}".strip())
         _sb_audit_fallito(url, f"{e!r} {body}".strip(), project_id=project["id"],
-                          user_id=user["id"], origine="manual")
+                          user_id=user["id"], origine="manual",
+                          iniziato=_iniziato)
         resp = RedirectResponse(f"/project/{project_id}?tab=audit&rerun_error=1", status_code=303)
         return _apply_refresh(resp, refreshed)
 
