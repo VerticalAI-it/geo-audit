@@ -130,4 +130,9 @@ async def main():
     return len(problemi)
 
 
-sys.exit(0 if asyncio.run(main()) == 0 else 1)
+# ⚠️ La guardia non e' una formalita': senza, chiunque importi da qui — per
+# riusare il controllo del contrasto altrove — fa partire l'intero giro sulle
+# pagine pubbliche e poi esce dal processo. Chi importava si vedeva stampare
+# «nessun problema rilevato» e credeva fosse il proprio esito.
+if __name__ == "__main__":
+    sys.exit(0 if asyncio.run(main()) == 0 else 1)

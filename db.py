@@ -397,7 +397,8 @@ def _sb_audits_by_project(project_id: str, limit: int = 50, full: bool = False,
 
 
 def _sb_audit_fallito(url: str, errore: str, project_id: str | None = None,
-                      user_id: str | None = None, origine: str = "auto") -> None:
+                      user_id: str | None = None, origine: str = "auto",
+                      iniziato: str | None = None) -> None:
     """Lascia traccia di un audit che non e' riuscito.
 
     ⚠️ Prima non la lasciava: l'errore finiva in un `print`, cioe' nei log della
@@ -408,6 +409,12 @@ def _sb_audit_fallito(url: str, errore: str, project_id: str | None = None,
 
     Non solleva mai: sta nel ramo di errore di qualcos'altro, e un registro che
     fa fallire cio' che stava gia' fallendo peggiora le cose e basta.
+
+    ⚠️ `iniziato` e' l'istante in cui l'audit e' PARTITO, non quello in cui e'
+    fallito. Senza, inizio e fine coincidono e il pannello mostra «0s» per un
+    audit che magari ha girato due minuti prima di andare in timeout — cioe'
+    proprio il numero che serviva a distinguere un timeout da un DNS che non
+    risolve. Chi puo' passarlo lo passa.
     """
     try:
         ora = datetime.now(timezone.utc).isoformat()
@@ -421,7 +428,7 @@ def _sb_audit_fallito(url: str, errore: str, project_id: str | None = None,
                        "source": origine if origine in ("manual", "auto") else "auto",
                        "project_id": project_id, "user_id": user_id,
                        "error": (errore or "")[:500],
-                       "created_at": ora, "completed_at": ora})
+                       "created_at": iniziato or ora, "completed_at": ora})
     except Exception:
         pass
 
@@ -883,6 +890,28 @@ def _sb_roadmap_iscrivi(email: str, feature: str | None = None) -> bool:
                  json={"event_name": _ROADMAP_ISCRIZIONE,
                        "properties": {"email": email, "feature": feature}})
     return r.status_code < 300
+
+
+def _sb_roadmap_iscrizioni(limit: int = 500) -> list:
+    """Chi ha lasciato l'email per essere avvisato, dalla roadmap pubblica.
+
+    Sono segnali commerciali quanto una richiesta di contatto: qualcuno che non
+    e' ancora cliente ha detto che una cosa gli interessa, e ha lasciato un
+    recapito. Il pannello li mostra accanto alle richieste dal report.
+    """
+    r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=15,
+                params={"event_name": f"eq.{_ROADMAP_ISCRIZIONE}",
+                        "select": "properties,created_at",
+                        "order": "created_at.desc", "limit": str(limit)})
+    if r.status_code >= 300:
+        return []
+    out = []
+    for riga in r.json():
+        p = riga.get("properties") or {}
+        if p.get("email"):
+            out.append({"email": p["email"], "feature": p.get("feature"),
+                        "created_at": riga.get("created_at")})
+    return out
 
 
 # ── Dashboard: letture in blocco ────────────────────────────────────────────

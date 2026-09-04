@@ -2398,6 +2398,18 @@ def _roadmap_live_html() -> str:
     )
 
 
+def roadmap_nomi() -> dict:
+    """Da chiave tecnica a nome leggibile, per chi deve mostrare i voti altrove.
+
+    Il pannello del team non importa `views`: chiede questo dizionario a chi lo
+    monta. Senza, nel conteggio dei voti comparirebbero le chiavi grezze
+    («visibilita-ai») al posto dei nomi che il pubblico ha davvero votato.
+    """
+    return {chiave: nome
+            for _, _, funzioni in _ROADMAP_COLONNE
+            for chiave, nome, *_ in funzioni}
+
+
 def _roadmap_colonne_html(voti: dict) -> str:
     colonne = []
     for titolo, sottotitolo, funzioni in _ROADMAP_COLONNE:
