@@ -46,10 +46,10 @@
       <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
     </button>
     <a class="btn btn-primary" href="/audit">+ <span class="btn-label">Nuova analisi</span></a>
-    <div class="user-chip">
-      <div class="avatar" id="avatar"></div>
-      <span id="userEmail"></span>
-    </div>
+    <!-- ⚠️ Qui c'era una targhetta con avatar ed email, e nient'altro: da
+         computer non esisteva modo di uscire dall'account — il logout stava
+         solo nel menu mobile qui sotto. Ora la targhetta apre un menu. -->
+    {{MENU_UTENTE}}
   </div>
 </div>
 
@@ -300,8 +300,21 @@ document.getElementById('kpiTrackingSub').textContent = 'su ' + SUMMARY.total +
   (SUMMARY.total === 1 ? ' progetto' : ' progetti');
 
 // utente
-document.getElementById('userEmail').textContent = EMAIL;
-document.getElementById('avatar').textContent = (EMAIL || '?').charAt(0).toUpperCase();
+/* Email e iniziale ora le scrive il server dentro il menu utente. */
+
+/* Il menu si chiude cliccando fuori o con Esc: un <details> da solo resterebbe
+   aperto, e su una pagina piena di card è facile dimenticarselo lì. */
+document.addEventListener('click', function(e){
+  document.querySelectorAll('details.menu-utente[open]').forEach(function(d){
+    if(!d.contains(e.target)) d.removeAttribute('open');
+  });
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape')
+    document.querySelectorAll('details.menu-utente[open]').forEach(function(d){
+      d.removeAttribute('open');
+    });
+});
 
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('filterStatus').addEventListener('change', render);

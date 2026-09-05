@@ -2,7 +2,7 @@
 GEO Audit — servizio web
 Scan sincrono → salva su Supabase via REST → report oscurato → sblocco via email.
 """
-import os, re, time, hmac, hashlib, json
+import io, os, re, time, hmac, hashlib, json
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlparse
 import requests as req
@@ -39,7 +39,7 @@ from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_C
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
     _project_status, _sidebar, _subtabs, _tab_audit, _tab_campione, _tab_opportunities, \
     _tab_overview, _tab_pages, _tab_reports, _tab_settings, _tab_technical, _tab_traffic, \
-    _ultimi_run_section, roadmap_nomi
+    _ultimi_run_section, menu_utente, roadmap_nomi, _rimedi_per_check
 
 
 app = FastAPI(title="GEO Audit · verticalai")
@@ -49,6 +49,30 @@ if os.path.isdir(_STATIC_DIR):
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 # ── Config ──────────────────────────────────────────────────────────────────
+
+# ── Quante pagine guarda il motore ───────────────────────────────────────────
+#
+# ⚠️ Fino al 4 settembre 2026 questo numero era **6**, scritto a mano in cinque
+# punti diversi di questo file. Nessuno se n'era accorto perché la dashboard
+# mostrava «6 pagine» su quasi tutti i progetti e sembrava un dato, non un
+# tetto: l'ha trovato il consulente facendo il giro del prodotto.
+#
+# La conseguenza non era estetica: **ogni punteggio consegnato ai clienti era
+# calcolato su al massimo 6 pagine**, quindi su un campione, non sul sito. Su un
+# sito di prova il punteggio passa da 90 (6 pagine) a 88 (30 pagine): il numero
+# cambia davvero quando si guarda tutto.
+#
+# 30 è un compromesso misurato, non una scelta a caso: costa ~33 s per audit
+# contro i 12 s di prima, e il tetto di durata della function è 300 s. Alzarlo
+# ancora si può, ma va rivista anche la finestra del cron, che di audit ne fa
+# più d'uno di fila.
+MAX_PAGINE = 30
+
+# L'audit preliminare di un lead ne guarda meno: serve a dare al commerciale un
+# punteggio in mano prima di richiamare, non a essere l'analisi definitiva, e
+# gira mentre chi ha compilato il modulo sta ancora aspettando la conferma.
+MAX_PAGINE_LEAD = 10
+
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 FORM_HTML     = open(os.path.join(_HERE, "templates", "form.html"),          encoding="utf-8").read()
@@ -124,7 +148,7 @@ async def _run_project_scan(project: dict) -> dict:
 
     try:
         _iniziato = datetime.now(timezone.utc).isoformat()
-        res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
+        res = await run_in_threadpool(geo_audit.run_audit, url, MAX_PAGINE, False, False)
 
         row = _sb_insert({
             "user_id":    project["user_id"],
@@ -145,6 +169,11 @@ async def _run_project_scan(project: dict) -> dict:
             "actions":      res.get("actions"),
             "issues_count":    res.get("issues_count"),
             "critical_count":  res.get("critical_count"),
+            # L'istante d'INIZIO, non quello dell'inserimento: senza, la
+            # durata mostrata nel Job log è sempre zero, perché la riga
+            # nasce a fine audit.
+            "created_at": _iniziato,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
         })
 
         all_checks = list(res.get("site_checks", []))
@@ -1020,7 +1049,7 @@ async def _audit_preliminare(lead_id: str, sito: str) -> None:
     """
     try:
         _iniziato = datetime.now(timezone.utc).isoformat()
-        res = await run_in_threadpool(geo_audit.run_audit, sito, 4, False, False)
+        res = await run_in_threadpool(geo_audit.run_audit, sito, MAX_PAGINE_LEAD, False, False)
         row = _sb_insert({
             "url": sito,
             "status": "done",
@@ -1038,6 +1067,10 @@ async def _audit_preliminare(lead_id: str, sito: str) -> None:
             "issues_count": res.get("issues_count"),
             "critical_count": res.get("critical_count"),
             "completed_at": datetime.now(timezone.utc).isoformat(),
+            # L'istante d'INIZIO, non quello dell'inserimento: senza, la
+            # durata mostrata nel Job log è sempre zero, perché la riga
+            # nasce a fine audit.
+            "created_at": _iniziato,
         })
         _sb_lead_attach_audit(lead_id, row["id"], res.get("overall"), res.get("grade"))
     except Exception as e:
@@ -1330,7 +1363,7 @@ async def _rilancia_audit(audit_id: str, url: str, project_id: str | None,
     """
     try:
         _iniziato = datetime.now(timezone.utc).isoformat()
-        res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
+        res = await run_in_threadpool(geo_audit.run_audit, url, MAX_PAGINE, False, False)
         row = _sb_insert({
             "user_id": user_id,
             "project_id": project_id,
@@ -1351,6 +1384,10 @@ async def _rilancia_audit(audit_id: str, url: str, project_id: str | None,
             "issues_count": res.get("issues_count"),
             "critical_count": res.get("critical_count"),
             "completed_at": datetime.now(timezone.utc).isoformat(),
+            # L'istante d'INIZIO, non quello dell'inserimento: senza, la
+            # durata mostrata nel Job log è sempre zero, perché la riga
+            # nasce a fine audit.
+            "created_at": _iniziato,
         })
         # Le criticità si aggiornano solo se l'audit appartiene a un progetto:
         # un rilancio su un audit senza progetto (i vecchi report anonimi) non
@@ -1402,6 +1439,106 @@ async def admin_job_rilancia(request: Request, background: BackgroundTasks):
                         riga.get("project_id"), riga.get("user_id"))
     _admin_traccia(user, "rilancia_job", riga.get("domain") or url)
     return JSONResponse({"esito": "avviato"})
+
+@app.get("/project/{project_id}/export.xlsx")
+def project_export_xlsx(project_id: str, request: Request, cosa: str = "criticita"):
+    """Il foglio Excel di pagine o criticità, con dentro anche cosa fare.
+
+    ⚠️ Si genera sul server, non nel browser: un .xlsx è un archivio zip con
+    dentro dell'XML, e la scorciatoia di rinominare un CSV o una tabella HTML in
+    .xls fa comparire a Excel l'avviso «il formato non corrisponde
+    all'estensione» — una cosa che sembra funzionare finché non la apre il
+    cliente.
+
+    ⚠️ E porta **sempre** la colonna «Come si risolve», anche se in pagina
+    quella descrizione va aperta per vederla: un export serve a lavorarci fuori
+    dal prodotto, e senza il rimedio è un elenco di problemi senza risposte.
+    """
+    user, refreshed = _current_user(request)
+    if not user:
+        return _apply_refresh(RedirectResponse("/login", status_code=303), refreshed)
+
+    project = _sb_project_get(project_id)
+    if not project or project.get("user_id") != user["id"]:
+        # La service role bypassa le RLS: la proprietà si verifica qui.
+        return _apply_refresh(HTMLResponse(
+            _page("Non trovato", "<h2>Progetto non trovato.</h2>"), status_code=404), refreshed)
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        return _apply_refresh(JSONResponse(
+            {"esito": "openpyxl_mancante"}, status_code=503), refreshed)
+
+    ultimo = _sb_audits_by_project(project_id, limit=1, full=True)
+    latest = ultimo[0] if ultimo else None
+    dominio = (project.get("domain") or "sito").replace("/", "-")
+
+    wb = Workbook()
+    ws = wb.active
+
+    if cosa == "pagine":
+        ws.title = "Pagine"
+        intestazioni = ["URL", "Tipo", "Punteggio", "Criticità", "Di cui critiche"]
+        righe = []
+        for p in ((latest or {}).get("pages_detail") or []):
+            checks = p.get("checks") or []
+            ko = [c for c in checks if c.get("status") != "ok"]
+            righe.append([
+                p.get("url") or "",
+                p.get("type") or "",
+                p.get("score"),
+                len(ko),
+                len([c for c in ko if c.get("severity") in ("critical", "high")]),
+            ])
+    else:
+        ws.title = "Criticità"
+        intestazioni = ["Criticità", "Pagina", "Gravità", "Stato",
+                        "Vista la prima volta", "Vista l'ultima volta", "Come si risolve"]
+        rimedi = _rimedi_per_check(latest)
+        righe = []
+        for i in _sb_issues_by_project(project_id):
+            stato = i.get("status")
+            righe.append([
+                i.get("title") or i.get("check_id") or "",
+                i.get("url") or "livello sito",
+                i.get("severity") or "",
+                "aperta" if stato == "open" else "risolta",
+                _fmt_date(i.get("first_seen_at")),
+                _fmt_date(i.get("last_seen_at")),
+                rimedi.get(i.get("check_id") or "", ""),
+            ])
+
+    ws.append(intestazioni)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", start_color="6C5CE7")
+        c.alignment = Alignment(vertical="center")
+    ws.freeze_panes = "A2"
+
+    for r in righe:
+        ws.append(r)
+
+    # Larghezze leggibili: un foglio che si apre con tutte le colonne strette
+    # costa a chi lo riceve lo stesso lavoro che gli abbiamo risparmiato.
+    for col, larghezza in zip(ws.columns, (52, 34, 12, 12, 18, 18, 70)):
+        ws.column_dimensions[col[0].column_letter].width = larghezza
+    if cosa != "pagine":
+        for riga in ws.iter_rows(min_row=2, min_col=7, max_col=7):
+            for c in riga:
+                c.alignment = Alignment(wrap_text=True, vertical="top")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nome = f"{dominio}-{'pagine' if cosa == 'pagine' else 'criticita'}.xlsx"
+    resp = Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+    return _apply_refresh(resp, refreshed)
+
 
 @app.post("/admin/job/rilancia-tutti")
 async def admin_job_rilancia_tutti(request: Request, background: BackgroundTasks):
@@ -1681,13 +1818,23 @@ def cookie_policy():
 
 
 @app.get("/roadmap", response_class=HTMLResponse)
-def roadmap():
-    """Roadmap pubblica: raggiungibile senza autenticazione, come da §3.16."""
+def roadmap(request: Request):
+    """Roadmap pubblica: raggiungibile senza autenticazione, come da §3.16.
+
+    ⚠️ Resta pubblica: chi arriva da fuori la vede senza barriere. Ma a chi è
+    già dentro si mostra la barra con «Esci», perché il logout deve essere
+    raggiungibile da **ogni** schermata dell'app — e questa lo è, per chi ha
+    una sessione.
+    """
     voti = _sb_roadmap_voti()
-    return _render(ROADMAP_HTML,
+    html = _render(ROADMAP_HTML,
                    LIVE=_roadmap_live_html(),
                    COLONNE=_roadmap_colonne_html(voti),
                    VOTI_JSON=json.dumps(voti))
+    user, refreshed = _current_user(request)
+    if user:
+        html = _with_topbar(html, user.get("email", ""))
+    return _apply_refresh(HTMLResponse(html), refreshed)
 
 
 @app.post("/roadmap/voto")
@@ -1906,7 +2053,7 @@ async def scan(request: Request, url: str = Form(...)):
 
     try:
         _iniziato = datetime.now(timezone.utc).isoformat()
-        res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
+        res = await run_in_threadpool(geo_audit.run_audit, url, MAX_PAGINE, False, False)
     except Exception as e:
         # Qui l'errore l'utente lo vede, quindi non è invisibile a lui — ma resta
         # invisibile a noi: senza questa riga non sapremmo mai su quali siti
@@ -1944,6 +2091,11 @@ async def scan(request: Request, url: str = Form(...)):
             "actions":      res.get("actions"),
             "issues_count":    res.get("issues_count"),
             "critical_count":  res.get("critical_count"),
+            # L'istante d'INIZIO, non quello dell'inserimento: senza, la
+            # durata mostrata nel Job log è sempre zero, perché la riga
+            # nasce a fine audit.
+            "created_at": _iniziato,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
         })
         job_id = row.get("id")
 
@@ -2112,7 +2264,9 @@ def dashboard(request: Request):
                     SUMMARY_JSON=json.dumps(summary),
                     SUMMARY_BANNER=_dashboard_summary_banner(cards),
                     PORTFOLIO_SPARK=_portfolio_sparkline(projects),
-                    USER_EMAIL=json.dumps(user.get("email", "")))
+                    USER_EMAIL=json.dumps(user.get("email", "")),
+                    MENU_UTENTE=menu_utente(user.get("email", ""),
+                                            _e_admin(user), verso_basso=True))
     resp = HTMLResponse(html)
     return _apply_refresh(resp, refreshed)
 
@@ -2166,18 +2320,21 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
     elif tab == "audit":
         history = _sb_audits_by_project(project_id, limit=50, full=False)
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
-        body = _tab_audit(latest_full[0] if latest_full else None, history)
+        body = _tab_audit(latest_full[0] if latest_full else None, history, project_id)
         if rerun_error:
             body = ('<div class="alert alert--danger"><div class="ic">!</div>'
                      '<div>Non siamo riusciti a rifare l\'audit. Riprova tra qualche minuto.</div></div>') + body
     elif tab == "pages":
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
-        body = _tab_pages(latest_full[0] if latest_full else None)
+        body = _tab_pages(latest_full[0] if latest_full else None, project_id)
     elif tab == "technical":
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
-        body = _tab_technical(latest_full[0] if latest_full else None)
+        body = _tab_technical(latest_full[0] if latest_full else None, project_id)
     elif tab == "opportunities":
-        body = _tab_opportunities(project_id)
+        # L'ultimo audit serve per i testi «come si risolve»: le issue salvano
+        # il problema, non il rimedio (vedi `_rimedi_per_check`).
+        latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
+        body = _tab_opportunities(project_id, latest_full[0] if latest_full else None)
     elif tab == "traffic":
         body = _tab_traffic(project)
     elif tab == "reports":
@@ -2197,7 +2354,8 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
                     PROJECT_NAME=geo_audit.esc(project.get("name") or project.get("domain")),
                     PROJECT_DOMAIN=geo_audit.esc(project.get("domain") or ""),
                     PROJECT_ACTIONS=_project_actions(project),
-                    SIDEBAR=_sidebar(project, latest_light, aperte, tab, user.get("email", "")),
+                    SIDEBAR=_sidebar(project, latest_light, aperte, tab, user.get("email", ""),
+                                     e_admin=_e_admin(user)),
                     SUBTABS=_subtabs(project_id, tab, conteggi),
                     TAB_BODY=body,
                     USER_EMAIL=json.dumps(user.get("email", "")))
@@ -2270,7 +2428,7 @@ async def project_rerun(project_id: str, request: Request):
 
     try:
         _iniziato = datetime.now(timezone.utc).isoformat()
-        res = await run_in_threadpool(geo_audit.run_audit, url, 6, False, False)
+        res = await run_in_threadpool(geo_audit.run_audit, url, MAX_PAGINE, False, False)
 
         row = _sb_insert({
             "user_id":    user["id"],
@@ -2291,6 +2449,11 @@ async def project_rerun(project_id: str, request: Request):
             "actions":      res.get("actions"),
             "issues_count":    res.get("issues_count"),
             "critical_count":  res.get("critical_count"),
+            # L'istante d'INIZIO, non quello dell'inserimento: senza, la
+            # durata mostrata nel Job log è sempre zero, perché la riga
+            # nasce a fine audit.
+            "created_at": _iniziato,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
         })
         job_id = row.get("id")
 
@@ -2654,8 +2817,18 @@ def _send_report_mensile(to: str, job_id: str, domain: str, overall: int, grade:
 
 
 @app.get("/miei-report", response_class=HTMLResponse)
-def miei_report_form():
-    return HTMLResponse(_MIEI_REPORT_PAGE)
+def miei_report_form(request: Request):
+    """Serve a chi NON è loggato: si fa mandare per email i report già fatti.
+
+    ⚠️ Resta pubblica per quello. Ma se chi la apre ha una sessione, la barra
+    con «Esci» compare comunque: il logout dev'essere raggiungibile da ogni
+    schermata, e capita di arrivarci anche da dentro.
+    """
+    user, refreshed = _current_user(request)
+    if not user:
+        return HTMLResponse(_MIEI_REPORT_PAGE)
+    return _apply_refresh(
+        HTMLResponse(_with_topbar(_MIEI_REPORT_PAGE, user.get("email", ""))), refreshed)
 
 
 @app.post("/miei-report", response_class=HTMLResponse)

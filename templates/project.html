@@ -151,6 +151,19 @@
                                body: JSON.stringify({theme: tema})}).catch(function(){});
   }
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') chiudiMenu(); });
+
+/* Il menu utente si chiude cliccando fuori o con Esc. */
+document.addEventListener('click', function(e){
+  document.querySelectorAll('details.menu-utente[open]').forEach(function(d){
+    if(!d.contains(e.target)) d.removeAttribute('open');
+  });
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape')
+    document.querySelectorAll('details.menu-utente[open]').forEach(function(d){
+      d.removeAttribute('open');
+    });
+});
 </script>
 
 </body>

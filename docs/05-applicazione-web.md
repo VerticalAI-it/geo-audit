@@ -594,6 +594,45 @@ prodotto in linguaggio naturale per gli assistenti AI che leggono il sito.
 
 ---
 
+## Quante pagine guarda il motore
+
+`MAX_PAGINE = 30` in `server.py` (e `MAX_PAGINE_LEAD = 10` per l'audit
+preliminare di un lead).
+
+⚠️ **Fino al 4 settembre 2026 era 6, scritto a mano in cinque punti.** Nessuno
+se n'era accorto perché la dashboard mostrava «6 pagine» su quasi tutti i
+progetti e sembrava un dato, non un tetto: l'ha trovato il consulente facendo il
+giro del prodotto. La conseguenza non era estetica — **ogni punteggio consegnato
+ai clienti era calcolato su al massimo sei pagine**, quindi su un campione.
+
+Su un sito di prova il punteggio passa da 90 (6 pagine) a 88 (30): il numero
+cambia davvero quando si guarda tutto. Il 4 settembre gli audit di tutti i
+progetti sono stati rifatti col tetto nuovo.
+
+Il costo misurato è circa **un secondo a pagina** (12 s con 6, 33 s con 30), e il
+tetto di durata della function è 300 s. Alzarlo ancora si può, ma va rivista
+anche la finestra del cron, che di audit ne fa più d'uno di fila.
+
+## Il tema chiaro, e dove si rompe
+
+⚠️ Tre pagine (`form`, `gate`, `waiting`) avevano un **gradiente fisso e scuro
+sul body** senza variante chiara, e due di quelle non avevano nemmeno lo script
+che legge la preferenza: restavano scure sempre. È lo stesso difetto già trovato
+sul login, e il tema chiaro è quello predefinito del prodotto.
+
+**Due trappole, entrambe incontrate correggendolo:**
+
+1. La regola `[data-theme="light"] body{...}` va **fuori** dal blocco `body{}`.
+   Infilata dentro — subito dopo la riga del gradiente, che è dove verrebbe
+   naturale metterla — spezza il blocco: il fondo chiaro non arriva *e* si
+   perdono le proprietà che seguono. Il difetto sembra corretto e non lo è.
+2. Un controllo che verifica «esiste la regola?» dice di sì anche quando il CSS
+   è malformato. Serve **guardare la pagina**: `qa/controlla_tool.py`.
+
+⚠️ E nessun template deve dichiarare `data-theme="dark"` nell'HTML: senza
+preferenza salvata il prodotto parte in chiaro, e un attributo fisso lo
+contraddice.
+
 ## Il pannello del team (`/admin`)
 
 Otto schermate a uso interno, in `admin.py` + `templates/admin.html`. Chiudono
