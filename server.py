@@ -1818,13 +1818,23 @@ def cookie_policy():
 
 
 @app.get("/roadmap", response_class=HTMLResponse)
-def roadmap():
-    """Roadmap pubblica: raggiungibile senza autenticazione, come da §3.16."""
+def roadmap(request: Request):
+    """Roadmap pubblica: raggiungibile senza autenticazione, come da §3.16.
+
+    ⚠️ Resta pubblica: chi arriva da fuori la vede senza barriere. Ma a chi è
+    già dentro si mostra la barra con «Esci», perché il logout deve essere
+    raggiungibile da **ogni** schermata dell'app — e questa lo è, per chi ha
+    una sessione.
+    """
     voti = _sb_roadmap_voti()
-    return _render(ROADMAP_HTML,
+    html = _render(ROADMAP_HTML,
                    LIVE=_roadmap_live_html(),
                    COLONNE=_roadmap_colonne_html(voti),
                    VOTI_JSON=json.dumps(voti))
+    user, refreshed = _current_user(request)
+    if user:
+        html = _with_topbar(html, user.get("email", ""))
+    return _apply_refresh(HTMLResponse(html), refreshed)
 
 
 @app.post("/roadmap/voto")
@@ -2807,8 +2817,18 @@ def _send_report_mensile(to: str, job_id: str, domain: str, overall: int, grade:
 
 
 @app.get("/miei-report", response_class=HTMLResponse)
-def miei_report_form():
-    return HTMLResponse(_MIEI_REPORT_PAGE)
+def miei_report_form(request: Request):
+    """Serve a chi NON è loggato: si fa mandare per email i report già fatti.
+
+    ⚠️ Resta pubblica per quello. Ma se chi la apre ha una sessione, la barra
+    con «Esci» compare comunque: il logout dev'essere raggiungibile da ogni
+    schermata, e capita di arrivarci anche da dentro.
+    """
+    user, refreshed = _current_user(request)
+    if not user:
+        return HTMLResponse(_MIEI_REPORT_PAGE)
+    return _apply_refresh(
+        HTMLResponse(_with_topbar(_MIEI_REPORT_PAGE, user.get("email", ""))), refreshed)
 
 
 @app.post("/miei-report", response_class=HTMLResponse)
