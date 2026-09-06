@@ -15,8 +15,8 @@ from datetime import datetime, timezone, timedelta
 import geo_audit
 from ai_sources import CRAWLER_CATEGORIE
 from config import SITE_URL
-from db import _TETTO_EVENTI, _sb_audits_by_project, _sb_has_tracking, _sb_issues_by_project, \
-    _sb_recent_audits_by_user, _sb_tracking_events
+from db import _REPORT_PREF_DEFAULT, _TETTO_EVENTI, _sb_audits_by_project, \
+    _sb_has_tracking, _sb_issues_by_project, _sb_recent_audits_by_user, _sb_tracking_events
 
 
 _SCAN_FREQUENCY_LABELS = {"daily": "Giornaliero", "weekly": "Settimanale", "monthly": "Mensile"}
@@ -173,8 +173,11 @@ _COMING_SOON_TABS = {
         "Non ancora configurato."),
     "citations": ("Citations",
         "Richiede l'osservazione delle citazioni nelle risposte AI. Non ancora configurato."),
-    "reports": ("Reports",
-        "Richiede almeno un modulo di monitoraggio attivo per generare variazioni e alert. Non ancora disponibile."),
+    # ⚠️ «reports» stava qui, ed è uscito il 6 settembre 2026. Diceva di
+    # richiedere «un modulo di monitoraggio attivo»: non era vero — i numeri del
+    # rapporto si calcolano dagli audit e dalle criticità, che ci sono già.
+    # Mancavano la spedizione automatica e gli avvisi, e ora ci sono
+    # (`_pannello_invii`, `_valuta_avvisi`).
 }
 
 
@@ -2136,7 +2139,7 @@ def _rapporto_testo(project: dict, r: dict) -> str:
     return "\n".join(righe)
 
 
-def _tab_reports(project: dict) -> str:
+def _tab_reports(project: dict, prefs: dict | None = None, invii: list | None = None) -> str:
     """Rapporti: il punto del periodo, calcolato sui dati veri del progetto.
 
     ⚠️ Era una sezione dimostrativa, e non doveva restarlo: ogni numero del
@@ -2148,6 +2151,8 @@ def _tab_reports(project: dict) -> str:
     """
     r = _riepilogo_periodo(project, 30)
     testo = _rapporto_testo(project, r)
+    prefs = prefs if prefs is not None else dict(_REPORT_PREF_DEFAULT)
+    invii = invii or []
 
     if r["delta"] is None:
         classe_delta, freccia = "", ""
@@ -2217,15 +2222,218 @@ def _tab_reports(project: dict) -> str:
           '<div class="card-title">Criticità aperte per gravità</div>'
           f'<div style="margin-top:14px">{sev_righe}</div></div>'
 
-        + '<div class="card" style="margin-top:20px">'
-          '<div class="card-title">Invio automatico</div>'
-          '<p class="card-sub">Il rapporto qui sopra è pronto, ma per ora si legge e si copia: '
-          '<b>non parte da solo</b>. La spedizione periodica e gli avvisi sulle variazioni '
-          'richiedono il sistema di notifiche, che non è ancora attivo. Quando lo sarà, questa '
-          'scheda avrà gli interruttori — metterli adesso vorrebbe dire promettere email che '
-          'non arriverebbero.</p></div>'
-
+        + _pannello_invii(project, r, prefs, invii)
         + _COPIA_JS
+    )
+
+
+def _riga_avviso(chiave: str, titolo: str, spiegazione: str, acceso: bool,
+                 spento_per_sempre: bool = False, motivo: str = "") -> str:
+    """Una riga della scheda «Avvisi»: cosa fa, e l'interruttore."""
+    if spento_per_sempre:
+        interruttore = ('<div class="toggle-switch disabled" aria-disabled="true" '
+                        'title="Non ancora disponibile"></div>')
+        etichetta = (f'{geo_audit.esc(titolo)} '
+                     '<span class="soon-inline-tag">IN ARRIVO</span>')
+    else:
+        interruttore = (f'<button type="button" class="toggle-switch{" on" if acceso else ""}" '
+                        f'data-pref="{chiave}" aria-pressed="{"true" if acceso else "false"}" '
+                        f'aria-label="{geo_audit.esc(titolo)}"></button>')
+        etichetta = geo_audit.esc(titolo)
+    return ('<div class="alert-row"><div class="alert-info">'
+            f'<b>{etichetta}</b><p>{geo_audit.esc(spiegazione)}'
+            + (f' {geo_audit.esc(motivo)}' if motivo else '')
+            + f'</p></div>{interruttore}</div>')
+
+
+def _riga_frequenza(chiave: str, titolo: str, valore: str, nota: str = "") -> str:
+    OPZIONI = (("weekly", "Settimanale"), ("monthly", "Mensile"), ("off", "Disattivato"))
+    voci = "".join(
+        f'<option value="{k}"{" selected" if k == valore else ""}>{n}</option>'
+        for k, n in OPZIONI)
+    return ('<div class="schedule-row">'
+            f'<span>{geo_audit.esc(titolo)}'
+            + (f'<span class="freq-nota">{geo_audit.esc(nota)}</span>' if nota else '')
+            + '</span>'
+            f'<select class="freq-select" data-pref="{chiave}">{voci}</select></div>')
+
+
+def _pannello_invii(project: dict, r: dict, prefs: dict, invii: list) -> str:
+    """Avvisi e pianificazione: la parte che fa partire il rapporto da solo.
+
+    ⚠️ Fino al 6 settembre 2026 qui c'era un riquadro che diceva «non parte da
+    solo». Era la scelta giusta finche' gli interruttori non accendevano niente:
+    metterli prima avrebbe promesso email che non sarebbero arrivate. Ora
+    accendono davvero, quindi il riquadro se ne va.
+    """
+    dominio = project.get("domain") or ""
+    ultimo_cliente = next((i for i in invii if i.get("report_type") == "client_digest"), None)
+    ultimo_team = next((i for i in invii if i.get("report_type") == "team_digest"), None)
+
+    avvisi = (
+        '<div class="card">'
+        '<div class="card-title">Avvisi</div>'
+        '<div class="card-desc">Arrivano per email appena succedono, senza aspettare '
+        'il riepilogo.</div>'
+        + _riga_avviso("alert_score_drop", "Calo del punteggio",
+                       "Avvisa se il punteggio scende di oltre 5 punti fra due audit.",
+                       bool(prefs.get("alert_score_drop")))
+        + _riga_avviso("alert_new_critical", "Nuova criticità grave",
+                       "Avvisa quando un audit trova una criticità di gravità critica "
+                       "che prima non c'era.",
+                       bool(prefs.get("alert_new_critical")))
+        + _riga_avviso("alert_competitor_overtake", "Sorpasso di un concorrente", "",
+                       False, spento_per_sempre=True,
+                       motivo="Avviserà quando un concorrente seguito supererà il tuo "
+                              "punteggio: serve la sezione Competitors, che non c'è ancora.")
+        + '</div>'
+    )
+
+    def quando(voce):
+        if not voce:
+            return "mai partito finora"
+        return f"ultimo invio {_fmt_date(voce.get('sent_at'))}"
+
+    pianificazione = (
+        '<div class="card">'
+        '<div class="card-title">Ogni quanto</div>'
+        '<div class="card-desc">Il riepilogo qui accanto, mandato da solo.</div>'
+        + _riga_frequenza("client_digest_frequency", "Al cliente",
+                          prefs.get("client_digest_frequency") or "monthly",
+                          quando(ultimo_cliente))
+        + _riga_frequenza("team_digest_frequency", "A noi",
+                          prefs.get("team_digest_frequency") or "weekly",
+                          quando(ultimo_team))
+        + '<div class="schedule-row"><span>Avvisi</span>'
+          '<span class="freq">appena succede</span></div>'
+        + '<div class="salvataggio" id="prefEsito" hidden></div>'
+        + '</div>'
+    )
+
+    return (
+        '<div class="grid-2" style="margin-top:20px">'
+        + _anteprima_email(dominio, r) + '<div>' + avvisi + pianificazione + '</div>'
+        + '</div>'
+        + '<script>'
+        f'const PREF_PROGETTO = {json.dumps(project["id"])};'
+        r"""
+        (function(){
+          const esito = document.getElementById("prefEsito");
+          /* ⚠️ Si scrive prima sul server e solo dopo si sposta l'interruttore.
+             Mostrarlo acceso e scoprire poi che il salvataggio e' fallito
+             vorrebbe dire far contare l'utente su un avviso che non arrivera'. */
+          function salva(campo, valore, alRitorno){
+            esito.hidden = false;
+            esito.textContent = "Salvo…";
+            esito.className = "salvataggio";
+            fetch("/project/" + encodeURIComponent(PREF_PROGETTO) + "/reports/preferenze", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({campo: campo, valore: valore})
+            }).then(r => {
+              if(!r.ok) throw new Error("HTTP " + r.status);
+              alRitorno();
+              esito.textContent = "Salvato.";
+              esito.className = "salvataggio ok";
+              setTimeout(() => { esito.hidden = true; }, 2200);
+            }).catch(() => {
+              esito.textContent = "Non sono riuscito a salvare: riprova fra poco.";
+              esito.className = "salvataggio errore";
+            });
+          }
+
+          document.querySelectorAll(".toggle-switch[data-pref]").forEach(b => {
+            b.addEventListener("click", () => {
+              const acceso = b.classList.contains("on");
+              salva(b.dataset.pref, !acceso, () => {
+                b.classList.toggle("on", !acceso);
+                b.setAttribute("aria-pressed", !acceso ? "true" : "false");
+              });
+            });
+          });
+
+          document.querySelectorAll(".freq-select[data-pref]").forEach(sel => {
+            let prima = sel.value;
+            sel.addEventListener("change", () => {
+              const scelto = sel.value;
+              salva(sel.dataset.pref, scelto, () => { prima = scelto; });
+              /* se il salvataggio fallisce la select torna com'era: lasciarla
+                 sul valore nuovo direbbe che e' stato accettato */
+              setTimeout(() => {
+                if (esito.classList.contains("errore")) sel.value = prima;
+              }, 400);
+            });
+          });
+        })();
+        """
+        '</script>'
+    )
+
+
+def _anteprima_email(dominio: str, r: dict) -> str:
+    """Com'è fatto il riepilogo che parte per email.
+
+    ⚠️ I numeri sono quelli veri di questo progetto, non un esempio: chi guarda
+    deve vedere cosa riceverà, non cosa potrebbe ricevere.
+    """
+    punteggio = r.get("punteggio")
+    delta = r.get("delta")
+    cls = ("good" if punteggio is None or punteggio >= 75 else
+           "warn" if punteggio >= 50 else "critical")
+    if delta is None:
+        riga_delta = "Primo periodo misurato: non c'è ancora un confronto."
+    elif delta > 0:
+        riga_delta = f"<b>+{delta} punti</b> rispetto al periodo precedente."
+    elif delta < 0:
+        riga_delta = f"<b>{delta} punti</b> rispetto al periodo precedente."
+    else:
+        riga_delta = "<b>Nessuna variazione</b> rispetto al periodo precedente."
+
+    voci = []
+    if r.get("risolte"):
+        voci.append(("good", "M20 6 9 17l-5-5",
+                     f"{r['risolte']} criticità risolte nel periodo"))
+    if r.get("nuove"):
+        voci.append(("warn", "M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94"
+                             "a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z",
+                     f"{r['nuove']} criticità nuove da guardare"))
+    p = r.get("prioritaria")
+    if p:
+        voci.append(("muted", "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v4l3 2",
+                     f"Intervento più urgente: {p['titolo']}"))
+    if not voci:
+        voci.append(("muted", "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v4l3 2",
+                     "Nessun cambiamento nel periodo"))
+
+    COLORE = {"good": "var(--state-good)", "warn": "var(--state-warn)",
+              "muted": "var(--text-muted)"}
+    righe = "".join(
+        '<div class="email-list-item">'
+        f'<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="{COLORE[tono]}" '
+        f'stroke-width="2" aria-hidden="true"><path d="{traccia}"/></svg>'
+        f'{geo_audit.esc(testo)}</div>'
+        for tono, traccia, testo in voci)
+
+    return (
+        '<div class="card">'
+        '<div class="card-title">Cosa arriva per email</div>'
+        f'<div class="card-desc">Gli stessi numeri del rapporto qui sopra, negli ultimi '
+        f'{r.get("giorni", 30)} giorni.</div>'
+        '<div class="email-mockup">'
+        '<div class="email-header"><span class="dot"></span><span class="dot"></span>'
+        '<span class="dot"></span>'
+        f'<span class="email-subject">Il tuo rapporto GEO — {geo_audit.esc(dominio)}</span>'
+        '</div>'
+        '<div class="email-body">'
+        '<div class="email-title">Rapporto GEO</div>'
+        f'<div class="email-sub">Ultimi {r.get("giorni", 30)} giorni · '
+        f'{geo_audit.esc(dominio)}</div>'
+        '<div class="email-score-row">'
+        f'<div class="email-score {cls}">{punteggio if punteggio is not None else "—"}</div>'
+        f'<div class="email-score-text">{riga_delta}</div>'
+        '</div>'
+        f'<div class="email-list">{righe}</div>'
+        '</div></div></div>'
     )
 
 
