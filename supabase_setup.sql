@@ -307,3 +307,93 @@ SELECT
 FROM public.tracking_event
 WHERE event_name = 'admin_action'
   AND created_at > COALESCE((SELECT MAX(created_at) FROM public.admin_audit_log), '1970-01-01'::timestamptz);
+
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- FASE E · Rapporti: preferenze di invio e registro (6 settembre 2026)
+--
+-- Serve alla funzionalità Reports (documento GEO_Audit_Reports di Francesco).
+-- ⚠️ Il codice FUNZIONA GIÀ SENZA queste tabelle: finché non ci sono, le
+-- preferenze e gli invii vivono in `tracking_event`. Eseguendo questo blocco il
+-- prodotto ci si sposta da solo, senza modifiche al codice — la scelta sta in
+-- `_report_tabella_c_e()` in `db.py`. Le righe già scritte nel frattempo
+-- vengono travasate qui sotto.
+-- ════════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS public.report_preferences (
+    project_id                UUID        PRIMARY KEY
+                                          REFERENCES public.project(id) ON DELETE CASCADE,
+    client_digest_frequency   TEXT        NOT NULL DEFAULT 'monthly',
+    team_digest_frequency     TEXT        NOT NULL DEFAULT 'weekly',
+    alert_score_drop          BOOLEAN     NOT NULL DEFAULT TRUE,
+    alert_new_critical        BOOLEAN     NOT NULL DEFAULT TRUE,
+    -- Resta FALSE finché non esiste la sezione Competitors che dovrebbe
+    -- farlo scattare: un avviso che non può partire è peggio di uno spento,
+    -- perché chi lo vede acceso smette di controllare a mano.
+    alert_competitor_overtake BOOLEAN     NOT NULL DEFAULT FALSE,
+    updated_at                TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT report_pref_client_freq CHECK (client_digest_frequency IN ('weekly','monthly','off')),
+    CONSTRAINT report_pref_team_freq   CHECK (team_digest_frequency   IN ('weekly','monthly','off'))
+);
+
+ALTER TABLE public.report_preferences ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "own_report_prefs" ON public.report_preferences;
+CREATE POLICY "own_report_prefs" ON public.report_preferences
+    FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.project p
+                   WHERE p.id = report_preferences.project_id AND p.user_id = auth.uid()));
+
+CREATE TABLE IF NOT EXISTS public.report_log (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id  UUID        REFERENCES public.project(id) ON DELETE CASCADE,
+    report_type TEXT        NOT NULL,   -- client_digest | team_digest
+                                        -- | alert_score_drop | alert_new_critical
+    sent_to     TEXT        NOT NULL,
+    sent_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.report_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "own_report_log" ON public.report_log;
+CREATE POLICY "own_report_log" ON public.report_log
+    FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.project p
+                   WHERE p.id = report_log.project_id AND p.user_id = auth.uid()));
+
+-- ⚠️ Questo indice non è un dettaglio: `_sb_report_log_ultimo()` lo interroga
+-- per OGNI progetto a ogni giro del cron, ed è quello che impedisce di
+-- rimandare lo stesso riepilogo ogni ora.
+CREATE INDEX IF NOT EXISTS report_log_progetto_tipo
+    ON public.report_log (project_id, report_type, sent_at DESC);
+
+-- ── Travaso di quello che nel frattempo è finito in tracking_event ──────────
+-- Rieseguirlo non crea doppioni.
+
+INSERT INTO public.report_preferences (
+    project_id, client_digest_frequency, team_digest_frequency,
+    alert_score_drop, alert_new_critical, updated_at)
+SELECT DISTINCT ON (t.project_id)
+    t.project_id,
+    COALESCE(t.properties->>'client_digest_frequency', 'monthly'),
+    COALESCE(t.properties->>'team_digest_frequency', 'weekly'),
+    COALESCE((t.properties->>'alert_score_drop')::boolean, TRUE),
+    COALESCE((t.properties->>'alert_new_critical')::boolean, TRUE),
+    t.created_at
+FROM public.tracking_event t
+JOIN public.project p ON p.id = t.project_id
+WHERE t.event_name = 'report_pref'
+  AND t.project_id IS NOT NULL
+ORDER BY t.project_id, t.created_at DESC      -- l'ultima scelta vince
+ON CONFLICT (project_id) DO NOTHING;
+
+INSERT INTO public.report_log (project_id, report_type, sent_to, sent_at)
+SELECT t.project_id,
+       COALESCE(t.properties->>'report_type', '?'),
+       COALESCE(t.properties->>'sent_to', '?'),
+       t.created_at
+FROM public.tracking_event t
+JOIN public.project p ON p.id = t.project_id
+WHERE t.event_name = 'report_inviato'
+  AND t.project_id IS NOT NULL
+  AND t.created_at > COALESCE((SELECT MAX(sent_at) FROM public.report_log), '1970-01-01'::timestamptz);

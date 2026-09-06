@@ -757,6 +757,17 @@ def _sb_auth_users(limit: int = 200) -> list:
     return (r.json().get("users") or []) if r.ok else []
 
 
+def _sb_auth_get_user(user_id: str) -> dict | None:
+    """Un account dal suo id. Serve a sapere a chi mandare le email di un progetto."""
+    if not user_id:
+        return None
+    try:
+        r = req.get(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=_SB_H, timeout=10)
+        return r.json() if r.ok else None
+    except Exception:
+        return None
+
+
 def _sb_auth_set_attivo(user_id: str, attivo: bool) -> bool:
     """Abilita o disabilita l'accesso di un cliente.
 
@@ -912,6 +923,182 @@ def _sb_roadmap_iscrizioni(limit: int = 500) -> list:
             out.append({"email": p["email"], "feature": p.get("feature"),
                         "created_at": riga.get("created_at")})
     return out
+
+
+# ── Rapporti: preferenze di invio e registro ────────────────────────────────
+#
+# ⚠️ Le tabelle `report_preferences` e `report_log` del documento funzionale
+# NON esistono ancora: crearle vuole un DDL, e la service role key scrive righe
+# ma non crea tabelle. L'SQL e' pronto in `supabase_setup.sql` (Fase E) e va
+# eseguito dal pannello Supabase.
+#
+# Finche' non ci sono, questi dati vivono in `tracking_event`, che il prodotto
+# usa gia' come registro generico. **Il codice non cambia quando le tabelle
+# arriveranno**: si accorge da solo di averle e ci si sposta, perche' la scelta
+# sta tutta qui dentro — `_report_tabella_c_e()` — e non nelle schermate.
+#
+# Il compromesso ha un costo da conoscere: su `tracking_event` una preferenza e'
+# «l'ultimo evento scritto», quindi non c'e' un vincolo che impedisca due righe
+# per lo stesso progetto, e la lettura deve ordinare per data. Con 27 progetti
+# regge; e' il genere di cosa che smette di reggere in silenzio.
+
+_REPORT_PREF_EVENTO = "report_pref"
+_REPORT_LOG_EVENTO = "report_inviato"
+
+# Cosa vale se nessuno ha ancora scelto niente. ⚠️ Gli alert nascono ACCESI
+# perche' servono ad avvisare di un peggioramento: uno spento di default
+# starebbe zitto proprio quando c'e' qualcosa da dire. Il digest al cliente
+# nasce mensile — la frequenza piu' prudente da mandare a qualcuno che non l'ha
+# chiesta — e quello al team settimanale.
+_REPORT_PREF_DEFAULT = {
+    "client_digest_frequency": "monthly",
+    "team_digest_frequency": "weekly",
+    "alert_score_drop": True,
+    "alert_new_critical": True,
+    # Resta spento e non si accende: dipende da Competitors, che non esiste.
+    "alert_competitor_overtake": False,
+}
+
+_report_tabelle: dict = {}
+
+
+def _report_tabella_c_e(nome: str) -> bool:
+    """Vero se la tabella esiste davvero. Si chiede una volta sola per processo."""
+    if nome in _report_tabelle:
+        return _report_tabelle[nome]
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/{nome}", headers=_SB_H, timeout=8,
+                    params={"select": "project_id", "limit": "1"})
+        _report_tabelle[nome] = r.status_code < 300
+    except Exception:
+        _report_tabelle[nome] = False
+    return _report_tabelle[nome]
+
+
+def _sb_report_prefs(project_id: str) -> dict:
+    """Le preferenze di un progetto, coi valori predefiniti dove manca la scelta."""
+    fuori = dict(_REPORT_PREF_DEFAULT)
+    try:
+        if _report_tabella_c_e("report_preferences"):
+            r = req.get(f"{SUPABASE_URL}/rest/v1/report_preferences", headers=_SB_H,
+                        timeout=10, params={"project_id": f"eq.{project_id}", "limit": "1"})
+            righe = r.json() if r.ok else []
+            if righe:
+                for k in fuori:
+                    if righe[0].get(k) is not None:
+                        fuori[k] = righe[0][k]
+            return fuori
+
+        r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                    params={"event_name": f"eq.{_REPORT_PREF_EVENTO}",
+                            "project_id": f"eq.{project_id}",
+                            "select": "properties,created_at",
+                            "order": "created_at.desc", "limit": "1"})
+        righe = r.json() if r.ok else []
+        if righe:
+            p = righe[0].get("properties") or {}
+            for k in fuori:
+                if p.get(k) is not None:
+                    fuori[k] = p[k]
+    except Exception:
+        pass
+    # ⚠️ L'avviso sul sorpasso competitor non si accende, qualunque cosa dica il
+    # dato salvato: la funzionalita' che lo alimenta non esiste, e un avviso che
+    # non puo' scattare e' peggio di un avviso spento — chi lo vede acceso
+    # smette di controllare a mano.
+    fuori["alert_competitor_overtake"] = False
+    return fuori
+
+
+def _sb_report_prefs_salva(project_id: str, campi: dict) -> bool:
+    """Salva le preferenze cambiate. Torna falso se il salvataggio non riesce."""
+    permessi = set(_REPORT_PREF_DEFAULT)
+    dati = {k: v for k, v in campi.items() if k in permessi}
+    if not dati:
+        return False
+    dati["alert_competitor_overtake"] = False
+    try:
+        if _report_tabella_c_e("report_preferences"):
+            r = req.post(f"{SUPABASE_URL}/rest/v1/report_preferences", timeout=15,
+                         headers={**_SB_H, "Prefer": "resolution=merge-duplicates"},
+                         json={**dati, "project_id": project_id,
+                               "updated_at": datetime.now(timezone.utc).isoformat()})
+            return r.status_code < 300
+
+        vecchie = _sb_report_prefs(project_id)
+        r = req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=15,
+                     json={"event_name": _REPORT_PREF_EVENTO, "project_id": project_id,
+                           "properties": {**vecchie, **dati}})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_report_log_scrivi(project_id: str, tipo: str, destinatario: str) -> None:
+    """Traccia un invio. Non solleva: un registro che fa fallire l'invio che sta
+    registrando peggiora le cose e basta."""
+    try:
+        if _report_tabella_c_e("report_log"):
+            req.post(f"{SUPABASE_URL}/rest/v1/report_log", headers=_SB_H, timeout=10,
+                     json={"project_id": project_id, "report_type": tipo,
+                           "sent_to": destinatario})
+            return
+        req.post(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                 json={"event_name": _REPORT_LOG_EVENTO, "project_id": project_id,
+                       "properties": {"report_type": tipo, "sent_to": destinatario}})
+    except Exception:
+        pass
+
+
+def _sb_report_log_ultimo(project_id: str, tipo: str) -> str | None:
+    """Quando e' partito l'ultimo invio di questo tipo. None se non e' mai partito.
+
+    ⚠️ E' il dato che impedisce di rimandare lo stesso digest ogni volta che il
+    cron passa: senza, un digest «settimanale» partirebbe a ogni giro dell'ora.
+    """
+    try:
+        if _report_tabella_c_e("report_log"):
+            r = req.get(f"{SUPABASE_URL}/rest/v1/report_log", headers=_SB_H, timeout=10,
+                        params={"project_id": f"eq.{project_id}",
+                                "report_type": f"eq.{tipo}", "select": "sent_at",
+                                "order": "sent_at.desc", "limit": "1"})
+            righe = r.json() if r.ok else []
+            return righe[0].get("sent_at") if righe else None
+
+        r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                    params={"event_name": f"eq.{_REPORT_LOG_EVENTO}",
+                            "project_id": f"eq.{project_id}",
+                            "properties->>report_type": f"eq.{tipo}",
+                            "select": "created_at", "order": "created_at.desc",
+                            "limit": "1"})
+        righe = r.json() if r.ok else []
+        return righe[0].get("created_at") if righe else None
+    except Exception:
+        return None
+
+
+def _sb_report_invii(project_id: str, limit: int = 20) -> list:
+    """Gli ultimi invii di un progetto, per mostrarli in pagina."""
+    try:
+        if _report_tabella_c_e("report_log"):
+            r = req.get(f"{SUPABASE_URL}/rest/v1/report_log", headers=_SB_H, timeout=10,
+                        params={"project_id": f"eq.{project_id}",
+                                "select": "report_type,sent_to,sent_at",
+                                "order": "sent_at.desc", "limit": str(limit)})
+            return r.json() if r.ok else []
+        r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
+                    params={"event_name": f"eq.{_REPORT_LOG_EVENTO}",
+                            "project_id": f"eq.{project_id}",
+                            "select": "properties,created_at",
+                            "order": "created_at.desc", "limit": str(limit)})
+        out = []
+        for riga in (r.json() if r.ok else []):
+            p = riga.get("properties") or {}
+            out.append({"report_type": p.get("report_type"), "sent_to": p.get("sent_to"),
+                        "sent_at": riga.get("created_at")})
+        return out
+    except Exception:
+        return []
 
 
 # ── Dashboard: letture in blocco ────────────────────────────────────────────
