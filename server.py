@@ -31,6 +31,8 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_accessi_cliente, _sb_note_cliente, _sb_nota_aggiungi, _sb_lead_stato, \
     _sb_promemoria_inviati, _sb_promemoria_registra, \
     _e_admin, _sb_admin_azioni, _sb_admin_traccia, _sb_auth_create_user, _sb_auth_set_attivo, \
+    _sb_auth_get_user, _sb_report_prefs, _sb_report_prefs_salva, _sb_report_log_scrivi, \
+    _sb_report_log_ultimo, _sb_report_invii, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
     _sb_audit_fallito, \
     _sb_projects_with_tracking
@@ -39,7 +41,7 @@ from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_C
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
     _project_status, _sidebar, _subtabs, _tab_audit, _tab_campione, _tab_opportunities, \
     _tab_overview, _tab_pages, _tab_reports, _tab_settings, _tab_technical, _tab_traffic, \
-    _ultimi_run_section, menu_utente, roadmap_nomi, _rimedi_per_check
+    _ultimi_run_section, menu_utente, roadmap_nomi, _rimedi_per_check, _riepilogo_periodo
 
 
 app = FastAPI(title="GEO Audit · verticalai")
@@ -181,6 +183,9 @@ async def _run_project_scan(project: dict) -> dict:
             for c in pg.get("checks", []):
                 all_checks.append({**c, "url": pg.get("url")})
         _sb_issue_sync(project_id, project["user_id"], row["id"], all_checks)
+        # Gli avvisi si valutano qui, subito dopo che le criticità sono state
+        # allineate: prima non si saprebbe quali sono nuove davvero.
+        _valuta_avvisi(project, row, all_checks)
 
         _sb_project_bump_scan(project_id, frequency)
         return {"status": "done", "project_id": project_id,
@@ -361,16 +366,29 @@ def _email_logo_row(right_text: str = "GEO Audit") -> str:
     )
 
 
-def _email_footer() -> str:
+def _email_footer(link_disdetta: str = "") -> str:
+    """Il piede comune. `link_disdetta` va passato dalle email PERIODICHE.
+
+    ⚠️ Prima qui c'erano «Preferenze email» e «Disiscriviti» con `href="#"`:
+    due link che non portavano da nessuna parte. Su una email transazionale si
+    nota poco; su un riepilogo che arriva ogni mese è una promessa non
+    mantenuta, e i filtri antispam la contano contro il mittente.
+
+    Dove un link vero non c'è, le due voci **non si scrivono**: meglio un piede
+    più corto che un invito a cliccare qualcosa che non fa niente.
+    """
+    voci = ""
+    if link_disdetta:
+        voci = ('<br>'
+                f'<a href="{link_disdetta}" style="color:#76768A;text-decoration:underline">'
+                'Cambia frequenza o disattiva questo riepilogo</a>')
     return (
         '<tr><td class="px" style="padding:24px 28px">'
         '<p class="t-3" style="font-size:12px;line-height:1.7;color:#76768A;margin:0;'
         "text-align:center;font-family:'Inter',Arial,sans-serif\">"
         '<b style="color:#4A4A5A">Vertical AI</b> · Rendiamo la tua attività consigliabile dagli assistenti AI<br>'
-        'verticalai.it · '
-        '<a href="#" style="color:#76768A;text-decoration:underline">Preferenze email</a>'
-        ' · '
-        '<a href="#" style="color:#76768A;text-decoration:underline">Disiscriviti</a>'
+        'verticalai.it'
+        + voci +
         '</p>'
         '</td></tr>'
     )
@@ -1397,6 +1415,8 @@ async def _rilancia_audit(audit_id: str, url: str, project_id: str | None,
             for p in (res.get("pages") or []):
                 checks.extend(p.get("checks") or [])
             _sb_issue_sync(project_id, user_id, row["id"], checks)
+            # come sopra: l'audit rilanciato a mano vale quanto quello automatico
+            _valuta_avvisi(_sb_project_get(project_id) or {}, row, checks)
     except Exception as e:
         # Rifallisce: si scrive di nuovo, così il pannello mostra che il
         # problema è ricorrente invece di far sparire il tentativo.
@@ -1439,6 +1459,395 @@ async def admin_job_rilancia(request: Request, background: BackgroundTasks):
                         riga.get("project_id"), riga.get("user_id"))
     _admin_traccia(user, "rilancia_job", riga.get("domain") or url)
     return JSONResponse({"esito": "avviato"})
+
+def _link_disdetta(project_id: str) -> str:
+    """L'indirizzo per disattivare i riepiloghi di un progetto, firmato.
+
+    ⚠️ Il token serve: senza, chiunque conosca l'id di un progetto potrebbe
+    spegnere i riepiloghi di un cliente che non è il suo. È lo stesso HMAC già
+    usato per i report condivisibili — nessun segreto nuovo da custodire.
+    """
+    if not SITE_URL or not project_id:
+        return ""
+    return f"{SITE_URL}/rapporti/disdetta?p={project_id}&t={_make_token(project_id)}"
+
+
+def _guscio_email(titolo: str, corpo: str, project_id: str = "") -> str:
+    """L'involucro comune delle email dei rapporti: intestazione, corpo, piede."""
+    return f"""<!doctype html>
+<html lang="it">
+<head>{_EMAIL_HEAD}<title>{titolo}</title></head>
+<body class="bg-canvas" style="background:#F1F1F6;margin:0;padding:0;width:100%">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-canvas" style="background:#F1F1F6">
+<tr><td align="center" style="padding:28px 12px 40px">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px;max-width:600px">
+    {_email_logo_row("GEO Audit")}
+    <tr><td class="card" style="background:#FFFFFF;border-radius:16px;border:1px solid #E6E6EF">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        {corpo}
+      </table>
+    </td></tr>
+    {_email_footer(_link_disdetta(project_id))}
+  </table>
+</td></tr>
+</table>
+</body></html>"""
+
+
+def _send_avviso_calo(to: str, dominio: str, project_id: str, prima: int, dopo: int) -> None:
+    """Il punteggio è sceso di più di quanto sia rumore. Si dice di quanto e dove."""
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    link = f"{SITE_URL}/project/{project_id}?tab=audit" if SITE_URL else ""
+    corpo = f"""
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <p style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#B4530A;
+                    margin:0 0 8px;font-family:'Inter',Arial,sans-serif;font-weight:700">Avviso</p>
+          <h1 style="font-size:22px;line-height:1.3;color:#14141C;margin:0 0 10px;
+                     font-family:'Inter',Arial,sans-serif;font-weight:700">
+            Il punteggio di {geo_audit.esc(dominio)} è sceso</h1>
+          <p class="t-2" style="font-size:15px;line-height:1.6;color:#4A4A5A;margin:0;
+                    font-family:'Inter',Arial,sans-serif">
+            È passato da <b>{prima}</b> a <b>{dopo}</b>: {prima - dopo} punti in meno
+            rispetto all'analisi precedente.
+          </p>
+        </td></tr>
+        <tr><td class="px" style="padding:18px 36px 34px">
+          <p class="t-3" style="font-size:13.5px;line-height:1.7;color:#76768A;margin:0 0 18px;
+                    font-family:'Inter',Arial,sans-serif">
+            Un calo di questa entità di solito ha una causa precisa — una pagina che ha perso
+            i dati strutturati, un blocco ai crawler, un contenuto cambiato. Nel rapporto trovi
+            quali controlli sono passati da superati a falliti.
+          </p>
+          {f'<a href="{link}" style="display:inline-block;background:#6C5CE7;color:#fff;'
+           f'text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;'
+           f'font-weight:600;font-family:Inter,Arial,sans-serif">Vedi cosa è cambiato</a>'
+           if link else ''}
+        </td></tr>"""
+    _resend_post([to], f"Il punteggio di {dominio} è sceso di {prima - dopo} punti",
+                 _guscio_email(f"Calo del punteggio · {dominio}", corpo, project_id))
+
+
+def _send_avviso_critica(to: str, dominio: str, project_id: str,
+                         nuove: list, checks: list) -> None:
+    """È comparsa una criticità grave che prima non c'era."""
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    link = f"{SITE_URL}/project/{project_id}?tab=opportunities&sev=critical" if SITE_URL else ""
+    per_id = {}
+    for c in checks:
+        cid = c.get("check_id") or c.get("id")
+        if cid and cid not in per_id:
+            per_id[cid] = c
+    voci = "".join(
+        f'<tr><td style="padding:8px 0;border-bottom:1px solid #EFEFF5">'
+        f'<b style="font-size:14px;color:#14141C;font-family:Inter,Arial,sans-serif">'
+        f'{geo_audit.esc((per_id.get(cid) or {}).get("title") or cid)}</b>'
+        + (f'<div style="font-size:12.5px;color:#76768A;margin-top:3px;'
+           f'font-family:Inter,Arial,sans-serif">'
+           f'{geo_audit.esc((per_id.get(cid) or {}).get("recommendation") or "")}</div>'
+           if (per_id.get(cid) or {}).get("recommendation") else '')
+        + '</td></tr>'
+        for cid in nuove[:6])
+    quante = len(nuove)
+    corpo = f"""
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <p style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#D92D34;
+                    margin:0 0 8px;font-family:'Inter',Arial,sans-serif;font-weight:700">Avviso</p>
+          <h1 style="font-size:22px;line-height:1.3;color:#14141C;margin:0 0 10px;
+                     font-family:'Inter',Arial,sans-serif;font-weight:700">
+            {'Una nuova criticità grave' if quante == 1 else f'{quante} nuove criticità gravi'}
+            su {geo_audit.esc(dominio)}</h1>
+          <p class="t-2" style="font-size:15px;line-height:1.6;color:#4A4A5A;margin:0;
+                    font-family:'Inter',Arial,sans-serif">
+            L'ultima analisi {'ne ha trovata una' if quante == 1 else 'ne ha trovate'} che nelle
+            precedenti non compariva.
+          </p>
+        </td></tr>
+        <tr><td class="px" style="padding:16px 36px 8px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            {voci}
+          </table>
+        </td></tr>
+        <tr><td class="px" style="padding:18px 36px 34px">
+          {f'<a href="{link}" style="display:inline-block;background:#6C5CE7;color:#fff;'
+           f'text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;'
+           f'font-weight:600;font-family:Inter,Arial,sans-serif">Vedi il dettaglio</a>'
+           if link else ''}
+        </td></tr>"""
+    titolo = (f"Nuova criticità grave su {dominio}" if quante == 1
+              else f"{quante} nuove criticità gravi su {dominio}")
+    _resend_post([to], titolo, _guscio_email(titolo, corpo, project_id))
+
+
+def _send_digest(to: str, project: dict, r: dict, tipo: str) -> bool:
+    """Il riepilogo periodico. Torna vero se è stato spedito.
+
+    ⚠️ Gli stessi numeri che si vedono nella scheda Rapporti, non un riassunto
+    scritto a parte: due racconti dello stesso periodo che non coincidono sono
+    peggio di uno solo.
+    """
+    if not RESEND_KEY or not FROM_EMAIL or not to:
+        return False
+    dominio = project.get("domain") or ""
+    per_team = tipo == "team_digest"
+    punteggio = r.get("punteggio")
+    delta = r.get("delta")
+    link = f"{SITE_URL}/project/{project['id']}?tab=reports" if SITE_URL else ""
+
+    if delta is None:
+        riga = "È il primo periodo misurato: non c'è ancora un confronto."
+    elif delta > 0:
+        riga = f"<b>+{delta} punti</b> rispetto al periodo precedente."
+    elif delta < 0:
+        riga = f"<b>{delta} punti</b> rispetto al periodo precedente."
+    else:
+        riga = "<b>Nessuna variazione</b> rispetto al periodo precedente."
+
+    voci = []
+    if r.get("risolte"):
+        voci.append(f"{r['risolte']} criticità risolte")
+    if r.get("nuove"):
+        voci.append(f"{r['nuove']} criticità nuove")
+    if r.get("aperte") is not None:
+        voci.append(f"{r['aperte']} ancora aperte")
+    # ⚠️ Il traffico si nomina solo se il tracking c'è: scrivere «0 visite da AI»
+    # a chi non ha lo snippet installato è un dato falso, non un dato a zero.
+    if r.get("tracking") and r.get("sessioni_ai") is not None:
+        voci.append(f"{r['sessioni_ai']} visite arrivate da assistenti AI")
+    elenco = "".join(
+        f'<tr><td style="padding:6px 0;font-size:14px;color:#4A4A5A;'
+        f'font-family:Inter,Arial,sans-serif">· {geo_audit.esc(v)}</td></tr>'
+        for v in voci)
+
+    p = r.get("prioritaria")
+    prioritario = ""
+    if p:
+        prioritario = (
+            '<tr><td class="px" style="padding:6px 36px 8px">'
+            '<p style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;'
+            'color:#76768A;margin:0 0 6px;font-family:Inter,Arial,sans-serif;font-weight:700">'
+            'Da fare per primo</p>'
+            f'<p style="font-size:14.5px;line-height:1.6;color:#14141C;margin:0;'
+            f'font-family:Inter,Arial,sans-serif"><b>{geo_audit.esc(p["titolo"])}</b> — '
+            f'su {p["pagine"]} pagin{"a" if p["pagine"] == 1 else "e"}.</p></td></tr>')
+
+    corpo = f"""
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <h1 style="font-size:22px;line-height:1.3;color:#14141C;margin:0 0 4px;
+                     font-family:'Inter',Arial,sans-serif;font-weight:700">
+            {'Rapporto interno' if per_team else 'Il tuo rapporto GEO'}</h1>
+          <p class="t-3" style="font-size:13px;color:#76768A;margin:0 0 20px;
+                    font-family:'Inter',Arial,sans-serif">
+            Ultimi {r.get('giorni', 30)} giorni · {geo_audit.esc(dominio)}</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td style="padding-right:16px">
+                <div style="width:64px;height:64px;border-radius:16px;background:#EFEDFA;
+                            color:#6C5CE7;font-size:26px;font-weight:700;text-align:center;
+                            line-height:64px;font-family:Inter,Arial,sans-serif">
+                  {punteggio if punteggio is not None else '—'}</div>
+              </td>
+              <td style="font-size:14.5px;line-height:1.6;color:#4A4A5A;
+                         font-family:Inter,Arial,sans-serif">{riga}</td>
+            </tr>
+          </table>
+        </td></tr>
+        <tr><td class="px" style="padding:18px 36px 4px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            {elenco}
+          </table>
+        </td></tr>
+        {prioritario}
+        <tr><td class="px" style="padding:20px 36px 34px">
+          {f'<a href="{link}" style="display:inline-block;background:#6C5CE7;color:#fff;'
+           f'text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;'
+           f'font-weight:600;font-family:Inter,Arial,sans-serif">Apri il rapporto completo</a>'
+           if link else ''}
+          <p class="t-3" style="font-size:12px;line-height:1.7;color:#9898AA;margin:18px 0 0;
+                    font-family:'Inter',Arial,sans-serif">
+            Ricevi questo riepilogo perché è attivo sul progetto {geo_audit.esc(dominio)}.
+            Puoi cambiarne la frequenza o disattivarlo dalla scheda Rapporti.
+          </p>
+        </td></tr>"""
+
+    oggetto = (f"[interno] Rapporto GEO · {dominio}" if per_team
+               else f"Il tuo rapporto GEO · {dominio}")
+    _resend_post([to], oggetto, _guscio_email(oggetto, corpo, project["id"]))
+    return True
+
+
+@app.get("/rapporti/disdetta", response_class=HTMLResponse)
+def rapporti_disdetta(p: str = "", t: str = ""):
+    """Spegne i riepiloghi periodici di un progetto, dal link nel piede email.
+
+    ⚠️ Non chiede di accedere: chi riceve l'email deve poter smettere di
+    riceverla in un clic, anche dal telefono, anche senza ricordarsi la
+    password. È il token firmato a fare da chiave — e vale solo per quel
+    progetto, e solo per i riepiloghi: gli avvisi urgenti restano, perché
+    servono a dire che qualcosa si è rotto.
+    """
+    if not p or not _valid_token(p, t):
+        return HTMLResponse(_page(
+            "Link non valido",
+            "<h2>Questo link non è più valido.</h2>"
+            "<p>Puoi cambiare la frequenza dei rapporti dalla scheda "
+            "<b>Traffic &amp; Reports</b> del tuo progetto.</p>"), status_code=400)
+
+    progetto = _sb_project_get(p)
+    if not progetto:
+        return HTMLResponse(_page("Non trovato", "<h2>Progetto non trovato.</h2>"),
+                            status_code=404)
+
+    _sb_report_prefs_salva(p, {"client_digest_frequency": "off"})
+    dominio = geo_audit.esc(progetto.get("domain") or "")
+    return HTMLResponse(_page(
+        "Riepiloghi disattivati",
+        f"<h2>Fatto: non ti manderemo più il riepilogo di {dominio}.</h2>"
+        "<p>Gli avvisi su cali di punteggio e criticità gravi restano attivi: "
+        "servono a dirti che qualcosa si è rotto, non a raccontarti come va.</p>"
+        "<p>Puoi riattivare il riepilogo quando vuoi dalla scheda "
+        "<b>Traffic &amp; Reports</b> del progetto.</p>"))
+
+
+# ── Rapporti: avvisi e riepiloghi ───────────────────────────────────────────
+
+# Di quanto deve scendere il punteggio perché valga la pena avvisare. Il
+# documento dice «oltre 5 punti»: sotto quella soglia le oscillazioni sono
+# rumore dell'analisi, e un avviso per ogni punto insegnerebbe a ignorarli.
+_CALO_CHE_CONTA = 5
+
+
+def _valuta_avvisi(project: dict, nuovo: dict, checks: list) -> None:
+    """Guarda se l'audit appena finito merita un avviso, e in caso lo manda.
+
+    ⚠️ Gira **dopo** ogni audit, non a orari fissi: un avviso che arriva il
+    giorno dopo il crollo non serve a niente. Non solleva mai — sta in coda a un
+    audit riuscito, e un avviso che fallisce non deve buttare via l'audit.
+    """
+    try:
+        pid = project.get("id")
+        if not pid:
+            return
+        prefs = _sb_report_prefs(pid)
+        if not (prefs.get("alert_score_drop") or prefs.get("alert_new_critical")):
+            return
+
+        destinatario = _email_del_progetto(project)
+        if not destinatario:
+            return
+
+        dominio = project.get("domain") or nuovo.get("domain") or ""
+        # il penultimo audit: il nuovo è già dentro, quindi si salta il primo
+        storico = _sb_audits_by_project(pid, limit=2, full=False)
+        precedente = storico[1] if len(storico) > 1 else None
+
+        if prefs.get("alert_score_drop") and precedente:
+            prima, dopo = precedente.get("overall"), nuovo.get("overall")
+            if prima is not None and dopo is not None and (prima - dopo) > _CALO_CHE_CONTA:
+                _send_avviso_calo(destinatario, dominio, pid, prima, dopo)
+                _sb_report_log_scrivi(pid, "alert_score_drop", destinatario)
+
+        if prefs.get("alert_new_critical"):
+            # ⚠️ «Nuova» vuol dire che PRIMA non c'era: senza questo confronto
+            # l'avviso partirebbe a ogni audit finché la criticità resta aperta,
+            # e dopo tre email nessuno le legge più.
+            gravi = {c.get("check_id") or c.get("id") for c in checks
+                     if c.get("status") != "ok" and c.get("severity") == "critical"}
+            gravi.discard(None)
+            if gravi:
+                gia_viste = {i.get("check_id") for i in _sb_issues_by_project(pid)
+                             if (i.get("first_seen_at") or "") < (nuovo.get("created_at") or "")}
+                nuove = sorted(gravi - gia_viste)
+                if nuove:
+                    _send_avviso_critica(destinatario, dominio, pid, nuove, checks)
+                    _sb_report_log_scrivi(pid, "alert_new_critical", destinatario)
+    except Exception as e:
+        print(f"[avvisi] {project.get('domain')}: {e!r}")
+
+
+def _email_del_progetto(project: dict) -> str:
+    """A chi scrivere per questo progetto: l'email di chi lo possiede."""
+    try:
+        u = _sb_auth_get_user(project.get("user_id") or "")
+        return (u or {}).get("email") or ""
+    except Exception:
+        return ""
+
+
+def _digest_da_mandare(project: dict, prefs: dict, tipo: str) -> bool:
+    """Vero se è passato abbastanza tempo dall'ultimo riepilogo di questo tipo.
+
+    ⚠️ Senza questo controllo un riepilogo «settimanale» partirebbe a ogni giro
+    del cron, cioè ogni ora.
+    """
+    chiave = "client_digest_frequency" if tipo == "client_digest" else "team_digest_frequency"
+    frequenza = prefs.get(chiave) or "off"
+    if frequenza == "off":
+        return False
+    giorni = 7 if frequenza == "weekly" else 30
+
+    ultimo = _sb_report_log_ultimo(project["id"], tipo)
+    if not ultimo:
+        return True
+    try:
+        t = datetime.fromisoformat(ultimo.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return (datetime.now(timezone.utc) - t).days >= giorni
+
+
+def _manda_digest(project: dict, tipo: str) -> bool:
+    """Compone e spedisce il riepilogo. Torna vero se è partito davvero."""
+    r = _riepilogo_periodo(project, 30 if tipo == "client_digest" else 7)
+    if tipo == "client_digest":
+        destinatario = _email_del_progetto(project)
+    else:
+        # Il riepilogo interno va alla casella del prodotto: è l'unico indirizzo
+        # aziendale che il codice conosce. Il destinatario definitivo lo decide
+        # il team — vedi la stessa scelta fatta per la notifica dei lead.
+        destinatario = FROM_EMAIL
+    if not destinatario:
+        return False
+    if not _send_digest(destinatario, project, r, tipo):
+        return False
+    _sb_report_log_scrivi(project["id"], tipo, destinatario)
+    return True
+
+
+@app.post("/project/{project_id}/reports/preferenze")
+async def project_report_prefs(project_id: str, request: Request):
+    """Salva un interruttore o una frequenza della scheda Rapporti."""
+    user, refreshed = _current_user(request)
+    if not user:
+        return JSONResponse({"esito": "non_autenticato"}, status_code=401)
+
+    project = _sb_project_get(project_id)
+    if not project or project.get("user_id") != user["id"]:
+        # la service role bypassa le RLS: la proprietà si verifica qui
+        return JSONResponse({"esito": "non_trovato"}, status_code=404)
+
+    try:
+        corpo = await request.json()
+    except Exception:
+        corpo = {}
+    campo = (corpo.get("campo") or "").strip()
+    valore = corpo.get("valore")
+
+    if campo in ("alert_score_drop", "alert_new_critical"):
+        valore = bool(valore)
+    elif campo in ("client_digest_frequency", "team_digest_frequency"):
+        if valore not in ("weekly", "monthly", "off"):
+            return JSONResponse({"esito": "valore_non_valido"}, status_code=400)
+    else:
+        # ⚠️ Compreso `alert_competitor_overtake`: non si accende da qui, perché
+        # la funzionalità che dovrebbe farlo scattare non esiste.
+        return JSONResponse({"esito": "campo_non_valido"}, status_code=400)
+
+    if not _sb_report_prefs_salva(project_id, {campo: valore}):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    return JSONResponse({"esito": "ok"})
+
 
 @app.get("/project/{project_id}/export.xlsx")
 def project_export_xlsx(project_id: str, request: Request, cosa: str = "criticita"):
@@ -1964,9 +2373,44 @@ async def api_cron(request: Request, max_projects: int = 3):
             break
         results.append(await _run_project_scan(project))
 
+    # ── i riepiloghi periodici ─────────────────────────────────────────────
+    # ⚠️ Dopo gli audit, e solo col tempo che avanza. Un audit è il lavoro per
+    # cui il cron esiste; se i riepiloghi gli rubassero il budget, il prodotto
+    # smetterebbe di misurare per continuare a raccontare.
+    digest = []
+    if (time.monotonic() - started) < _CRON_TIME_BUDGET:
+        digest = _manda_i_digest_scaduti(started)
+
     return {"processed": len(results),
+            "digest": len(digest),
             "elapsed": round(time.monotonic() - started, 1),
-            "results": results}
+            "results": results,
+            "digest_inviati": digest}
+
+
+def _manda_i_digest_scaduti(iniziato_a: float) -> list:
+    """Manda i riepiloghi ai progetti che ne hanno uno in scadenza.
+
+    ⚠️ Non solleva mai: gira in coda al cron degli audit, e un riepilogo che
+    fallisce non deve far risultare fallito il giro degli audit.
+    """
+    inviati = []
+    try:
+        for project in _sb_progetti_tutti():
+            if (time.monotonic() - iniziato_a) >= _CRON_TIME_BUDGET:
+                break                       # il tempo è finito: si riprende al giro dopo
+            try:
+                prefs = _sb_report_prefs(project["id"])
+                for tipo in ("client_digest", "team_digest"):
+                    if not _digest_da_mandare(project, prefs, tipo):
+                        continue
+                    if _manda_digest(project, tipo):
+                        inviati.append({"progetto": project.get("domain"), "tipo": tipo})
+            except Exception as e:
+                print(f"[digest] {project.get('domain')}: {e!r}")
+    except Exception as e:
+        print(f"[digest] giro non riuscito: {e!r}")
+    return inviati
 
 
 @app.post("/t")
@@ -2104,6 +2548,11 @@ async def scan(request: Request, url: str = Form(...)):
             for c in p.get("checks", []):
                 all_checks.append({**c, "url": p.get("url")})
         _sb_issue_sync(project["id"], user["id"], job_id, all_checks)
+        # Gli avvisi si valutano qui, subito dopo che le criticità sono state
+        # allineate: prima non si saprebbe quali sono nuove davvero.
+        _valuta_avvisi(project, {"id": job_id, "overall": res.get("overall"),
+                                 "created_at": datetime.now(timezone.utc).isoformat()},
+                       all_checks)
         _sb_project_bump_scan(project["id"], project.get("scan_frequency") or "weekly")
     except Exception as e:
         # Non blocca la visualizzazione, ma va loggato: altrimenti un salvataggio
@@ -2338,7 +2787,8 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
     elif tab == "traffic":
         body = _tab_traffic(project)
     elif tab == "reports":
-        body = _tab_reports(project)
+        body = _tab_reports(project, _sb_report_prefs(project_id),
+                            _sb_report_invii(project_id))
     elif tab == "settings":
         body = _tab_settings(project)
     else:
@@ -2462,6 +2912,11 @@ async def project_rerun(project_id: str, request: Request):
             for c in p.get("checks", []):
                 all_checks.append({**c, "url": p.get("url")})
         _sb_issue_sync(project["id"], user["id"], job_id, all_checks)
+        # Gli avvisi si valutano qui, subito dopo che le criticità sono state
+        # allineate: prima non si saprebbe quali sono nuove davvero.
+        _valuta_avvisi(project, {"id": job_id, "overall": res.get("overall"),
+                                 "created_at": datetime.now(timezone.utc).isoformat()},
+                       all_checks)
         _sb_project_bump_scan(project["id"], project.get("scan_frequency") or "weekly")
     except Exception as e:
         body = getattr(getattr(e, "response", None), "text", "")

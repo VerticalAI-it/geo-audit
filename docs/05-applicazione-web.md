@@ -633,6 +633,60 @@ sul login, e il tema chiaro è quello predefinito del prodotto.
 preferenza salvata il prodotto parte in chiaro, e un attributo fisso lo
 contraddice.
 
+## Rapporti: avvisi e riepiloghi periodici
+
+La scheda `Traffic & Reports → Reports`. Il **contenuto** del rapporto era già
+reale dal 2 settembre; dal 6 settembre parte anche da solo.
+
+| Cosa | Quando parte |
+|---|---|
+| Avviso «calo del punteggio» | subito dopo un audit, se scende di **oltre** 5 punti |
+| Avviso «nuova criticità grave» | subito dopo un audit, se ne compare una mai vista |
+| Riepilogo al cliente | dal cron, secondo la frequenza scelta (settimanale/mensile/mai) |
+| Riepilogo interno | idem, alla casella del prodotto |
+
+⚠️ **La parte difficile non è far partire un avviso: è farlo TACERE.**
+- *Oltre* 5 punti, non *almeno* 5: sotto quella soglia sono oscillazioni
+  dell'analisi, e un avviso per ogni punto insegna a ignorarli tutti.
+- «Nuova» significa che prima non c'era. Senza il confronto con le criticità già
+  note, l'avviso ripartirebbe a ogni audit finché la criticità resta aperta —
+  e dopo tre email nessuno le legge più.
+- Il riepilogo controlla **quando è partito l'ultimo**: senza, un digest
+  «settimanale» partirebbe a ogni giro del cron, cioè ogni ora.
+
+Il collaudo di tutti questi silenzi è in `qa/collauda_rapporti.py`.
+
+### Le tabelle che non ci sono
+
+⚠️ `report_preferences` e `report_log` **non esistono ancora**: crearle vuole un
+DDL, e la service role key scrive righe ma non crea tabelle. L'SQL è pronto in
+`supabase_setup.sql` (Fase E) e va eseguito dal pannello Supabase.
+
+Nel frattempo i dati vivono in `tracking_event`. **Il codice non cambierà quando
+le tabelle arriveranno**: se ne accorge da solo e ci si sposta, perché la scelta
+sta in un punto solo — `_report_tabella_c_e()` in `db.py` — e non nelle
+schermate. L'SQL travasa anche le righe scritte nel frattempo.
+
+Il costo del compromesso, per saperlo: su `tracking_event` una preferenza è
+«l'ultimo evento scritto», quindi niente vincolo di unicità per progetto e la
+lettura deve ordinare per data. Con 27 progetti regge.
+
+### Il «disiscriviti» che non disiscriveva
+
+⚠️ Il piede di **tutte** le email aveva «Preferenze email» e «Disiscriviti» con
+`href="#"`: due link che non portavano da nessuna parte. Su una email
+transazionale si nota poco; su un riepilogo che arriva ogni mese è una promessa
+non mantenuta, e i filtri antispam la contano contro il mittente.
+
+Ora `_email_footer(link_disdetta)` scrive quella riga **solo quando il link
+esiste** — meglio un piede più corto che un invito a cliccare il nulla — e
+`/rapporti/disdetta` spegne davvero il riepilogo di quel progetto.
+
+⚠️ Il link non chiede di accedere: chi riceve l'email deve poter smettere in un
+clic, dal telefono, senza ricordarsi la password. La chiave è il token HMAC già
+usato per i report condivisibili. E spegne **solo il riepilogo**: gli avvisi
+restano, perché servono a dire che qualcosa si è rotto, non a raccontare come va.
+
 ## Il pannello del team (`/admin`)
 
 Otto schermate a uso interno, in `admin.py` + `templates/admin.html`. Chiudono

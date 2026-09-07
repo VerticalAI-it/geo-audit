@@ -47,6 +47,7 @@ PAGINE = {
     "progetto-technical": f"/project/{PID}?tab=technical",
     "progetto-criticita": f"/project/{PID}?tab=opportunities",
     "progetto-traffico": f"/project/{PID}?tab=traffic",
+    "progetto-rapporti": f"/project/{PID}?tab=reports",
     "progetto-impostazioni": f"/project/{PID}?tab=settings",
     "miei-report": "/miei-report",
 }
