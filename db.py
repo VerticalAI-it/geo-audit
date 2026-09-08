@@ -1178,7 +1178,11 @@ def _sb_ai_domande(project_id: str, solo_attive: bool = True) -> list:
     per_id = {a["id"]: a["name"] for a in argomenti}
     try:
         p = {"topic_id": f"in.({','.join(per_id)})",
-             "select": "id,topic_id,prompt_text,intent,source,active,created_at",
+             # ⚠️ `approved` si chiede solo se la colonna c'e': prima della
+             # migrazione PostgREST rifiuterebbe l'intera query, e il
+             # monitoraggio si fermerebbe su tutti i progetti.
+             "select": "id,topic_id,prompt_text,intent,source,active,created_at"
+                       + (",approved" if _fase_g_c_e() else ""),
              "order": "created_at"}
         if solo_attive:
             p["active"] = "is.true"
@@ -1273,7 +1277,8 @@ def _sb_ai_esecuzioni(project_id: str, giorni: int = 30, limit: int = 2000) -> l
         r = req.get(f"{SUPABASE_URL}/rest/v1/prompt_runs", headers=_SB_H, timeout=20,
                     params={"project_id": f"eq.{project_id}", "run_at": f"gte.{da}",
                             "select": "id,prompt_id,provider,model_used,run_at,status,"
-                                      "response_text",
+                                      "response_text"
+                                      + (",batch_id" if _fase_g_c_e() else ""),
                             "order": "run_at.desc", "limit": str(limit)})
         return r.json() if r.ok else []
     except Exception:
@@ -1383,12 +1388,134 @@ def _sb_ai_concorrente_escludi(project_id: str, dominio: str) -> bool:
         return False
 
 
+_FASE_G = None
+
+
+def _fase_g_c_e() -> bool:
+    """Se la migrazione della fase G e' gia' stata eseguita sul database.
+
+    ⚠️ Serve perche' il codice esce prima della migrazione: Silvio esegue lo
+    script quando puo', e nel frattempo il monitoraggio non deve fermarsi.
+    Si prova a leggere una colonna nuova: se PostgREST non la conosce risponde
+    con un errore invece che con dei dati.
+
+    Il risultato si tiene in memoria: e' una domanda la cui risposta cambia
+    una volta sola nella vita del prodotto.
+    """
+    global _FASE_G
+    if _FASE_G is None:
+        try:
+            r = req.get(f"{SUPABASE_URL}/rest/v1/prompt_runs", headers=_SB_H, timeout=10,
+                        params={"select": "batch_id", "limit": "1"})
+            _FASE_G = r.ok
+        except Exception:
+            return False          # ⚠️ non si memorizza: e' un guasto di rete,
+                                  # non una risposta sullo schema
+    return bool(_FASE_G)
+
+
+def _sb_ai_snapshot_ultimo(project_id: str, escludi_batch: str = "") -> dict:
+    """L'ultima fotografia salvata, per calcolare l'andamento del giro nuovo.
+
+    ⚠️ `escludi_batch` toglie dal confronto la fotografia del giro corrente,
+    se ne e' gia' stata scritta una: senza, un ricalcolo confronterebbe il giro
+    con se stesso e l'andamento risulterebbe sempre zero.
+    """
+    try:
+        p = {"project_id": f"eq.{project_id}",
+             "select": "visibility_score,period_end,created_at",
+             "order": "created_at.desc", "limit": "2"}
+        r = req.get(f"{SUPABASE_URL}/rest/v1/ai_visibility_snapshots",
+                    headers=_SB_H, timeout=15, params=p)
+        if not r.ok:
+            return {}
+        righe = r.json() or []
+        if escludi_batch and _fase_g_c_e():
+            q = dict(p, select="visibility_score,batch_id,created_at")
+            r2 = req.get(f"{SUPABASE_URL}/rest/v1/ai_visibility_snapshots",
+                         headers=_SB_H, timeout=15, params=q)
+            if r2.ok:
+                righe = [x for x in (r2.json() or [])
+                         if x.get("batch_id") != escludi_batch]
+        return righe[0] if righe else {}
+    except Exception:
+        return {}
+
+
+def _sb_ai_domande_da_approvare(project_id: str) -> list:
+    """Le domande generate che aspettano il via libera dell'admin.
+
+    Prima della migrazione non esiste il concetto di approvazione: torna una
+    lista vuota, che e' la risposta onesta — non «non ce ne sono», ma «qui non
+    si approva ancora niente». Chi chiama distingue i due casi con
+    `_fase_g_c_e()`.
+    """
+    if not _fase_g_c_e():
+        return []
+    argomenti = _sb_ai_argomenti(project_id)
+    if not argomenti:
+        return []
+    ids = ",".join(a["id"] for a in argomenti)
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/monitored_prompts", headers=_SB_H,
+                    timeout=15,
+                    params={"topic_id": f"in.({ids})", "approved": "is.false",
+                            "select": "id,topic_id,prompt_text,intent,source,created_at",
+                            "order": "created_at"})
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_ai_domanda_approva(prompt_ids: list, chi: str = "") -> int:
+    """Segna approvate le domande indicate. Torna quante ne ha aggiornate."""
+    if not prompt_ids or not _fase_g_c_e():
+        return 0
+    try:
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/monitored_prompts", timeout=20,
+                      headers={**_SB_H, "Prefer": "return=representation"},
+                      params={"id": f"in.({','.join(prompt_ids)})"},
+                      json={"approved": True,
+                            "approved_at": datetime.now(timezone.utc).isoformat(),
+                            "approved_by": chi or None})
+        return len(r.json() or []) if r.ok else 0
+    except Exception:
+        return 0
+
+
 def _sb_ai_snapshot_scrivi(project_id: str, inizio: str, fine: str,
-                           punteggio: float, per_provider: dict) -> bool:
+                           punteggio: float, per_provider: dict,
+                           batch_id: str = "", domande: int = 0,
+                           delta: float = None) -> bool:
+    """⚠️ I campi del giro (batch_id, domande contate, andamento) si scrivono
+    solo se la migrazione della fase G c'e' gia': prima, quelle colonne non
+    esistono e PostgREST rifiuterebbe l'intera riga — perdendo anche il
+    punteggio, che invece si puo' salvare benissimo."""
+    extra, params, testate = {}, {}, {**_SB_H}
+    if _fase_g_c_e():
+        # Dopo la migrazione ogni giro ha la sua fotografia: inserimento
+        # normale, nessuna fusione. E' il senso di «una per giro».
+        extra = {"batch_id": batch_id or None,
+                 "prompts_counted": domande or None,
+                 "delta_vs_previous": delta}
+    else:
+        # ⚠️ Prima della migrazione vale ancora il vincolo vecchio, uno per
+        # periodo di date: due giri lo stesso giorno collidono. Si sovrascrive
+        # la riga del periodo, indicando SU COSA fondere.
+        #
+        # `on_conflict` non e' facoltativo: senza, PostgREST fonde sulla chiave
+        # primaria, che qui e' un uuid generato e non collide mai — l'upsert
+        # diventa un insert, sbatte sul vincolo e torna 409. E' successo
+        # davvero: di tre fotografie ne era rimasta salvata solo la prima,
+        # quella del giro con le domande sbagliate, e l'andamento si sarebbe
+        # calcolato contro quella per sempre.
+        testate["Prefer"] = "resolution=merge-duplicates"
+        params = {"on_conflict": "project_id,period_start,period_end"}
     try:
         r = req.post(f"{SUPABASE_URL}/rest/v1/ai_visibility_snapshots", timeout=15,
-                     headers={**_SB_H, "Prefer": "resolution=merge-duplicates"},
-                     json={"project_id": project_id, "period_start": inizio,
+                     headers=testate, params=params,
+                     json={**extra,
+                           "project_id": project_id, "period_start": inizio,
                            "period_end": fine, "visibility_score": punteggio,
                            "breakdown_by_provider": per_provider})
         return r.status_code < 300
