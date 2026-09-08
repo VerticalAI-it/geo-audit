@@ -2294,13 +2294,31 @@ def _pannello_invii(project: dict, r: dict, prefs: dict, invii: list) -> str:
             return "mai partito finora"
         return f"ultimo invio {_fmt_date(voce.get('sent_at'))}"
 
+    # ⚠️ Se il cliente si è disiscritto, la tendina della sua frequenza non
+    # comanda più niente: mostrarla come se comandasse farebbe credere che le
+    # email partano. Al suo posto si dice cosa è successo, con la data.
+    disiscritto = bool(prefs.get("client_unsubscribed"))
+    if disiscritto:
+        quando_lo_ha_fatto = _fmt_date(prefs.get("client_unsubscribed_at"))
+        riga_cliente = (
+            '<div class="schedule-row"><span>Al cliente'
+            '<span class="freq-nota">'
+            + ("si è disiscritto il " + quando_lo_ha_fatto
+               if quando_lo_ha_fatto and quando_lo_ha_fatto != "—"
+               else "si è disiscritto dal link nell'email")
+            + '</span></span>'
+            '<button type="button" class="btn-riattiva" data-pref="client_unsubscribed">'
+            'Riattiva</button></div>')
+    else:
+        riga_cliente = _riga_frequenza(
+            "client_digest_frequency", "Al cliente",
+            prefs.get("client_digest_frequency") or "monthly", quando(ultimo_cliente))
+
     pianificazione = (
         '<div class="card">'
         '<div class="card-title">Ogni quanto</div>'
         '<div class="card-desc">Il riepilogo qui accanto, mandato da solo.</div>'
-        + _riga_frequenza("client_digest_frequency", "Al cliente",
-                          prefs.get("client_digest_frequency") or "monthly",
-                          quando(ultimo_cliente))
+        + riga_cliente
         + _riga_frequenza("team_digest_frequency", "A noi",
                           prefs.get("team_digest_frequency") or "weekly",
                           quando(ultimo_team))
@@ -2349,6 +2367,17 @@ def _pannello_invii(project: dict, r: dict, prefs: dict, invii: list) -> str:
                 b.classList.toggle("on", !acceso);
                 b.setAttribute("aria-pressed", !acceso ? "true" : "false");
               });
+            });
+          });
+
+          /* Riattivare un cliente che si era disiscritto è un gesto
+             deliberato: si conferma, perché ricominciare a scrivere a chi aveva
+             chiesto di smettere è la cosa che non si vuole fare per sbaglio. */
+          document.querySelectorAll(".btn-riattiva[data-pref]").forEach(b => {
+            b.addEventListener("click", () => {
+              if (!window.confirm("Questo cliente aveva chiesto di non ricevere più "
+                                  + "il riepilogo. Vuoi davvero riattivarglielo?")) return;
+              salva("client_unsubscribed", false, () => { window.location.reload(); });
             });
           });
 

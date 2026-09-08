@@ -196,8 +196,13 @@ if link:
     percorso = "/rapporti/disdetta?p=" + q["p"][0] + "&t=" + q["t"][0]
     r = c.get(percorso)
     controlla("aperto, disattiva il riepilogo", r.status_code == 200, f"HTTP {r.status_code}")
-    spento = any(campi.get("client_digest_frequency") == "off" for _, campi in salvati)
-    controlla("e lo spegne davvero", spento)
+    # ⚠️ Registra la VOLONTÀ del cliente, non la frequenza. Se scrivesse
+    # `frequency = off` userebbe lo stesso campo della tendina del pannello, e
+    # chiunque la rimettesse su «Mensile» farebbe ripartire le email.
+    spento = any(campi.get("client_unsubscribed") is True for _, campi in salvati)
+    controlla("registra che il cliente non le vuole più", spento)
+    tocca_frequenza = any("client_digest_frequency" in campi for _, campi in salvati)
+    controlla("e NON tocca la frequenza, che è un'altra cosa", not tocca_frequenza)
     # ⚠️ gli AVVISI restano: servono a dire che qualcosa si è rotto, non a
     # raccontare come va — chi disattiva il riepilogo non sta chiedendo questo
     tocca_avvisi = any("alert_score_drop" in campi or "alert_new_critical" in campi
@@ -212,6 +217,52 @@ controlla("un link col token falso viene rifiutato", r.status_code == 400,
 controlla("e non cambia niente", not salvati)
 r = c.get("/rapporti/disdetta")
 controlla("senza parametri, rifiutato", r.status_code == 400, f"HTTP {r.status_code}")
+
+# ── la disiscrizione è del cliente, e nessuno la annulla per sbaglio ───────
+print("\nLa disiscrizione scavalca la frequenza")
+
+
+def prova_disiscritto(disiscritto, frequenza, atteso, descrizione):
+    server._sb_report_log_ultimo = lambda pid, tipo: None
+    esito = server._digest_da_mandare(
+        prog, {"client_digest_frequency": frequenza, "client_unsubscribed": disiscritto},
+        "client_digest")
+    controlla(descrizione, esito == atteso,
+              f"{'parte' if esito else 'non parte'}, atteso "
+              f"{'parte' if atteso else 'non parte'}")
+
+
+prova_disiscritto(False, "weekly", True, "non disiscritto, settimanale: parte")
+prova_disiscritto(True, "weekly", False, "DISISCRITTO, pur con frequenza attiva: non parte")
+prova_disiscritto(True, "monthly", False,
+                  "disiscritto e qualcuno rimette «mensile»: continua a non partire")
+
+# ⚠️ il riepilogo INTERNO non c'entra: il cliente ha disdetto il suo, non il nostro
+server._sb_report_log_ultimo = lambda pid, tipo: None
+interno = server._digest_da_mandare(
+    prog, {"team_digest_frequency": "weekly", "client_unsubscribed": True}, "team_digest")
+controlla("il riepilogo interno parte lo stesso", interno)
+
+print("\nDal pannello si può solo riattivare, non disiscrivere")
+r = c.post(f"/project/{PID}/reports/preferenze",
+           json={"campo": "client_unsubscribed", "valore": True})
+controlla("disiscrivere qualcuno dal pannello è rifiutato", r.status_code == 400,
+          f"HTTP {r.status_code}")
+r = c.post(f"/project/{PID}/reports/preferenze",
+           json={"campo": "client_unsubscribed", "valore": False})
+controlla("riattivare invece si può", r.status_code == 200, f"HTTP {r.status_code}")
+
+print("\nE nella scheda si vede")
+h_disc = views._tab_reports(
+    prog, {**PREF_TUTTI, "client_unsubscribed": True,
+           "client_unsubscribed_at": "2026-09-07T10:00:00+00:00"}, [])
+controlla("dice che si è disiscritto", "disiscritto" in h_disc)
+controlla("e offre di riattivare", "btn-riattiva" in h_disc)
+controlla("la tendina della frequenza sparisce",
+          'data-pref="client_digest_frequency"' not in h_disc)
+h_ok = views._tab_reports(prog, {**PREF_TUTTI, "client_unsubscribed": False}, [])
+controlla("se non è disiscritto, la tendina c'è",
+          'data-pref="client_digest_frequency"' in h_ok)
 
 print("\nIl piede delle altre email")
 controlla("senza link, non invita a cliccare il nulla",
