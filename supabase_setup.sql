@@ -397,3 +397,209 @@ JOIN public.project p ON p.id = t.project_id
 WHERE t.event_name = 'report_inviato'
   AND t.project_id IS NOT NULL
   AND t.created_at > COALESCE((SELECT MAX(sent_at) FROM public.report_log), '1970-01-01'::timestamptz);
+
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- FASE F · Monitoraggio prompt AI (8 settembre 2026)
+--
+-- Serve alle 6 schermate del documento GEO_Audit_PromptMonitoring: le 2 admin
+-- (Configurazione AI, Monitoraggio per progetto) e le 4 cliente (AI Visibility,
+-- Prompts & Queries, Competitors, Citations).
+--
+-- ⚠️ A differenza della Fase E, QUI NON C'È RIPIEGO: queste tabelle sono
+-- relazionali e legate fra loro, e non si possono appoggiare a `tracking_event`
+-- come si è fatto per le preferenze dei rapporti. Finché questo blocco non è
+-- eseguito, il monitoraggio non può partire.
+--
+-- Il motore che le riempirà è già scritto e provato: `ai_monitor.py` interroga
+-- i quattro provider e legge le citazioni. Manca solo dove metterle.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── Chiavi API e modelli (globale, non per progetto) ────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.llm_provider_config (
+    provider          TEXT        PRIMARY KEY,   -- openai | anthropic | gemini | perplexity
+    -- ⚠️ CIFRATA, mai in chiaro. Il documento lo mette fra i requisiti non
+    -- negoziabili: chi legge questa tabella non deve poter usare la chiave.
+    api_key_encrypted TEXT        NOT NULL,
+    default_model     TEXT,
+    updated_at        TIMESTAMPTZ DEFAULT NOW(),
+    updated_by        TEXT                       -- email di chi ha fatto la modifica
+);
+
+ALTER TABLE public.llm_provider_config ENABLE ROW LEVEL SECURITY;
+-- Nessuna policy: si legge solo con la service role key, dal server. Un client
+-- non deve poter arrivare a questa tabella in nessun caso.
+
+CREATE TABLE IF NOT EXISTS public.llm_available_models (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider            TEXT        REFERENCES public.llm_provider_config(provider)
+                                    ON DELETE CASCADE,
+    model_id            TEXT        NOT NULL,
+    -- ⚠️ Un modello che non sa cercare sul web risponde a memoria, e a memoria
+    -- non cita nessuno: sceglierlo darebbe zero citazioni per sempre, senza
+    -- che si capisca il perché.
+    supports_web_search BOOLEAN     NOT NULL DEFAULT FALSE,
+    fetched_at          TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (provider, model_id)
+);
+
+ALTER TABLE public.llm_available_models ENABLE ROW LEVEL SECURITY;
+
+-- ── Impostazioni per progetto ──────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.ai_monitoring_settings (
+    project_id         UUID        PRIMARY KEY REFERENCES public.project(id) ON DELETE CASCADE,
+    -- Default TRUE come da Decisione 6: un progetto nuovo nasce monitorato.
+    is_active          BOOLEAN     NOT NULL DEFAULT TRUE,
+    schedule_frequency TEXT        NOT NULL DEFAULT 'weekly',
+    sentiment_enabled  BOOLEAN     NOT NULL DEFAULT TRUE,
+    last_run_at        TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_by         TEXT,
+    CONSTRAINT ai_freq CHECK (schedule_frequency IN ('weekly','monthly','custom'))
+);
+
+ALTER TABLE public.ai_monitoring_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "own_ai_settings" ON public.ai_monitoring_settings;
+CREATE POLICY "own_ai_settings" ON public.ai_monitoring_settings
+    FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.project p
+                   WHERE p.id = ai_monitoring_settings.project_id AND p.user_id = auth.uid()));
+
+-- ── Cosa si chiede alle AI ─────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.monitored_topics (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID        REFERENCES public.project(id) ON DELETE CASCADE,
+    name       TEXT        NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.monitored_prompts (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    topic_id    UUID        REFERENCES public.monitored_topics(id) ON DELETE CASCADE,
+    prompt_text TEXT        NOT NULL,
+    intent      TEXT,
+    source      TEXT        NOT NULL DEFAULT 'auto_generated',  -- auto_generated | manual
+    active      BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.monitored_topics  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.monitored_prompts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "own_topics" ON public.monitored_topics;
+CREATE POLICY "own_topics" ON public.monitored_topics
+    FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.project p
+                   WHERE p.id = monitored_topics.project_id AND p.user_id = auth.uid()));
+
+-- ── Cosa hanno risposto ────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.prompt_runs (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    prompt_id     UUID        REFERENCES public.monitored_prompts(id) ON DELETE CASCADE,
+    project_id    UUID        REFERENCES public.project(id) ON DELETE CASCADE,
+    provider      TEXT        NOT NULL,
+    model_used    TEXT        NOT NULL,
+    run_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    response_text TEXT,
+    raw_response  JSONB,
+    -- ⚠️ 'failed' è uno stato che serve davvero: un provider che non risponde e
+    -- un provider che risponde senza citare nessuno sono due cose diverse, e
+    -- confonderle in uno zero falserebbe il punteggio di visibilità.
+    status        TEXT        NOT NULL DEFAULT 'completed',
+    error         TEXT,
+    CONSTRAINT run_status CHECK (status IN ('completed','failed'))
+);
+
+ALTER TABLE public.prompt_runs ENABLE ROW LEVEL SECURITY;
+
+-- Le due letture che il prodotto fa di continuo: «l'ultima esecuzione di questo
+-- progetto» e «tutte le esecuzioni del periodo».
+CREATE INDEX IF NOT EXISTS prompt_runs_progetto ON public.prompt_runs (project_id, run_at DESC);
+CREATE INDEX IF NOT EXISTS prompt_runs_prompt   ON public.prompt_runs (prompt_id, run_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.extracted_citations (
+    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    prompt_run_id     UUID        REFERENCES public.prompt_runs(id) ON DELETE CASCADE,
+    project_id        UUID        REFERENCES public.project(id) ON DELETE CASCADE,
+    cited_domain      TEXT        NOT NULL,
+    cited_url         TEXT,
+    is_target         BOOLEAN     NOT NULL,
+    -- Chi è il dominio citato, quando non è il cliente: un concorrente, una
+    -- fonte terza che parla del brand, o rumore. Senza questa distinzione la
+    -- schermata Citations non può separare le sue due tabelle.
+    citation_category TEXT,
+    sentiment         TEXT,
+    context_snippet   TEXT,
+    created_at        TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT cit_categoria CHECK (citation_category IS NULL OR citation_category IN
+        ('target','competitor','third_party_about_brand','noise'))
+);
+
+ALTER TABLE public.extracted_citations ENABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS citazioni_progetto ON public.extracted_citations (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS citazioni_dominio  ON public.extracted_citations (project_id, cited_domain);
+
+-- ── I concorrenti ──────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.project_competitors (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID        REFERENCES public.project(id) ON DELETE CASCADE,
+    domain     TEXT        NOT NULL,
+    -- Le tre fonti del documento: proposto dal motore, aggiunto dal team,
+    -- aggiunto dal cliente — che qui ha voce, unica eccezione al resto del
+    -- monitoraggio, perché il suo mercato lo conosce lui.
+    source     TEXT        NOT NULL,
+    added_by   TEXT,
+    -- 'excluded' invece di cancellato: se il cliente toglie un concorrente
+    -- proposto dal motore, al prossimo giro di suggerimenti non deve tornare.
+    status     TEXT        NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (project_id, domain),
+    CONSTRAINT comp_source CHECK (source IN ('ai_suggested','admin_added','client_added')),
+    CONSTRAINT comp_status CHECK (status IN ('active','excluded'))
+);
+
+ALTER TABLE public.project_competitors ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "own_competitors" ON public.project_competitors;
+CREATE POLICY "own_competitors" ON public.project_competitors
+    FOR ALL
+    USING (EXISTS (SELECT 1 FROM public.project p
+                   WHERE p.id = project_competitors.project_id AND p.user_id = auth.uid()));
+
+-- ── L'aggregato che leggono le schermate ───────────────────────────────────
+-- Decisione 5: mai calcolo live in pagina, sempre pre-aggregato da un job.
+
+CREATE TABLE IF NOT EXISTS public.ai_visibility_snapshots (
+    id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id            UUID        REFERENCES public.project(id) ON DELETE CASCADE,
+    period_start          DATE        NOT NULL,
+    period_end            DATE        NOT NULL,
+    visibility_score      NUMERIC,
+    breakdown_by_provider JSONB,
+    created_at            TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (project_id, period_start, period_end)
+);
+
+ALTER TABLE public.ai_visibility_snapshots ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "own_snapshots" ON public.ai_visibility_snapshots;
+CREATE POLICY "own_snapshots" ON public.ai_visibility_snapshots
+    FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.project p
+                   WHERE p.id = ai_visibility_snapshots.project_id AND p.user_id = auth.uid()));
+
+CREATE INDEX IF NOT EXISTS snapshot_progetto
+    ON public.ai_visibility_snapshots (project_id, period_end DESC);
+
+-- ── I progetti che ci sono già nascono monitorati ──────────────────────────
+-- Decisione 6: is_active default true. Rieseguirlo non crea doppioni.
+INSERT INTO public.ai_monitoring_settings (project_id)
+SELECT id FROM public.project
+ON CONFLICT (project_id) DO NOTHING;
