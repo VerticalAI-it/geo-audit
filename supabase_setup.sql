@@ -342,6 +342,19 @@ CREATE TABLE IF NOT EXISTS public.report_preferences (
     CONSTRAINT report_pref_team_freq   CHECK (team_digest_frequency   IN ('weekly','monthly','off'))
 );
 
+-- ⚠️ `CREATE TABLE IF NOT EXISTS` qui sopra NON aggiunge colonne a una tabella
+-- che esiste già: o la crea, o non fa niente. Chi aveva eseguito una versione
+-- precedente di questo file si ritrova la tabella senza le due colonne
+-- aggiunte dopo, e l'INSERT più in basso fallisce con «column ... does not
+-- exist» — fermando tutto il resto dello script.
+--
+-- È successo davvero, l'8 settembre 2026. Da qui in poi ogni colonna aggiunta
+-- a una tabella già rilasciata va messa anche qui sotto.
+ALTER TABLE public.report_preferences
+    ADD COLUMN IF NOT EXISTS client_unsubscribed    BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.report_preferences
+    ADD COLUMN IF NOT EXISTS client_unsubscribed_at TIMESTAMPTZ;
+
 ALTER TABLE public.report_preferences ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "own_report_prefs" ON public.report_preferences;
