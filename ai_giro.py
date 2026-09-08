@@ -25,6 +25,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import ai_monitor
 from db import (_sb_ai_argomento_crea, _sb_ai_citazioni, _sb_ai_citazioni_scrivi,
+                _sb_ai_snapshot_ultimo,
                 _sb_ai_citazioni_categoria, _sb_ai_concorrente_aggiungi,
                 _sb_ai_concorrenti, _sb_ai_domanda_crea, _sb_ai_domande,
                 _sb_ai_esecuzione_scrivi, _sb_ai_impostazioni,
@@ -200,6 +201,21 @@ def esegui_giro(project_id: str, dominio: str, chiavi: dict,
     if not domande:
         return {"esito": "nessuna_domanda", "eseguite": 0}
 
+    # ⚠️ Nessuna domanda entra in un giro finche' un umano non l'ha guardata.
+    # Il documento dell'8 settembre lo chiede, e il motivo si e' visto sul
+    # primo giro vero: il generatore aveva scritto dieci domande sul mercato
+    # sbagliato e la visibilita' era risultata 0% — uno zero che il cliente
+    # avrebbe letto come un giudizio sul suo sito.
+    #
+    # Prima della migrazione della fase G la colonna non esiste e il campo
+    # arriva assente: in quel caso si passa, altrimenti il monitoraggio si
+    # fermerebbe ovunque fino a quando Silvio non esegue lo script.
+    in_attesa = [d for d in domande if d.get("approved") is False]
+    domande = [d for d in domande if d.get("approved") is not False]
+    if not domande:
+        return {"esito": "da_approvare", "eseguite": 0,
+                "da_approvare": len(in_attesa)}
+
     concorrenti = {c["domain"] for c in _sb_ai_concorrenti(project_id)}
     eseguite = falliti = citazioni_salvate = 0
     finito = True
@@ -265,6 +281,9 @@ def esegui_giro(project_id: str, dominio: str, chiavi: dict,
             "eseguite": eseguite, "falliti": falliti,
             "citazioni": citazioni_salvate,
             "concorrenti_nuovi": nuovi,
+            # ⚠️ va detto: un giro «completato» che ha saltato meta' delle
+            # domande perche' erano da approvare non e' un giro completo.
+            "da_approvare": len(in_attesa),
             "secondi": round(time.monotonic() - partito)}
 
 
@@ -410,16 +429,31 @@ def riclassifica_citazioni(project_id: str, dominio_progetto: str,
 
 # ── 4. Il punteggio ─────────────────────────────────────────────────────────
 
-def aggrega(project_id: str, giorni: int = 30) -> dict:
-    """Calcola la visibilità del periodo e la salva.
+def aggrega(project_id: str, giorni: int = 30, batch_id: str = "") -> dict:
+    """Calcola la visibilità e la salva, su una base uguale per tutti i motori.
 
-    ⚠️ È la percentuale di risposte in cui il sito compare, **contata sulle
-    risposte riuscite**: quelle fallite si escludono, perché un motore che non
-    ha risposto non è un motore che non ha citato.
+    ⚠️ Si contano solo le risposte **riuscite**: un motore che non ha risposto
+    non è un motore che non ha citato, e confondere le due cose farebbe
+    scendere il punteggio per un guasto nostro.
+
+    ⚠️ E si contano sulle **domande fatte a tutti** — l'intersezione, non
+    l'unione. Il documento lo chiede («il numero di domande deve essere sempre
+    al minimo tra tutti, il KPI ponderato per il numero di domande») e il
+    motivo si è visto al primo giro vero: finito il tempo, OpenAI aveva
+    risposto a 8 domande e Gemini a 7. Contando tutto in un mucchio, chi ha
+    risposto di più pesa di più, e fra un giro e l'altro il punteggio si muove
+    anche solo perché il giro è stato più corto. Su una base comune, invece,
+    due giri si possono confrontare.
+
+    Il punteggio complessivo è la **media delle percentuali dei motori**, non
+    la percentuale del mucchio: così ogni motore pesa uguale anche se ha
+    risposto a un numero diverso di domande.
     """
     from db import _sb_ai_esecuzioni
 
     esecuzioni = _sb_ai_esecuzioni(project_id, giorni=giorni)
+    if batch_id:
+        esecuzioni = [e for e in esecuzioni if e.get("batch_id") == batch_id]
     riuscite = [e for e in esecuzioni if e.get("status") == "completed"]
     if not riuscite:
         return {"punteggio": None, "risposte": 0}
@@ -427,24 +461,65 @@ def aggrega(project_id: str, giorni: int = 30) -> dict:
     citazioni = _sb_ai_citazioni(project_id, giorni=giorni)
     con_noi = {c["prompt_run_id"] for c in citazioni if c.get("is_target")}
 
+    # Le domande a cui ogni motore ha effettivamente risposto.
+    domande_per_provider: dict = {}
+    for e in riuscite:
+        if e.get("prompt_id"):
+            domande_per_provider.setdefault(e.get("provider") or "?", set()).add(e["prompt_id"])
+
+    base = set()
+    if domande_per_provider:
+        base = set.intersection(*domande_per_provider.values())
+
+    # ⚠️ Se un motore è andato giù del tutto, l'intersezione può svuotarsi. Un
+    # punteggio calcolato su zero domande non è «zero visibilità», è nessuna
+    # misura: si ripiega sull'unione e lo si dichiara, invece di restituire un
+    # numero che sembra un risultato.
+    base_comune = True
+    if not base:
+        base_comune = False
+        base = set().union(*domande_per_provider.values()) if domande_per_provider else set()
+
     per_provider = {}
     for e in riuscite:
+        if e.get("prompt_id") not in base:
+            continue
         p = e.get("provider") or "?"
         conto = per_provider.setdefault(p, {"risposte": 0, "citati": 0})
         conto["risposte"] += 1
         if e["id"] in con_noi:
             conto["citati"] += 1
-    for p, c in per_provider.items():
+    for c in per_provider.values():
         c["percentuale"] = round(c["citati"] * 100 / c["risposte"]) if c["risposte"] else 0
 
-    citati = len([e for e in riuscite if e["id"] in con_noi])
-    punteggio = round(citati * 100 / len(riuscite), 1)
+    if not per_provider:
+        return {"punteggio": None, "risposte": 0}
+
+    # Media fra i motori: ognuno pesa uguale, a prescindere da quante domande
+    # ha alle spalle.
+    punteggio = round(
+        sum(c["percentuale"] for c in per_provider.values()) / len(per_provider), 1)
+
+    contate = sum(c["risposte"] for c in per_provider.values())
+    citati = sum(c["citati"] for c in per_provider.values())
+
+    # ── l'andamento rispetto al giro precedente ────────────────────────────
+    delta = None
+    try:
+        precedente = _sb_ai_snapshot_ultimo(project_id, escludi_batch=batch_id)
+        if precedente and precedente.get("visibility_score") is not None:
+            delta = round(punteggio - float(precedente["visibility_score"]), 1)
+    except Exception:
+        delta = None
 
     fine = date.today()
     inizio = fine - timedelta(days=giorni)
     _sb_ai_snapshot_scrivi(project_id, inizio.isoformat(), fine.isoformat(),
-                           punteggio, per_provider)
+                           punteggio, per_provider, batch_id=batch_id,
+                           domande=len(base), delta=delta)
 
-    return {"punteggio": punteggio, "risposte": len(riuscite), "citati": citati,
+    return {"punteggio": punteggio, "risposte": contate, "citati": citati,
+            "domande": len(base), "base_comune": base_comune,
+            "delta": delta,
             "per_provider": per_provider,
             "falliti": len(esecuzioni) - len(riuscite)}

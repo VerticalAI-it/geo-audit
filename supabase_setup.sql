@@ -625,3 +625,115 @@ CREATE INDEX IF NOT EXISTS snapshot_progetto
 INSERT INTO public.ai_monitoring_settings (project_id)
 SELECT id FROM public.project
 ON CONFLICT (project_id) DO NOTHING;
+-- ══════════════════════════════════════════════════════════════════════════
+-- FASE G · Monitoraggio AI: approvazione delle domande e andamento fra i giri
+-- 8 settembre 2026
+--
+-- Tre richieste del documento di Francesco dell'8 settembre:
+--   · le domande generate vanno APPROVATE dall'admin prima del primo giro
+--   · il punteggio va calcolato su una base confrontabile fra i provider, e
+--     l'andamento registrato da un giro al successivo
+--   · la frequenza dei giri sta nella configurazione del progetto (c'è già:
+--     ai_monitoring_settings.schedule_frequency, niente da fare)
+--
+-- ⚠️ Non ci sono tabelle nuove: solo colonne aggiunte a tabelle che esistono
+-- già. Per questo si usa ALTER TABLE ... ADD COLUMN IF NOT EXISTS e NON
+-- CREATE TABLE IF NOT EXISTS: su una tabella che c'è già, il CREATE non
+-- aggiunge le colonne e non avvisa — è l'errore che ci ha fermati la volta
+-- scorsa. Lo script è rieseguibile per intero quante volte si vuole.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ── 1. Le domande si approvano prima di usarle ────────────────────────────
+-- Il motore le genera leggendo il sito, ma le sceglie una macchina: su un
+-- progetto vero aveva scritto dieci domande sul mercato sbagliato, e la
+-- visibilità era risultata 0% — uno zero che sembrava un giudizio sul sito.
+-- Da qui in poi nessuna domanda entra in un giro finché un umano non l'ha
+-- guardata.
+
+ALTER TABLE public.monitored_prompts
+    ADD COLUMN IF NOT EXISTS approved     BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE public.monitored_prompts
+    ADD COLUMN IF NOT EXISTS approved_at  TIMESTAMPTZ;
+ALTER TABLE public.monitored_prompts
+    ADD COLUMN IF NOT EXISTS approved_by  TEXT;
+
+-- Chi cerca le domande da approvare non deve scorrere tutta la tabella.
+CREATE INDEX IF NOT EXISTS prompt_da_approvare
+    ON public.monitored_prompts (topic_id) WHERE approved = FALSE;
+
+
+-- ── 2. Le risposte di uno stesso giro si riconoscono fra loro ─────────────
+-- Serve per l'andamento «fra un run e quello successivo»: senza un
+-- identificativo del giro, due giri fatti lo stesso giorno si confondono e
+-- l'unico modo per separarli sarebbe indovinare dagli orari.
+
+ALTER TABLE public.prompt_runs
+    ADD COLUMN IF NOT EXISTS batch_id UUID;
+
+CREATE INDEX IF NOT EXISTS run_batch
+    ON public.prompt_runs (project_id, batch_id);
+
+
+-- ── 3. Una fotografia per ogni giro, non una al giorno ────────────────────
+-- La tabella nasceva con una fotografia per periodo di date. Ma due giri
+-- ravvicinati sullo stesso progetto scriverebbero sulla stessa riga, e il
+-- confronto fra un giro e il precedente non si potrebbe più fare.
+
+ALTER TABLE public.ai_visibility_snapshots
+    ADD COLUMN IF NOT EXISTS batch_id        UUID;
+
+-- Quante domande sono entrate nel conto. È il denominatore del punteggio:
+-- senza, un punteggio più basso non si distingue da un giro più corto.
+ALTER TABLE public.ai_visibility_snapshots
+    ADD COLUMN IF NOT EXISTS prompts_counted INT;
+
+-- La variazione rispetto alla fotografia precedente, in punti percentuali.
+-- Si scrive al momento del calcolo invece di ricavarla ogni volta: chi legge
+-- la scheda non deve rifare il conto, e l'andamento resta quello misurato
+-- allora anche se poi cambiano i dati sotto.
+ALTER TABLE public.ai_visibility_snapshots
+    ADD COLUMN IF NOT EXISTS delta_vs_previous NUMERIC;
+
+-- ⚠️ Il vincolo vecchio impediva due fotografie nello stesso periodo, cioè
+-- due giri nello stesso giorno. Si sostituisce con uno sul giro.
+--
+-- Il nome del vincolo lo assegna Postgres da solo, quindi invece di
+-- indovinarlo si cerca quello che c'è: si toglie qualunque vincolo di
+-- unicita' sulla tabella che nomini period_start.
+DO $$
+DECLARE nome TEXT;
+BEGIN
+    FOR nome IN
+        SELECT con.conname
+        FROM pg_constraint con
+        JOIN pg_class rel ON rel.oid = con.conrelid
+        JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+        WHERE ns.nspname = 'public'
+          AND rel.relname = 'ai_visibility_snapshots'
+          AND con.contype = 'u'
+          AND pg_get_constraintdef(con.oid) LIKE '%period_start%'
+    LOOP
+        EXECUTE format('ALTER TABLE public.ai_visibility_snapshots DROP CONSTRAINT %I', nome);
+        RAISE NOTICE 'tolto il vincolo %', nome;
+    END LOOP;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS snapshot_per_giro
+    ON public.ai_visibility_snapshots (project_id, batch_id)
+    WHERE batch_id IS NOT NULL;
+
+
+-- ── 4. Le domande che esistono già ────────────────────────────────────────
+-- Sono quelle di un solo progetto di prova, già riviste a mano. Le si segna
+-- approvate una volta sola, così il monitoraggio non si ferma; da qui in poi
+-- ogni domanda nuova nasce da approvare.
+
+-- ⚠️ La data qui è FISSA di proposito, non NOW(). Con NOW() lo script
+-- rieseguito fra un mese approverebbe in blocco tutte le domande in attesa,
+-- cioè spegnerebbe in silenzio il controllo che stiamo aggiungendo. Con una
+-- data fissa, rieseguirlo non tocca niente di nuovo.
+UPDATE public.monitored_prompts
+SET approved = TRUE, approved_at = NOW(), approved_by = 'migrazione fase G'
+WHERE approved = FALSE
+  AND created_at < TIMESTAMPTZ '2026-09-08 00:00:00+00';
