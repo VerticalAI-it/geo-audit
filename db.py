@@ -1121,6 +1121,357 @@ def _sb_report_invii(project_id: str, limit: int = 20) -> list:
         return []
 
 
+# ── Monitoraggio AI ─────────────────────────────────────────────────────────
+#
+# Le tabelle esistono dall'8 settembre 2026 (Fase F). A differenza dei rapporti
+# qui non c'e' ripiego: senza le tabelle queste funzioni tornano vuoto, e le
+# schermate mostrano «in attesa dei primi dati» invece di inventarne.
+
+def _sb_ai_impostazioni(project_id: str) -> dict:
+    """Se e ogni quanto si interrogano le AI per questo progetto."""
+    vuoto = {"is_active": True, "schedule_frequency": "weekly",
+             "sentiment_enabled": True, "last_run_at": None}
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/ai_monitoring_settings", headers=_SB_H,
+                    timeout=10, params={"project_id": f"eq.{project_id}", "limit": "1"})
+        righe = r.json() if r.ok else []
+        return {**vuoto, **righe[0]} if righe else vuoto
+    except Exception:
+        return vuoto
+
+
+def _sb_ai_impostazioni_salva(project_id: str, campi: dict, chi: str = "") -> bool:
+    permessi = {"is_active", "schedule_frequency", "sentiment_enabled", "last_run_at"}
+    dati = {k: v for k, v in campi.items() if k in permessi}
+    if not dati:
+        return False
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/ai_monitoring_settings", timeout=15,
+                     headers={**_SB_H, "Prefer": "resolution=merge-duplicates"},
+                     json={**dati, "project_id": project_id, "updated_by": chi or None,
+                           "updated_at": datetime.now(timezone.utc).isoformat()})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_ai_argomenti(project_id: str) -> list:
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/monitored_topics", headers=_SB_H, timeout=15,
+                    params={"project_id": f"eq.{project_id}", "select": "id,name,created_at",
+                            "order": "created_at"})
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_ai_domande(project_id: str, solo_attive: bool = True) -> list:
+    """Le domande monitorate, con l'argomento di ognuna.
+
+    ⚠️ Le domande appartengono a un argomento, e l'argomento a un progetto: non
+    c'e' `project_id` sulla domanda. Si passa dagli argomenti, altrimenti si
+    leggerebbero le domande di tutti.
+    """
+    argomenti = _sb_ai_argomenti(project_id)
+    if not argomenti:
+        return []
+    per_id = {a["id"]: a["name"] for a in argomenti}
+    try:
+        p = {"topic_id": f"in.({','.join(per_id)})",
+             "select": "id,topic_id,prompt_text,intent,source,active,created_at",
+             "order": "created_at"}
+        if solo_attive:
+            p["active"] = "is.true"
+        r = req.get(f"{SUPABASE_URL}/rest/v1/monitored_prompts", headers=_SB_H,
+                    timeout=15, params=p)
+        return [{**d, "argomento": per_id.get(d.get("topic_id"), "")}
+                for d in (r.json() if r.ok else [])]
+    except Exception:
+        return []
+
+
+def _sb_ai_argomento_crea(project_id: str, nome: str) -> str:
+    """Crea un argomento e ne torna l'id. Se c'e' gia', torna quello esistente."""
+    for a in _sb_ai_argomenti(project_id):
+        if (a.get("name") or "").strip().lower() == (nome or "").strip().lower():
+            return a["id"]
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/monitored_topics", timeout=15,
+                     headers={**_SB_H, "Prefer": "return=representation"},
+                     json={"project_id": project_id, "name": nome})
+        return (r.json() or [{}])[0].get("id", "") if r.status_code < 300 else ""
+    except Exception:
+        return ""
+
+
+def _sb_ai_domanda_crea(topic_id: str, testo: str, intent: str = "",
+                        origine: str = "auto_generated") -> str:
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/monitored_prompts", timeout=15,
+                     headers={**_SB_H, "Prefer": "return=representation"},
+                     json={"topic_id": topic_id, "prompt_text": testo,
+                           "intent": intent or None, "source": origine})
+        return (r.json() or [{}])[0].get("id", "") if r.status_code < 300 else ""
+    except Exception:
+        return ""
+
+
+def _sb_ai_domanda_elimina(prompt_id: str) -> bool:
+    try:
+        r = req.delete(f"{SUPABASE_URL}/rest/v1/monitored_prompts", headers=_SB_H,
+                       timeout=15, params={"id": f"eq.{prompt_id}"})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_ai_esecuzione_scrivi(prompt_id: str, project_id: str, provider: str,
+                             modello: str, testo: str, stato: str = "completed",
+                             errore: str = "") -> str:
+    """Registra una risposta di un motore. Torna l'id della riga.
+
+    ⚠️ Si registra anche quando FALLISCE: un motore che non risponde e un motore
+    che risponde senza citare nessuno sono due cose diverse, e confonderle in
+    uno zero falserebbe il punteggio di visibilita'.
+    """
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/prompt_runs", timeout=20,
+                     headers={**_SB_H, "Prefer": "return=representation"},
+                     json={"prompt_id": prompt_id, "project_id": project_id,
+                           "provider": provider, "model_used": modello,
+                           "response_text": (testo or "")[:20000],
+                           "status": stato, "error": (errore or "")[:500] or None})
+        return (r.json() or [{}])[0].get("id", "") if r.status_code < 300 else ""
+    except Exception:
+        return ""
+
+
+def _sb_ai_citazioni_scrivi(run_id: str, project_id: str, citazioni: list) -> int:
+    """Salva in blocco le citazioni di una risposta. Torna quante ne ha scritte."""
+    if not run_id or not citazioni:
+        return 0
+    righe = [{"prompt_run_id": run_id, "project_id": project_id,
+              "cited_domain": c.get("dominio") or "", "cited_url": c.get("url"),
+              "is_target": bool(c.get("e_il_cliente")),
+              "citation_category": c.get("categoria"),
+              "sentiment": c.get("sentiment") or None,
+              "context_snippet": (c.get("titolo") or "")[:500] or None}
+             for c in citazioni if c.get("dominio")]
+    if not righe:
+        return 0
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/extracted_citations", headers=_SB_H,
+                     timeout=25, json=righe)
+        return len(righe) if r.status_code < 300 else 0
+    except Exception:
+        return 0
+
+
+def _sb_ai_esecuzioni(project_id: str, giorni: int = 30, limit: int = 2000) -> list:
+    da = (datetime.now(timezone.utc) - timedelta(days=giorni)).isoformat()
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/prompt_runs", headers=_SB_H, timeout=20,
+                    params={"project_id": f"eq.{project_id}", "run_at": f"gte.{da}",
+                            "select": "id,prompt_id,provider,model_used,run_at,status,"
+                                      "response_text",
+                            "order": "run_at.desc", "limit": str(limit)})
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_ai_citazioni(project_id: str, giorni: int = 30, limit: int = 5000) -> list:
+    da = (datetime.now(timezone.utc) - timedelta(days=giorni)).isoformat()
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/extracted_citations", headers=_SB_H,
+                    timeout=25,
+                    params={"project_id": f"eq.{project_id}", "created_at": f"gte.{da}",
+                            "select": "prompt_run_id,cited_domain,cited_url,is_target,"
+                                      "citation_category,sentiment,created_at",
+                            "order": "created_at.desc", "limit": str(limit)})
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_ai_citazioni_categoria(project_id: str, dominio: str, categoria: str,
+                               giorni: int = 30) -> bool:
+    """Riscrive la categoria di tutte le citazioni di un dominio.
+
+    ⚠️ La categoria si decide al salvataggio, quando l'elenco dei concorrenti
+    e' quello di allora. Se un dominio viene riconosciuto come concorrente
+    dopo, le righe gia' scritte restano indietro: serve poterle correggere,
+    o lo storico e il presente raccontano due cose diverse.
+    """
+    da = (datetime.now(timezone.utc) - timedelta(days=giorni)).isoformat()
+    try:
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/extracted_citations", headers=_SB_H,
+                      timeout=20,
+                      params={"project_id": f"eq.{project_id}",
+                              "cited_domain": f"eq.{dominio.lower()}",
+                              "created_at": f"gte.{da}"},
+                      json={"citation_category": categoria})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_ai_ha_dati(project_id: str) -> bool:
+    """Se almeno un giro e' andato a buon fine.
+
+    ⚠️ E' la condizione che distingue «in attesa dei primi dati» da «ecco i
+    dati»: il documento la lasciava da confermare, e questa e' la risposta —
+    almeno una esecuzione COMPLETATA, non semplicemente tentata.
+    """
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/prompt_runs", headers=_SB_H, timeout=10,
+                    params={"project_id": f"eq.{project_id}", "status": "eq.completed",
+                            "select": "id", "limit": "1"})
+        return bool(r.json()) if r.ok else False
+    except Exception:
+        return False
+
+
+def _sb_ai_concorrenti(project_id: str, solo_attivi: bool = True) -> list:
+    try:
+        p = {"project_id": f"eq.{project_id}",
+             "select": "id,domain,source,added_by,status,created_at", "order": "created_at"}
+        if solo_attivi:
+            p["status"] = "eq.active"
+        r = req.get(f"{SUPABASE_URL}/rest/v1/project_competitors", headers=_SB_H,
+                    timeout=15, params=p)
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_ai_concorrente_aggiungi(project_id: str, dominio: str, origine: str,
+                                chi: str = "") -> bool:
+    """⚠️ Se il dominio c'era ed era stato escluso, si RIATTIVA invece di
+    creare un doppione: la tabella ha un vincolo di unicita' e un insert
+    fallirebbe, lasciando l'utente col dubbio di aver sbagliato qualcosa.
+
+    ⚠️ `on_conflict` non e' facoltativo. PostgREST fonde sulla CHIAVE PRIMARIA
+    se non gli si dice altro, e qui la primaria e' un uuid generato: non va mai
+    in conflitto, quindi l'upsert diventava un insert e sbatteva sul vincolo
+    (project_id, domain) con un 409. La funzione tornava False in silenzio e
+    nessun concorrente gia' presente poteva piu' essere riaggiunto.
+    """
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/project_competitors", timeout=15,
+                     headers={**_SB_H, "Prefer": "resolution=merge-duplicates"},
+                     params={"on_conflict": "project_id,domain"},
+                     json={"project_id": project_id, "domain": dominio.lower(),
+                           "source": origine, "added_by": chi or None,
+                           "status": "active"})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_ai_concorrente_escludi(project_id: str, dominio: str) -> bool:
+    """Non cancella: segna «escluso», cosi' al prossimo giro di suggerimenti il
+    motore non lo ripropone. Era un punto aperto del documento (§3.3)."""
+    try:
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/project_competitors", headers=_SB_H,
+                      timeout=15,
+                      params={"project_id": f"eq.{project_id}",
+                              "domain": f"eq.{dominio.lower()}"},
+                      json={"status": "excluded"})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_ai_snapshot_scrivi(project_id: str, inizio: str, fine: str,
+                           punteggio: float, per_provider: dict) -> bool:
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/ai_visibility_snapshots", timeout=15,
+                     headers={**_SB_H, "Prefer": "resolution=merge-duplicates"},
+                     json={"project_id": project_id, "period_start": inizio,
+                           "period_end": fine, "visibility_score": punteggio,
+                           "breakdown_by_provider": per_provider})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_ai_snapshot(project_id: str, limit: int = 6) -> list:
+    """Gli ultimi periodi misurati, dal piu' recente. Serve al grafico del trend."""
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/ai_visibility_snapshots", headers=_SB_H,
+                    timeout=15,
+                    params={"project_id": f"eq.{project_id}",
+                            "select": "period_start,period_end,visibility_score,"
+                                      "breakdown_by_provider",
+                            "order": "period_end.desc", "limit": str(limit)})
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_llm_config(provider: str = "") -> list:
+    """La configurazione dei provider. ⚠️ La chiave torna CIFRATA: chi legge
+    questa funzione non ha in mano niente di utilizzabile finche' non la
+    decifra, e la decifratura sta in un punto solo (`ai_chiavi.py`)."""
+    try:
+        p = {"select": "provider,api_key_encrypted,default_model,updated_at,updated_by"}
+        if provider:
+            p["provider"] = f"eq.{provider}"
+        r = req.get(f"{SUPABASE_URL}/rest/v1/llm_provider_config", headers=_SB_H,
+                    timeout=10, params=p)
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_llm_config_salva(provider: str, chiave_cifrata: str = "",
+                         modello: str = "", chi: str = "") -> bool:
+    dati = {"provider": provider,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": chi or None}
+    if chiave_cifrata:
+        dati["api_key_encrypted"] = chiave_cifrata
+    if modello:
+        dati["default_model"] = modello
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/llm_provider_config", timeout=15,
+                     headers={**_SB_H, "Prefer": "resolution=merge-duplicates"},
+                     json=dati)
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_llm_modelli(provider: str = "") -> list:
+    try:
+        p = {"select": "provider,model_id,supports_web_search,fetched_at",
+             "order": "model_id"}
+        if provider:
+            p["provider"] = f"eq.{provider}"
+        r = req.get(f"{SUPABASE_URL}/rest/v1/llm_available_models", headers=_SB_H,
+                    timeout=15, params=p)
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_llm_modelli_salva(provider: str, modelli: list) -> int:
+    """Sostituisce l'elenco dei modelli di un provider con quello appena letto."""
+    try:
+        req.delete(f"{SUPABASE_URL}/rest/v1/llm_available_models", headers=_SB_H,
+                   timeout=15, params={"provider": f"eq.{provider}"})
+        if not modelli:
+            return 0
+        righe = [{"provider": provider, "model_id": m["id"],
+                  "supports_web_search": bool(m.get("sa_cercare"))} for m in modelli]
+        r = req.post(f"{SUPABASE_URL}/rest/v1/llm_available_models", headers=_SB_H,
+                     timeout=25, json=righe)
+        return len(righe) if r.status_code < 300 else 0
+    except Exception:
+        return 0
+
+
 # ── Dashboard: letture in blocco ────────────────────────────────────────────
 #
 # La dashboard costruiva le card ciclando sui progetti e chiedendo al database
