@@ -957,6 +957,14 @@ _REPORT_PREF_DEFAULT = {
     "alert_new_critical": True,
     # Resta spento e non si accende: dipende da Competitors, che non esiste.
     "alert_competitor_overtake": False,
+    # ⚠️ La volonta' del cliente, e sta APPOSTA in un campo suo invece che nella
+    # frequenza. Se il «disiscriviti» dell'email scrivesse `frequency = off`,
+    # basterebbe che qualcuno dal pannello rimettesse «Mensile» — in buona fede,
+    # senza saperlo — e le email ripartirebbero verso chi aveva chiesto di non
+    # riceverle piu'. Qui invece la frequenza resta quella che era, e questo
+    # campo la scavalca: si spegne dal link, si riaccende solo di proposito.
+    "client_unsubscribed": False,
+    "client_unsubscribed_at": None,
 }
 
 _report_tabelle: dict = {}
@@ -987,6 +995,10 @@ def _sb_report_prefs(project_id: str) -> dict:
                 for k in fuori:
                     if righe[0].get(k) is not None:
                         fuori[k] = righe[0][k]
+                # `client_unsubscribed` e' un booleano: un falso e' un valore,
+                # non un'assenza, e va letto anche quando vale False.
+                if "client_unsubscribed" in righe[0]:
+                    fuori["client_unsubscribed"] = bool(righe[0]["client_unsubscribed"])
             return fuori
 
         r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
@@ -1000,6 +1012,8 @@ def _sb_report_prefs(project_id: str) -> dict:
             for k in fuori:
                 if p.get(k) is not None:
                     fuori[k] = p[k]
+            if "client_unsubscribed" in p:
+                fuori["client_unsubscribed"] = bool(p["client_unsubscribed"])
     except Exception:
         pass
     # ⚠️ L'avviso sul sorpasso competitor non si accende, qualunque cosa dica il
@@ -1014,6 +1028,12 @@ def _sb_report_prefs_salva(project_id: str, campi: dict) -> bool:
     """Salva le preferenze cambiate. Torna falso se il salvataggio non riesce."""
     permessi = set(_REPORT_PREF_DEFAULT)
     dati = {k: v for k, v in campi.items() if k in permessi}
+    # Chi si disiscrive lascia anche la data: serve a poterlo raccontare — a lui
+    # o a chi chiede perche' non riceve piu' niente.
+    if dati.get("client_unsubscribed") is True and "client_unsubscribed_at" not in dati:
+        dati["client_unsubscribed_at"] = datetime.now(timezone.utc).isoformat()
+    if dati.get("client_unsubscribed") is False:
+        dati["client_unsubscribed_at"] = None
     if not dati:
         return False
     dati["alert_competitor_overtake"] = False

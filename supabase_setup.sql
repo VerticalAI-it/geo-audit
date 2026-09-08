@@ -331,6 +331,12 @@ CREATE TABLE IF NOT EXISTS public.report_preferences (
     -- farlo scattare: un avviso che non può partire è peggio di uno spento,
     -- perché chi lo vede acceso smette di controllare a mano.
     alert_competitor_overtake BOOLEAN     NOT NULL DEFAULT FALSE,
+    -- ⚠️ La volontà del cliente sta in un campo SUO, non nella frequenza.
+    -- Se il «disiscriviti» dell'email scrivesse client_digest_frequency='off',
+    -- basterebbe che qualcuno dal pannello rimettesse 'monthly' — in buona
+    -- fede — e le email ripartirebbero verso chi aveva chiesto di smettere.
+    client_unsubscribed       BOOLEAN     NOT NULL DEFAULT FALSE,
+    client_unsubscribed_at    TIMESTAMPTZ,
     updated_at                TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT report_pref_client_freq CHECK (client_digest_frequency IN ('weekly','monthly','off')),
     CONSTRAINT report_pref_team_freq   CHECK (team_digest_frequency   IN ('weekly','monthly','off'))
@@ -372,13 +378,16 @@ CREATE INDEX IF NOT EXISTS report_log_progetto_tipo
 
 INSERT INTO public.report_preferences (
     project_id, client_digest_frequency, team_digest_frequency,
-    alert_score_drop, alert_new_critical, updated_at)
+    alert_score_drop, alert_new_critical,
+    client_unsubscribed, client_unsubscribed_at, updated_at)
 SELECT DISTINCT ON (t.project_id)
     t.project_id,
     COALESCE(t.properties->>'client_digest_frequency', 'monthly'),
     COALESCE(t.properties->>'team_digest_frequency', 'weekly'),
     COALESCE((t.properties->>'alert_score_drop')::boolean, TRUE),
     COALESCE((t.properties->>'alert_new_critical')::boolean, TRUE),
+    COALESCE((t.properties->>'client_unsubscribed')::boolean, FALSE),
+    (t.properties->>'client_unsubscribed_at')::timestamptz,
     t.created_at
 FROM public.tracking_event t
 JOIN public.project p ON p.id = t.project_id

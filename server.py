@@ -1699,14 +1699,19 @@ def rapporti_disdetta(p: str = "", t: str = ""):
         return HTMLResponse(_page("Non trovato", "<h2>Progetto non trovato.</h2>"),
                             status_code=404)
 
-    _sb_report_prefs_salva(p, {"client_digest_frequency": "off"})
+    # ⚠️ Si registra la VOLONTÀ, e non si tocca la frequenza. Scrivere
+    # `frequency = off` userebbe lo stesso campo della tendina del pannello:
+    # chiunque la rimettesse su «Mensile» farebbe ripartire le email verso chi
+    # aveva chiesto di non riceverle, in buona fede e senza accorgersene.
+    _sb_report_prefs_salva(p, {"client_unsubscribed": True})
     dominio = geo_audit.esc(progetto.get("domain") or "")
     return HTMLResponse(_page(
         "Riepiloghi disattivati",
         f"<h2>Fatto: non ti manderemo più il riepilogo di {dominio}.</h2>"
         "<p>Gli avvisi su cali di punteggio e criticità gravi restano attivi: "
-        "servono a dirti che qualcosa si è rotto, non a raccontarti come va.</p>"
-        "<p>Puoi riattivare il riepilogo quando vuoi dalla scheda "
+        "servono a dirti che qualcosa si è rotto, non a raccontarti come va. "
+        "Se non vuoi più nemmeno quelli, rispondi a questa email e li spegniamo.</p>"
+        "<p>Se hai cambiato idea, puoi riattivare il riepilogo dalla scheda "
         "<b>Traffic &amp; Reports</b> del progetto.</p>"))
 
 
@@ -1781,6 +1786,13 @@ def _digest_da_mandare(project: dict, prefs: dict, tipo: str) -> bool:
     ⚠️ Senza questo controllo un riepilogo «settimanale» partirebbe a ogni giro
     del cron, cioè ogni ora.
     """
+    # ⚠️ La volontà del cliente viene PRIMA della frequenza, e la scavalca.
+    # Chi ha cliccato «non voglio più riceverlo» non deve ricominciare a
+    # ricevere email perché qualcuno dal pannello ha rimesso la tendina su
+    # «Mensile»: quella tendina dice ogni quanto mandarlo, non SE mandarlo.
+    if tipo == "client_digest" and prefs.get("client_unsubscribed"):
+        return False
+
     chiave = "client_digest_frequency" if tipo == "client_digest" else "team_digest_frequency"
     frequenza = prefs.get(chiave) or "off"
     if frequenza == "off":
@@ -1834,7 +1846,14 @@ async def project_report_prefs(project_id: str, request: Request):
     campo = (corpo.get("campo") or "").strip()
     valore = corpo.get("valore")
 
-    if campo in ("alert_score_drop", "alert_new_critical"):
+    if campo == "client_unsubscribed":
+        # ⚠️ Da qui si può solo RIATTIVARE. Disiscrivere qualcuno dal pannello
+        # non è una cosa che il prodotto debba saper fare: la disiscrizione è
+        # un gesto del cliente, e passa dal link nella sua email.
+        if valore is not False:
+            return JSONResponse({"esito": "solo_riattivazione"}, status_code=400)
+        valore = False
+    elif campo in ("alert_score_drop", "alert_new_critical"):
         valore = bool(valore)
     elif campo in ("client_digest_frequency", "team_digest_frequency"):
         if valore not in ("weekly", "monthly", "off"):

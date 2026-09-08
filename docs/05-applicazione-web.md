@@ -687,6 +687,18 @@ clic, dal telefono, senza ricordarsi la password. La chiave è il token HMAC gi�
 usato per i report condivisibili. E spegne **solo il riepilogo**: gli avvisi
 restano, perché servono a dire che qualcosa si è rotto, non a raccontare come va.
 
+⚠️ **La disiscrizione sta in un campo suo — `client_unsubscribed` — non nella
+frequenza.** La prima versione scriveva `client_digest_frequency = 'off'`, cioè
+lo stesso campo della tendina nella scheda: sarebbe bastato che qualcuno la
+rimettesse su «Mensile», in buona fede, per far ripartire le email verso chi
+aveva chiesto di smettere. Ora la volontà del cliente **scavalca** la frequenza,
+e la tendina non compare nemmeno finché lui è disiscritto — al suo posto c'è
+scritto cosa è successo e quando.
+
+Dal pannello si può **solo riattivare**, con una conferma esplicita: disiscrivere
+qualcuno non è una cosa che il prodotto debba saper fare, perché la
+disiscrizione è un gesto del cliente e passa dal link nella sua email.
+
 ## Il pannello del team (`/admin`)
 
 Otto schermate a uso interno, in `admin.py` + `templates/admin.html`. Chiudono
