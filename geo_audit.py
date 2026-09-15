@@ -893,7 +893,17 @@ def run_audit(url, max_pages=20, render=True, respect_robots=False, log=lambda *
         render = False
     home, home_static = get_page(base, render)
     if home.status != 200 or not home.is_html:
-        raise RuntimeError(f"Impossibile aprire la home (HTTP {home.status}).")
+        # ⚠️ «HTTP None» da solo non dice niente: significa che non e' arrivata
+        # nessuna risposta, ma non se per timeout, DNS, TLS o connessione
+        # rifiutata. fetch_static l'aveva scritto — dentro un commento HTML —
+        # e qui veniva buttato via. Su pompecasali.it (15/09) sono rimasti due
+        # tentativi falliti nel registro senza che nessuno potesse capire perche',
+        # mentre dal PC di Michele il sito rispondeva in due secondi.
+        causa = ""
+        m = re.search(r"<!--fetch error: (.*?)-->", home_static.html or "", re.S)
+        if m:
+            causa = " — " + m.group(1).strip()[:300]
+        raise RuntimeError(f"Impossibile aprire la home (HTTP {home.status}){causa}.")
     base = home.final_url
     home_soup = BeautifulSoup(home.html, "lxml")
     site = build_site(base)
