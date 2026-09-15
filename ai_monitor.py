@@ -94,25 +94,29 @@ def dominio_di(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
-def _dominio_vero(url: str) -> str:
-    """Il dominio dietro un eventuale redirect.
+def _dominio_vero(url: str) -> tuple:
+    """Il dominio E l'indirizzo dietro un eventuale redirect.
 
     ⚠️ Gemini non restituisce l'indirizzo della fonte: restituisce un suo
     redirect su `vertexaisearch.cloud.google.com`. Chi lo legge senza seguirlo
     si ritrova un elenco di citazioni che puntano tutte a Google — e conclude
     che nessun sito viene mai citato.
+
+    ⚠️ Torna anche l'URL finale, non solo il dominio: prima si salvava il
+    redirect grezzo, e nella scheda Citations la «pagina citata» di Gemini era
+    una stringa `/grounding-api-redirect/AUZIYQ…` senza senso per il cliente.
     """
     d = dominio_di(url)
     if _REDIRECT_GOOGLE not in d:
-        return d
+        return d, url
     try:
         r = req.head(url, allow_redirects=True, timeout=15)
         vero = dominio_di(r.url)
         if vero and _REDIRECT_GOOGLE not in vero:
-            return vero
+            return vero, str(r.url)
     except Exception:
         pass
-    return ""          # meglio niente che attribuire la citazione a Google
+    return "", url     # meglio niente che attribuire la citazione a Google
 
 
 def e_lo_stesso_sito(dominio_citato: str, dominio_progetto: str) -> bool:
@@ -222,9 +226,10 @@ def _gemini(prompt: str, chiave: str, modello: str) -> dict:
     # su dieci prompt sarebbero stati sette minuti del solo Gemini.
     if citazioni:
         with ThreadPoolExecutor(max_workers=8) as pool:
-            domini = list(pool.map(lambda c: _dominio_vero(c["url"]), citazioni))
-        for c, d in zip(citazioni, domini):
+            risolti = list(pool.map(lambda c: _dominio_vero(c["url"]), citazioni))
+        for c, (d, url_vero) in zip(citazioni, risolti):
             c["dominio"] = d
+            c["url"] = url_vero
 
     return {"testo": testo.strip(), "citazioni": _pulisci(citazioni), "modello": modello}
 

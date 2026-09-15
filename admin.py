@@ -1106,10 +1106,11 @@ def schermata_cliente(c: dict, accessi: list, note: list, audit: list,
                 f'<td style="color:{_colore_punteggio(punteggio)}">'
                 f'{punteggio if punteggio is not None else "—"}</td>'
                 f'<td>{_quando(a.get("created_at")) if a else "nessun audit"}</td>'
-                f'<td>{tracc}</td></tr>')
+                f'<td>{tracc}</td>'
+                f'<td><a class="activity-link" href="/admin/progetti/{p["id"]}/ai">⚙ Configura</a></td></tr>')
         blocco_progetti = ('<div class="tab-wrap" style="margin-bottom:22px">'
                            '<table class="tab"><thead><tr>'
-                           '<th>Sito</th><th>Punteggio</th><th>Ultimo audit</th><th>Tracking</th>'
+                           '<th>Sito</th><th>Punteggio</th><th>Ultimo audit</th><th>Tracking</th><th>AI Monitoring</th>'
                            f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
     else:
         blocco_progetti = ('<div class="vuoto" style="margin-bottom:22px">'

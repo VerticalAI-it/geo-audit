@@ -163,16 +163,10 @@ _TAB_CATEGORIES = [
 
 
 _COMING_SOON_TABS = {
-    "ai-visibility": ("AI Visibility",
-        "Richiede un panel di monitoraggio prompt sui provider AI (ChatGPT, Gemini, Perplexity). "
-        "Non ancora configurato per questo progetto."),
-    "prompts": ("Prompts & Queries",
-        "Richiede il monitoraggio prompt attivo per esplorare cluster, risposte e storico. Non ancora configurato."),
-    "competitors": ("Competitors",
-        "Richiede lo stesso panel di monitoraggio prompt per calcolare Share of Voice e gap competitivi. "
-        "Non ancora configurato."),
-    "citations": ("Citations",
-        "Richiede l'osservazione delle citazioni nelle risposte AI. Non ancora configurato."),
+    # ⚠️ Le quattro schede «AI Intelligence» stavano qui e sono uscite il 15
+    # settembre 2026: il monitoraggio dei prompt e' vero (`ai_giro`) e le
+    # schede leggono i suoi dati (`ai_schermate`, `ai_dati`). I tre stati del
+    # documento — non attivo, in attesa, dati — li decide `ai_dati.stato`.
     # ⚠️ «reports» stava qui, ed è uscito il 6 settembre 2026. Diceva di
     # richiedere «un modulo di monitoraggio attivo»: non era vero — i numeri del
     # rapporto si calcolano dagli audit e dalle criticità, che ci sono già.
@@ -482,14 +476,9 @@ def _campione_reports(dominio: str) -> str:
 
 
 _SEZIONI_CAMPIONE = {
-    "ai-visibility": (_campione_ai_visibility,
-        "Serve il monitoraggio dei prompt su ChatGPT, Gemini e Perplexity per avere i numeri veri."),
-    "prompts": (_campione_prompts,
-        "Serve il monitoraggio dei prompt per sapere su quali domande il sito compare."),
-    "competitors": (_campione_competitors,
-        "Serve il monitoraggio dei prompt e l'elenco dei concorrenti da confrontare."),
-    "citations": (_campione_citations,
-        "Serve l'osservazione delle citazioni nelle risposte degli assistenti."),
+    # Le quattro schede AI stavano qui con dati dimostrativi fino al 15
+    # settembre 2026; i renderer `_campione_*` restano come riferimento del
+    # markup ma non vengono piu' serviti a nessuno.
     # `reports` stava qui ed e' uscito il 2 settembre 2026: ogni numero del
     # digest d'esempio era gia' calcolabile sui dati del progetto. Vedi
     # `_tab_reports`. Cio' che manca non e' il rapporto ma la sua spedizione
@@ -636,10 +625,44 @@ def _overview_sections_grid(project_id: str, latest: dict | None, open_issues: i
         _section_card(project_id, "opportunities", "Opportunities", str(open_issues), "issue aperte", opportunities_summary, False),
         _section_card(project_id, "traffic", "AI Traffic", traffic_stat, "sessioni AI (30gg)", traffic_summary, False),
     ]
+    cards.extend(_schede_ai_overview(project_id))
     for tab_key, (label, desc) in _COMING_SOON_TABS.items():
         cards.append(_section_card(project_id, tab_key, label, "—", "non configurato", desc, True))
 
     return f'<div class="card-title" style="margin:24px 0 12px">Tutte le sezioni</div><div class="section-grid">{"".join(cards)}</div>'
+
+
+def _schede_ai_overview(project_id: str) -> list:
+    """Le quattro card «AI Intelligence» dell'overview, con lo stato vero.
+
+    ⚠️ Un solo giro di letture per tutte e quattro: lo stato e il punteggio
+    si calcolano una volta, non quattro.
+    """
+    import ai_dati
+    try:
+        st = ai_dati.stato(project_id)
+    except Exception:
+        st = "in_attesa"
+    if st == "non_attivo":
+        stat, etichetta, testo = "—", "non attivo", "Monitoraggio disattivato per questo progetto: scrivici per riattivarlo."
+    elif st == "in_attesa":
+        stat, etichetta, testo = "—", "in attesa", "Il primo giro di domande ai quattro assistenti è in coda."
+    else:
+        try:
+            v = ai_dati.visibilita(project_id)
+            p = v.get("punteggio")
+            stat = str(p) if p is not None else "—"
+            etichetta = "visibilità AI"
+            testo = (f'Citato in {sum(m["citati"] for m in v["motori"])} risposte su '
+                     f'{v["risposte"]} negli ultimi 30 giorni.')
+        except Exception:
+            stat, etichetta, testo = "—", "visibilità AI", "Dati in aggiornamento."
+    return [
+        _section_card(project_id, "ai-visibility", "AI Visibility", stat, etichetta, testo, False),
+        _section_card(project_id, "prompts", "Prompts & Queries", "", "", "Su quali domande il sito viene citato dagli assistenti.", False),
+        _section_card(project_id, "competitors", "Competitors", "", "", "Chi viene citato al posto vostro, e quanto spesso.", False),
+        _section_card(project_id, "citations", "Citations", "", "", "Le pagine indicate come fonte e gli argomenti coperti.", False),
+    ]
 
 
 _SCORE_CHART_JS = r"""

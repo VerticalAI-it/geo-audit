@@ -12,6 +12,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 
 import admin
+import ai_chiavi
+import ai_dati
+import ai_giro
+import ai_monitor
+import ai_schermate
 import geo_audit
 
 # ── moduli interni ───────────────────────────────────────────────────────────
@@ -35,7 +40,12 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_report_log_ultimo, _sb_report_invii, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
     _sb_audit_fallito, \
-    _sb_projects_with_tracking
+    _sb_projects_with_tracking, \
+    _sb_ai_impostazioni, _sb_ai_impostazioni_salva, _sb_ai_domande, _sb_ai_domande_da_approvare, \
+    _sb_ai_domanda_approva, _sb_ai_domanda_crea, _sb_ai_domanda_modifica, _sb_ai_domanda_elimina, \
+    _sb_ai_argomenti, _sb_ai_argomento_crea, _sb_ai_concorrenti, _sb_ai_concorrente_aggiungi, \
+    _sb_ai_concorrente_escludi, _sb_ai_progetti_da_girare, _sb_llm_config, _sb_llm_config_salva, \
+    _sb_llm_modelli, _sb_llm_modelli_salva
 from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, \
     _coming_soon_tab, _roadmap_colonne_html, _roadmap_live_html, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
@@ -1226,7 +1236,7 @@ def _admin_pagina(request: Request, user: dict, attiva: str, titolo: str,
             return ""
         return f'<span class="nav-count {classe}">{n}</span>'
 
-    voci = ("OVERVIEW", "LEAD", "CLIENTI", "JOB", "TRACKING", "INTERESSE", "LOG")
+    voci = ("OVERVIEW", "LEAD", "CLIENTI", "JOB", "TRACKING", "INTERESSE", "LOG", "AI")
     kv = {f"ATT_{v}": ("active" if v.lower() == attiva else "") for v in voci}
     return _render(
         ADMIN_HTML,
@@ -2432,6 +2442,363 @@ def _manda_i_digest_scaduti(iniziato_a: float) -> list:
     return inviati
 
 
+# ── Il monitoraggio AI: route admin, cliente e cron ─────────────────────────
+
+_FREQUENZA_GIORNI = {"weekly": 7, "monthly": 30, "custom": 7}
+_CRON_AI_BUDGET = float(os.environ.get("CRON_AI_BUDGET", "50"))
+
+
+@app.get("/api/cron-ai")
+async def api_cron_ai(request: Request):
+    """Un passaggio del monitoraggio AI, chiamato ogni ora da Vercel Cron.
+
+    Prende UN progetto in scadenza e fa quello che riesce nel budget: il giro
+    e' ripartibile a fette (`ai_giro.esegui_giro`), quindi un progetto da
+    trecento secondi si completa in sei passaggi e `last_run_at` si scrive
+    solo alla fine. Separato da `/api/cron` perche' gli audit non devono
+    farsi rubare il tempo dal monitoraggio, ne' viceversa.
+    """
+    if _CRON_SECRET and request.headers.get("Authorization") != f"Bearer {_CRON_SECRET}":
+        return Response(json.dumps({"error": "unauthorized"}),
+                        status_code=401, media_type="application/json")
+    conf = ai_giro.chiavi_configurate()
+    if not conf["chiavi"]:
+        return {"esito": "nessuna_chiave"}
+    pronti = _sb_ai_progetti_da_girare(_FREQUENZA_GIORNI)
+    for s_ in pronti:
+        project = _sb_project_get(s_["project_id"])
+        if not project or not project.get("domain"):
+            continue
+        esito = await run_in_threadpool(
+            ai_giro.esegui_giro, project["id"], project["domain"], conf["chiavi"],
+            _CRON_AI_BUDGET, bool(s_.get("sentiment_enabled", True)), conf["modelli"])
+        if esito.get("esito") == "da_approvare":
+            # niente da fare qui finche' il team non approva: si passa al
+            # progetto dopo, invece di restare fermi su questo
+            continue
+        return {"progetto": project["domain"], **esito}
+    return {"esito": "niente_da_fare", "in_coda": len(pronti)}
+
+
+def _cliente_del_progetto(project: dict) -> dict:
+    u = _sb_auth_get_user(project.get("user_id") or "") or {}
+    return {"id": u.get("id") or project.get("user_id") or "", "email": u.get("email") or ""}
+
+
+@app.get("/admin/ai", response_class=HTMLResponse)
+def admin_ai(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+    config = {c["provider"]: c for c in _sb_llm_config()}
+    modelli = {}
+    for m in _sb_llm_modelli():
+        modelli.setdefault(m["provider"], []).append(m)
+    # ⚠️ la decifratura avviene qui e solo per mascherare: la chiave in
+    # chiaro non entra nel template
+    mascherate = {p: ai_chiavi.mascherata(ai_chiavi.decifra(c.get("api_key_encrypted") or ""))
+                  for p, c in config.items()}
+    contenuto = ai_schermate.admin_configurazione_ai(config, modelli, ai_chiavi.configurata(), mascherate)
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "ai", "Configurazione AI",
+        "Chiavi API e modelli di default usati dal monitoraggio, dalla generazione delle domande e dal sentiment.",
+        contenuto, _admin_conteggi())), refreshed)
+
+
+@app.post("/admin/ai/chiave")
+async def admin_ai_chiave(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+    body = await request.json()
+    provider = (body.get("provider") or "").strip()
+    chiave = (body.get("chiave") or "").strip()
+    if provider not in ai_monitor.PROVIDER or not chiave:
+        return JSONResponse({"esito": "dati_mancanti"}, status_code=400)
+    if not ai_chiavi.configurata():
+        return JSONResponse({"esito": "manca CHIAVE_CIFRATURA sul server"}, status_code=503)
+    # ⚠️ Prima di salvarla la si PROVA: una chiave sbagliata salvata darebbe
+    # un monitoraggio che fallisce in silenzio a ogni giro.
+    try:
+        modelli = await run_in_threadpool(ai_monitor.elenca_modelli, provider, chiave)
+    except Exception as e:
+        return JSONResponse({"esito": f"il provider non accetta questa chiave ({str(e)[:80]})"},
+                            status_code=400)
+    # ⚠️ `elenca_modelli` con una chiave sbagliata torna una lista VUOTA, non
+    # un errore: senza questo controllo la chiave finta si salvava con
+    # «ok, 0 modelli» — trovato dal collaudo. Una chiave valida elenca sempre
+    # almeno un modello.
+    if not modelli:
+        return JSONResponse({"esito": "il provider non accetta questa chiave"}, status_code=400)
+    if not _sb_llm_config_salva(provider, ai_chiavi.cifra(chiave), chi=user.get("email") or ""):
+        return JSONResponse({"esito": "errore di salvataggio"}, status_code=502)
+    _sb_llm_modelli_salva(provider, modelli)
+    _admin_traccia(user, "chiave_ai_salvata", provider)
+    return JSONResponse({"esito": "ok", "modelli": len(modelli)})
+
+
+@app.post("/admin/ai/modello")
+async def admin_ai_modello(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+    body = await request.json()
+    provider = (body.get("provider") or "").strip()
+    modello = (body.get("modello") or "").strip()
+    if provider not in ai_monitor.PROVIDER or not modello:
+        return JSONResponse({"esito": "dati_mancanti"}, status_code=400)
+    if not _sb_llm_config_salva(provider, modello=modello, chi=user.get("email") or ""):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    _admin_traccia(user, "modello_ai_scelto", f"{provider}:{modello}")
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/admin/ai/modelli-aggiorna")
+async def admin_ai_modelli_aggiorna(request: Request):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return JSONResponse({"esito": "no"}, status_code=404)
+    body = await request.json()
+    provider = (body.get("provider") or "").strip()
+    conf = {c["provider"]: c for c in _sb_llm_config(provider)}
+    chiave = ai_chiavi.decifra((conf.get(provider) or {}).get("api_key_encrypted") or "")
+    if not chiave:
+        return JSONResponse({"esito": "chiave non configurata"}, status_code=400)
+    try:
+        modelli = await run_in_threadpool(ai_monitor.elenca_modelli, provider, chiave)
+    except Exception as e:
+        return JSONResponse({"esito": f"il provider non risponde ({str(e)[:80]})"}, status_code=502)
+    n = _sb_llm_modelli_salva(provider, modelli)
+    return JSONResponse({"esito": "ok", "modelli": n})
+
+
+@app.get("/admin/progetti/{project_id}/ai", response_class=HTMLResponse)
+def admin_progetto_ai(request: Request, project_id: str):
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+    project = _sb_project_get(project_id)
+    if not project:
+        return HTMLResponse(_page("Non trovato", "<h2>Progetto non trovato.</h2>"), status_code=404)
+    dati = ai_dati.prompt_e_argomenti(project_id)
+    conc = _sb_ai_concorrenti(project_id)
+    sov = {r["dominio"]: r["sov"]
+           for r in ai_dati.concorrenti(project_id, project.get("domain") or "")["righe"]}
+    imp = _sb_ai_impostazioni(project_id)
+    contenuto = ai_schermate.admin_monitoraggio_progetto(
+        project, _cliente_del_progetto(project), imp, dati, conc, sov)
+    return _apply_refresh(HTMLResponse(_admin_pagina(
+        request, user, "clienti", f"Monitoraggio AI — {project.get('domain') or ''}",
+        "Impostazioni, domande e concorrenti di questo progetto.",
+        contenuto, _admin_conteggi())), refreshed)
+
+
+async def _admin_ai_azione(request: Request, project_id: str):
+    """Il preambolo comune alle azioni admin per progetto: chi sei, che progetto, che corpo."""
+    user, refreshed, stop = _admin_o_no(request)
+    if stop is not None:
+        return None, None, None, JSONResponse({"esito": "no"}, status_code=404)
+    project = _sb_project_get(project_id)
+    if not project:
+        return None, None, None, JSONResponse({"esito": "progetto"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    return user, project, body, None
+
+
+@app.post("/admin/progetti/{project_id}/ai/impostazioni")
+async def admin_progetto_ai_impostazioni(request: Request, project_id: str):
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    campo, valore = body.get("campo"), body.get("valore")
+    if campo == "is_active":
+        campi = {"is_active": bool(valore)}
+    elif campo == "sentiment_enabled":
+        campi = {"sentiment_enabled": bool(valore)}
+    elif campo == "schedule_frequency" and valore in _FREQUENZA_GIORNI:
+        campi = {"schedule_frequency": valore}
+    else:
+        return JSONResponse({"esito": "campo"}, status_code=400)
+    if not _sb_ai_impostazioni_salva(project_id, campi, chi=user.get("email") or ""):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    _admin_traccia(user, f"ai_{campo}", f"{project.get('domain')}={valore}")
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/admin/progetti/{project_id}/ai/giro")
+async def admin_progetto_ai_giro(request: Request, project_id: str):
+    """«Esegui un giro adesso»: mette il progetto in testa alla coda del cron.
+
+    ⚠️ Non esegue il giro nella richiesta: dura cinque minuti e una funzione
+    serverless non arriva in fondo. Azzerare `last_run_at` lo rende «mai
+    girato», che e' la prima posizione in coda: parte al prossimo passaggio.
+    """
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    _sb_ai_impostazioni_salva(project_id, {"last_run_at": None}, chi=user.get("email") or "")
+    _admin_traccia(user, "ai_giro_richiesto", project.get("domain") or project_id)
+    return JSONResponse({"esito": "in_coda"})
+
+
+@app.post("/admin/progetti/{project_id}/ai/prompt/aggiungi")
+async def admin_progetto_ai_prompt_aggiungi(request: Request, project_id: str):
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    testo = (body.get("testo") or "").strip()
+    argomento = (body.get("argomento") or "").strip() or "altro"
+    if not testo:
+        return JSONResponse({"esito": "testo"}, status_code=400)
+    esistenti = {a["name"].lower(): a["id"] for a in _sb_ai_argomenti(project_id)}
+    topic_id = esistenti.get(argomento.lower()) or _sb_ai_argomento_crea(project_id, argomento)
+    if not topic_id:
+        return JSONResponse({"esito": "argomento"}, status_code=502)
+    pid = _sb_ai_domanda_crea(topic_id, testo, "", origine="manual")
+    if not pid:
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    # una domanda scritta dal team e' approvata dal team, per costruzione
+    _sb_ai_domanda_approva([pid], chi=user.get("email") or "")
+    _admin_traccia(user, "ai_prompt_aggiunto", project.get("domain") or project_id)
+    return JSONResponse({"esito": "ok", "id": pid})
+
+
+@app.post("/admin/progetti/{project_id}/ai/prompt/modifica")
+async def admin_progetto_ai_prompt_modifica(request: Request, project_id: str):
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    if not body.get("id") or not (body.get("testo") or "").strip():
+        return JSONResponse({"esito": "dati"}, status_code=400)
+    if not _sb_ai_domanda_modifica(body["id"], body["testo"]):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    _admin_traccia(user, "ai_prompt_modificato", body["id"])
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/admin/progetti/{project_id}/ai/prompt/elimina")
+async def admin_progetto_ai_prompt_elimina(request: Request, project_id: str):
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    if not body.get("id"):
+        return JSONResponse({"esito": "dati"}, status_code=400)
+    if not _sb_ai_domanda_elimina(body["id"]):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    _admin_traccia(user, "ai_prompt_tolto", body["id"])
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/admin/progetti/{project_id}/ai/prompt/approva")
+async def admin_progetto_ai_prompt_approva(request: Request, project_id: str):
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    if body.get("tutte"):
+        ids = [d["id"] for d in _sb_ai_domande_da_approvare(project_id)]
+    else:
+        ids = [i for i in (body.get("ids") or []) if isinstance(i, str)]
+    if not ids:
+        return JSONResponse({"esito": "niente"}, status_code=400)
+    n = _sb_ai_domanda_approva(ids, chi=user.get("email") or "")
+    _admin_traccia(user, "ai_prompt_approvati", f"{project.get('domain')}:{n}")
+    return JSONResponse({"esito": "ok", "approvate": n})
+
+
+@app.post("/admin/progetti/{project_id}/ai/prompt/rigenera")
+async def admin_progetto_ai_prompt_rigenera(request: Request, project_id: str):
+    """Aggiunge proposte nuove; NON tocca quelle esistenti (punto aperto §10.1
+    del documento: si e' scelto «aggiunta», perche' sostituire cancellerebbe
+    domande con uno storico di risposte)."""
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    conf = ai_giro.chiavi_configurate()
+    if not conf["chiavi"]:
+        return JSONResponse({"esito": "nessuna chiave configurata"}, status_code=503)
+    try:
+        n = await run_in_threadpool(ai_giro.prepara_progetto, project_id,
+                                    project.get("domain") or "", project.get("sector") or "",
+                                    conf["chiavi"])
+    except Exception as e:
+        return JSONResponse({"esito": f"generazione fallita ({str(e)[:80]})"}, status_code=502)
+    _admin_traccia(user, "ai_prompt_generati", f"{project.get('domain')}:{n}")
+    return JSONResponse({"esito": "ok", "generate": n})
+
+
+@app.post("/admin/progetti/{project_id}/ai/competitor/aggiungi")
+async def admin_progetto_ai_comp_aggiungi(request: Request, project_id: str):
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    d = ai_monitor.dominio_di(body.get("dominio") or "") or (body.get("dominio") or "").strip().lower()
+    if not d or "." not in d:
+        return JSONResponse({"esito": "dominio"}, status_code=400)
+    if not _sb_ai_concorrente_aggiungi(project_id, d, "admin_added", chi=user.get("email") or ""):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    _admin_traccia(user, "ai_competitor_aggiunto", f"{project.get('domain')}:{d}")
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/admin/progetti/{project_id}/ai/competitor/rimuovi")
+async def admin_progetto_ai_comp_rimuovi(request: Request, project_id: str):
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    d = (body.get("dominio") or "").strip().lower()
+    if not d or not _sb_ai_concorrente_escludi(project_id, d):
+        return JSONResponse({"esito": "errore"}, status_code=400)
+    _admin_traccia(user, "ai_competitor_tolto", f"{project.get('domain')}:{d}")
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/admin/progetti/{project_id}/ai/competitor/rigenera")
+async def admin_progetto_ai_comp_rigenera(request: Request, project_id: str):
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err: return err
+    nuovi = await run_in_threadpool(ai_giro.scopri_concorrenti, project_id,
+                                    project.get("domain") or "")
+    if nuovi:
+        await run_in_threadpool(ai_giro.riclassifica_citazioni, project_id,
+                                project.get("domain") or "")
+    _admin_traccia(user, "ai_competitor_rigenerati", f"{project.get('domain')}:{len(nuovi)}")
+    return JSONResponse({"esito": "ok", "nuovi": nuovi})
+
+
+# ── il cliente: l'unica azione self-service, i concorrenti ──────────────────
+
+async def _cliente_ai_azione(request: Request, project_id: str):
+    user, refreshed = _current_user(request)
+    if not user:
+        return None, None, None, JSONResponse({"esito": "login"}, status_code=401)
+    project = _sb_project_get(project_id)
+    if not project or project.get("user_id") != user["id"]:
+        return None, None, None, JSONResponse({"esito": "progetto"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    return user, project, body, None
+
+
+@app.post("/project/{project_id}/competitors/aggiungi")
+async def project_competitor_aggiungi(request: Request, project_id: str):
+    user, project, body, err = await _cliente_ai_azione(request, project_id)
+    if err: return err
+    d = ai_monitor.dominio_di(body.get("dominio") or "") or (body.get("dominio") or "").strip().lower()
+    if not d or "." not in d:
+        return JSONResponse({"esito": "dominio"}, status_code=400)
+    if ai_monitor.e_lo_stesso_sito(d, project.get("domain") or ""):
+        return JSONResponse({"esito": "e_il_tuo_sito"}, status_code=400)
+    if not _sb_ai_concorrente_aggiungi(project_id, d, "client_added", chi=user.get("email") or ""):
+        return JSONResponse({"esito": "errore"}, status_code=502)
+    return JSONResponse({"esito": "ok"})
+
+
+@app.post("/project/{project_id}/competitors/rimuovi")
+async def project_competitor_rimuovi(request: Request, project_id: str):
+    user, project, body, err = await _cliente_ai_azione(request, project_id)
+    if err: return err
+    d = (body.get("dominio") or "").strip().lower()
+    if not d or not _sb_ai_concorrente_escludi(project_id, d):
+        return JSONResponse({"esito": "errore"}, status_code=400)
+    return JSONResponse({"esito": "ok"})
+
+
 @app.post("/t")
 async def track(request: Request):
     """Endpoint pubblico di ingestion. Nessuna autenticazione (gira su siti di
@@ -2742,6 +3109,8 @@ def dashboard(request: Request):
 # ── Project detail: IA definitiva a 12 tab (dati reali dove disponibili) ────
 
 
+_SCHEDE_AI = ("ai-visibility", "prompts", "competitors", "citations")
+
 _ALL_TAB_KEYS = []
 for _cat_key, _cat_label, _children in _TAB_CATEGORIES:
     _ALL_TAB_KEYS.extend([_cat_key] if _children is None else [k for k, _ in _children])
@@ -2770,7 +3139,9 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
     latest_light = _ultimo[0] if _ultimo else None
     aperte = len([i for i in _sb_issues_by_project(project_id, status="open")])
 
-    if tab in _SEZIONI_CAMPIONE:
+    if tab in _SCHEDE_AI:
+        body = ai_schermate.scheda_cliente(tab, project)
+    elif tab in _SEZIONI_CAMPIONE:
         # sezione non ancora attiva: dati dimostrativi con banner esplicito
         body = _tab_campione(tab, project.get("domain") or project.get("name") or "")
     elif tab in _COMING_SOON_TABS:
