@@ -198,6 +198,59 @@
   .campo input[type=email]:focus{outline:2px solid var(--accent-primary); outline-offset:1px;}
   .campo-check{display:flex; align-items:flex-start; gap:9px; font-size:12.5px; color:var(--text-secondary); margin-bottom:18px; cursor:pointer;}
   .campo-check input{margin-top:2px; flex-shrink:0;}
+
+  /* ── Monitoraggio AI (le due schermate della fase 3, `ai_schermate.py`) ──
+     Il pannello non carica il CSS del prodotto, quindi le sue classi (card,
+     alert-row, toggle-switch, form-input) qui non esistono: la prima versione
+     delle schermate usciva nuda. Queste sono le loro. I moduli si mostrano
+     togliendo [hidden], mai con display inline, come la finestra a comparsa. */
+  .ai-griglia{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;}
+  .ai-card{background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); box-shadow:var(--card-shadow); margin-bottom:16px; overflow:hidden;}
+  .ai-card-testa{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:16px 20px; border-bottom:1px solid var(--border-subtle);}
+  .ai-card-corpo{padding:18px 20px;}
+  .ai-titolo{font-family:var(--font-display); font-size:15px; font-weight:600;}
+  .ai-sotto{font-size:11.5px; color:var(--text-muted); margin-top:2px;}
+  .ai-riga{display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border-subtle); font-size:13px;}
+  .ai-riga:last-child{border-bottom:none;}
+  .ai-riga:hover{background:var(--bg-surface-raised);}
+  .ai-riga-info{flex:1; min-width:0;}
+  .ai-riga-info b{display:block; font-size:13px; margin-bottom:2px;}
+  .ai-riga-info p{font-size:11.5px; color:var(--text-muted); margin:0;}
+  .ai-argomento{font-family:var(--font-mono); font-size:9.5px; text-transform:uppercase; color:var(--text-muted); background:var(--bg-surface-raised); padding:3px 8px; border-radius:6px; flex-shrink:0; width:120px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .ai-testo{flex:1; min-width:0; font-size:12.5px; color:var(--text-secondary);}
+  .ai-tag{font-size:9px; font-family:var(--font-mono); padding:2px 6px; border-radius:6px; flex-shrink:0; font-weight:700; letter-spacing:.04em;}
+  .ai-tag.auto{background:var(--accent-primary-dim); color:var(--accent-primary);}
+  .ai-tag.manual{background:var(--state-warn-dim); color:var(--state-warn);}
+  .ai-tag.cliente{background:var(--state-good-dim); color:var(--state-good);}
+  .ai-tag.attesa{background:var(--state-critical-dim); color:var(--state-critical);}
+  .ai-azioni{display:flex; gap:6px; flex-shrink:0;}
+  .ai-icona{width:26px; height:26px; border-radius:6px; border:1px solid var(--border-medium); background:var(--bg-surface); color:var(--text-muted); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:12px; padding:0;}
+  .ai-icona:hover{background:var(--bg-surface-raised); color:var(--text-primary);}
+  .ai-icona.pericolo:hover{color:var(--state-critical); border-color:var(--state-critical);}
+  .ai-input, .ai-select{background:var(--bg-surface-raised); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:9px 12px; color:var(--text-primary); font-family:var(--font-body); font-size:12.5px; outline:none;}
+  .ai-input:focus, .ai-select:focus{border-color:var(--accent-primary); box-shadow:0 0 0 3px var(--accent-primary-dim);}
+  .ai-input.mono{font-family:var(--font-mono);}
+  .ai-select:disabled{opacity:.55; cursor:not-allowed;}
+  .ai-modulo{display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:12px 20px; border-bottom:1px solid var(--border-subtle); background:var(--bg-surface-raised);}
+  .ai-modulo[hidden]{display:none;}
+  .ai-btn-primary{background:var(--accent-primary); border-color:var(--accent-primary); color:#fff;}
+  .ai-btn-primary:hover{opacity:.92;}
+  .ai-btn-primary:disabled, .btn:disabled{opacity:.45; cursor:not-allowed;}
+  .ai-toggle{width:38px; height:22px; border-radius:20px; background:var(--bg-surface-raised); border:1px solid var(--border-medium); position:relative; cursor:pointer; flex-shrink:0; padding:0;}
+  .ai-toggle::after{content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:var(--text-muted);}
+  .ai-toggle.on{background:var(--state-good); border-color:var(--state-good);}
+  .ai-toggle.on::after{left:auto; right:2px; background:#fff;}
+  .ai-toggle.grande{width:44px; height:26px;}
+  .ai-toggle.grande::after{width:20px; height:20px;}
+  .ai-etichetta{font-size:11.5px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; display:block;}
+  .ai-nota{font-size:11px; color:var(--text-muted); margin-top:6px;}
+  .ai-nota.ok{color:var(--state-good);}
+  .ai-logo{width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-family:var(--font-display); font-weight:700; font-size:14px; color:#fff; flex-shrink:0;}
+  .ai-briciole{font-size:12.5px; color:var(--text-muted); margin-bottom:14px;}
+  .ai-briciole a{color:var(--text-secondary);}
+  .ai-vuoto{padding:28px 20px; text-align:center; color:var(--text-muted); font-size:13px;}
+  .ai-vuoto b{display:block; color:var(--text-primary); margin-bottom:4px;}
+  @media (max-width:900px){ .ai-griglia{grid-template-columns:1fr;} .ai-argomento{width:auto; max-width:140px;} .ai-riga{flex-wrap:wrap;} }
   .modale-azioni{display:flex; gap:8px; justify-content:flex-end;}
 
   .avviso{display:flex; gap:11px; align-items:flex-start; background:var(--state-warn-dim); border:1px solid var(--state-warn-dim); border-radius:var(--radius-md); padding:13px 16px; font-size:13px; color:var(--text-secondary); margin-bottom:18px;}
@@ -283,6 +336,16 @@
         <span style="display:flex;align-items:center;gap:9px;">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
           Log azioni admin
+        </span>
+      </a>
+    </div>
+
+    <div>
+      <div class="nav-label">Sistema</div>
+      <a class="nav-item {{ATT_AI}}" href="/admin/ai">
+        <span style="display:flex;align-items:center;gap:9px;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 8v4l2.5 2.5M8 3.5A9 9 0 003.5 8M20.5 8A9 9 0 0016 3.5"/></svg>
+          Configurazione AI
         </span>
       </a>
     </div>

@@ -1127,6 +1127,39 @@ def _sb_report_invii(project_id: str, limit: int = 20) -> list:
 # qui non c'e' ripiego: senza le tabelle queste funzioni tornano vuoto, e le
 # schermate mostrano «in attesa dei primi dati» invece di inventarne.
 
+def _sb_ai_progetti_da_girare(frequenza_giorni: dict) -> list:
+    """I progetti attivi il cui ultimo giro e' piu' vecchio della loro frequenza.
+
+    `frequenza_giorni` traduce `schedule_frequency` in giorni, es.
+    {"weekly": 7, "monthly": 30, "custom": 7}. Un progetto mai girato viene
+    per primo.
+    """
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/ai_monitoring_settings", headers=_SB_H,
+                    timeout=15, params={"is_active": "eq.true",
+                                        "select": "project_id,schedule_frequency,"
+                                                  "last_run_at,sentiment_enabled",
+                                        "order": "last_run_at.asc.nullsfirst"})
+        if not r.ok:
+            return []
+        adesso = datetime.now(timezone.utc)
+        pronti = []
+        for s_ in r.json() or []:
+            giorni = frequenza_giorni.get(s_.get("schedule_frequency") or "weekly", 7)
+            ultimo = s_.get("last_run_at")
+            if not ultimo:
+                pronti.append(s_); continue
+            try:
+                t = datetime.fromisoformat(ultimo.replace("Z", "+00:00"))
+            except Exception:
+                pronti.append(s_); continue
+            if (adesso - t) >= timedelta(days=giorni):
+                pronti.append(s_)
+        return pronti
+    except Exception:
+        return []
+
+
 def _sb_ai_impostazioni(project_id: str) -> dict:
     """Se e ogni quanto si interrogano le AI per questo progetto."""
     vuoto = {"is_active": True, "schedule_frequency": "weekly",
@@ -1220,10 +1253,33 @@ def _sb_ai_domanda_crea(topic_id: str, testo: str, intent: str = "",
         return ""
 
 
-def _sb_ai_domanda_elimina(prompt_id: str) -> bool:
+def _sb_ai_domanda_modifica(prompt_id: str, testo: str) -> bool:
+    """Cambia il testo di una domanda. ⚠️ Una domanda riscritta a mano NON
+    resta «generata»: la fonte passa a `manual`, e se era da approvare resta
+    da approvare — chi la modifica non e' detto sia chi la approva."""
     try:
-        r = req.delete(f"{SUPABASE_URL}/rest/v1/monitored_prompts", headers=_SB_H,
-                       timeout=15, params={"id": f"eq.{prompt_id}"})
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/monitored_prompts", headers=_SB_H,
+                      timeout=15, params={"id": f"eq.{prompt_id}"},
+                      json={"prompt_text": testo.strip()[:500], "source": "manual"})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_ai_domanda_elimina(prompt_id: str) -> bool:
+    """Toglie una domanda dal monitoraggio.
+
+    ⚠️ Non e' una DELETE: la si disattiva. La tabella delle risposte punta
+    alla domanda con ON DELETE CASCADE, quindi cancellarla porterebbe via
+    tutte le risposte e le citazioni raccolte su di essa — e il punteggio dei
+    periodi passati cambierebbe retroattivamente. Una domanda disattivata non
+    entra piu' nei giri (`_sb_ai_domande` legge solo le attive) ma lo storico
+    resta quello misurato allora.
+    """
+    try:
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/monitored_prompts", headers=_SB_H,
+                      timeout=15, params={"id": f"eq.{prompt_id}"},
+                      json={"active": False})
         return r.status_code < 300
     except Exception:
         return False
@@ -1231,7 +1287,7 @@ def _sb_ai_domanda_elimina(prompt_id: str) -> bool:
 
 def _sb_ai_esecuzione_scrivi(prompt_id: str, project_id: str, provider: str,
                              modello: str, testo: str, stato: str = "completed",
-                             errore: str = "") -> str:
+                             errore: str = "", batch_id: str = "") -> str:
     """Registra una risposta di un motore. Torna l'id della riga.
 
     ⚠️ Si registra anche quando FALLISCE: un motore che non risponde e un motore
@@ -1244,7 +1300,10 @@ def _sb_ai_esecuzione_scrivi(prompt_id: str, project_id: str, provider: str,
                      json={"prompt_id": prompt_id, "project_id": project_id,
                            "provider": provider, "model_used": modello,
                            "response_text": (testo or "")[:20000],
-                           "status": stato, "error": (errore or "")[:500] or None})
+                           "status": stato, "error": (errore or "")[:500] or None,
+                           # ⚠️ solo dopo la fase G: prima la colonna non c'e' e
+                           # PostgREST rifiuterebbe l'intera riga
+                           **({"batch_id": batch_id} if batch_id and _fase_g_c_e() else {})})
         return (r.json() or [{}])[0].get("id", "") if r.status_code < 300 else ""
     except Exception:
         return ""
@@ -1319,6 +1378,28 @@ def _sb_ai_citazioni_categoria(project_id: str, dominio: str, categoria: str,
         return r.status_code < 300
     except Exception:
         return False
+
+
+def _sb_ai_citazione_url(citazione_id: str, url: str) -> bool:
+    try:
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/extracted_citations", headers=_SB_H,
+                      timeout=15, params={"id": f"eq.{citazione_id}"}, json={"cited_url": url})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_ai_citazioni_con_redirect(limit: int = 500) -> list:
+    """Le citazioni salvate con l'URL di redirect di Google al posto della
+    pagina vera. Sono quelle dei giri fatti prima del 15/09; si risolvono una
+    volta e non tornano piu'."""
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/extracted_citations", headers=_SB_H,
+                    timeout=20, params={"cited_url": "like.*vertexaisearch.cloud.google.com*",
+                                        "select": "id,cited_url", "limit": str(limit)})
+        return r.json() if r.ok else []
+    except Exception:
+        return []
 
 
 def _sb_ai_ha_dati(project_id: str) -> bool:
@@ -1530,8 +1611,10 @@ def _sb_ai_snapshot(project_id: str, limit: int = 6) -> list:
                     timeout=15,
                     params={"project_id": f"eq.{project_id}",
                             "select": "period_start,period_end,visibility_score,"
-                                      "breakdown_by_provider",
-                            "order": "period_end.desc", "limit": str(limit)})
+                                      "breakdown_by_provider,created_at"
+                                      + (",batch_id,prompts_counted,delta_vs_previous"
+                                         if _fase_g_c_e() else ""),
+                            "order": "created_at.desc", "limit": str(limit)})
         return r.json() if r.ok else []
     except Exception:
         return []
@@ -1562,6 +1645,15 @@ def _sb_llm_config_salva(provider: str, chiave_cifrata: str = "",
     if modello:
         dati["default_model"] = modello
     try:
+        if not chiave_cifrata:
+            # ⚠️ Senza la chiave non si puo' fare upsert: la colonna e' NOT
+            # NULL e l'INSERT dell'upsert la vuole anche quando poi si limita
+            # ad aggiornare. Si aggiorna la riga che c'e' — e se non c'e', la
+            # risposta e' «no»: un modello senza chiave non ha senso.
+            r = req.patch(f"{SUPABASE_URL}/rest/v1/llm_provider_config", timeout=15,
+                          headers={**_SB_H, "Prefer": "return=representation"},
+                          params={"provider": f"eq.{provider}"}, json=dati)
+            return r.ok and bool(r.json())
         r = req.post(f"{SUPABASE_URL}/rest/v1/llm_provider_config", timeout=15,
                      headers={**_SB_H, "Prefer": "resolution=merge-duplicates"},
                      json=dati)

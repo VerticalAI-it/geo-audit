@@ -20,11 +20,14 @@ from __future__ import annotations
 
 import json
 import re
+import os
 import time
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import ai_monitor
-from db import (_sb_ai_argomento_crea, _sb_ai_citazioni, _sb_ai_citazioni_scrivi,
+from db import (_sb_ai_esecuzioni,
+                _sb_ai_argomento_crea, _sb_ai_citazioni, _sb_ai_citazioni_scrivi,
                 _sb_ai_snapshot_ultimo,
                 _sb_ai_citazioni_categoria, _sb_ai_concorrente_aggiungi,
                 _sb_ai_concorrenti, _sb_ai_domanda_crea, _sb_ai_domande,
@@ -188,8 +191,35 @@ def prepara_progetto(project_id: str, dominio: str, settore: str, chiavi: dict) 
 
 # ── 2. Il giro sui motori ───────────────────────────────────────────────────
 
+def chiavi_configurate() -> dict:
+    """Le chiavi dei provider, dal pannello (cifrate) o dall'ambiente.
+
+    ⚠️ Il pannello vince: e' la fonte che il documento prevede. L'ambiente
+    resta per gli script di collaudo e per il periodo in cui Vertical AI non ha
+    ancora incollato le proprie chiavi — non e' un ripiego silenzioso, e'
+    dichiarato da `provenienza`.
+    """
+    import ai_chiavi
+    from db import _sb_llm_config
+    chiavi, modelli, provenienza = {}, {}, {}
+    for c in _sb_llm_config():
+        k = ai_chiavi.decifra(c.get("api_key_encrypted") or "")
+        if k:
+            chiavi[c["provider"]] = k
+            provenienza[c["provider"]] = "pannello"
+        if c.get("default_model"):
+            modelli[c["provider"]] = c["default_model"]
+    for p, var in (("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"),
+                   ("gemini", "GEMINI_API_KEY"), ("perplexity", "PERPLEXITY_API_KEY")):
+        if not chiavi.get(p) and os.environ.get(var):
+            chiavi[p] = os.environ[var]
+            provenienza[p] = "ambiente"
+    return {"chiavi": chiavi, "modelli": modelli, "provenienza": provenienza}
+
+
 def esegui_giro(project_id: str, dominio: str, chiavi: dict,
-                budget_secondi: float = 240, sentiment: bool = True) -> dict:
+                budget_secondi: float = 240, sentiment: bool = True,
+                modelli: dict | None = None) -> dict:
     """Chiede a tutti i motori tutte le domande, e salva cosa hanno risposto.
 
     Si ferma quando il budget di tempo è finito: quello che resta lo farà il
@@ -217,8 +247,24 @@ def esegui_giro(project_id: str, dominio: str, chiavi: dict,
                 "da_approvare": len(in_attesa)}
 
     concorrenti = {c["domain"] for c in _sb_ai_concorrenti(project_id)}
-    eseguite = falliti = citazioni_salvate = 0
+    eseguite = falliti = citazioni_salvate = saltate = 0
     finito = True
+
+    # ⚠️ Il giro e' RIPARTIBILE A FETTE. Il cron di Vercel ha sessanta secondi
+    # a passaggio e un giro completo (dieci domande per quattro motori) ne
+    # vuole trecento: nessuna singola invocazione lo finisce. Allora ogni
+    # passaggio fa quello che riesce e salta le coppie domanda/motore gia'
+    # risposte nelle ultime 24 ore; il giro e' «finito» quando non resta
+    # niente da fare, e solo allora si scrive `last_run_at`.
+    #
+    # Le fette dello stesso giro portano lo stesso batch_id: si riprende
+    # quello della fetta precedente, altrimenti l'andamento fra i giri
+    # confronterebbe fra loro i pezzi di uno stesso giro.
+    recenti = [e for e in _sb_ai_esecuzioni(project_id, giorni=1)
+               if e.get("status") == "completed"]
+    gia_fatte = {(e.get("prompt_id"), e.get("provider")) for e in recenti}
+    batch_id = next((e["batch_id"] for e in recenti if e.get("batch_id")), None) \
+        or str(uuid.uuid4())
 
     for d in domande:
         if (time.monotonic() - partito) >= budget_secondi:
@@ -228,23 +274,29 @@ def esegui_giro(project_id: str, dominio: str, chiavi: dict,
             chiave = chiavi.get(provider)
             if not chiave:
                 continue
+            if (d["id"], provider) in gia_fatte:
+                saltate += 1
+                continue
             if (time.monotonic() - partito) >= budget_secondi:
                 finito = False
                 break
             try:
-                r = ai_monitor.interroga(provider, d["prompt_text"], chiave)
+                r = ai_monitor.interroga(provider, d["prompt_text"], chiave,
+                                         (modelli or {}).get(provider, ""))
             except ai_monitor.ErroreProvider as e:
                 # ⚠️ Si registra anche il fallimento: «non ha risposto» e «ha
                 # risposto senza citare» sono due cose diverse, e confonderle
                 # abbasserebbe il punteggio per un guasto nostro.
                 _sb_ai_esecuzione_scrivi(d["id"], project_id, provider,
                                          ai_monitor.PROVIDER[provider]["modello"],
-                                         "", stato="failed", errore=str(e))
+                                         "", stato="failed", errore=str(e),
+                                         batch_id=batch_id)
                 falliti += 1
                 continue
 
             run_id = _sb_ai_esecuzione_scrivi(
-                d["id"], project_id, provider, r.get("modello", ""), r.get("testo", ""))
+                d["id"], project_id, provider, r.get("modello", ""), r.get("testo", ""),
+                batch_id=batch_id)
             eseguite += 1
 
             citazioni = ai_monitor.leggi_citazioni(r, dominio)
@@ -258,8 +310,11 @@ def esegui_giro(project_id: str, dominio: str, chiavi: dict,
                         c["sentiment"] = voto
             citazioni_salvate += _sb_ai_citazioni_scrivi(run_id, project_id, citazioni)
 
-    _sb_ai_impostazioni_salva(
-        project_id, {"last_run_at": datetime.now(timezone.utc).isoformat()})
+    # ⚠️ solo a giro finito: una fetta parziale non deve far credere alla
+    # pianificazione che il progetto sia stato coperto
+    if finito:
+        _sb_ai_impostazioni_salva(
+            project_id, {"last_run_at": datetime.now(timezone.utc).isoformat()})
 
     # Chi ricorre nelle risposte appena raccolte viene proposto come
     # concorrente, e le citazioni gia' scritte si adeguano. Deve stare qui e
@@ -277,10 +332,19 @@ def esegui_giro(project_id: str, dominio: str, chiavi: dict,
         # dopo.
         pass
 
+    # A giro finito si scatta la fotografia: e' quello che leggono le schede
+    # (Decisione 5: mai calcolo live in pagina).
+    if finito and (eseguite or saltate):
+        try:
+            aggrega(project_id, giorni=30, batch_id=batch_id)
+        except Exception:
+            pass
+
     return {"esito": "completato" if finito else "parziale",
-            "eseguite": eseguite, "falliti": falliti,
+            "eseguite": eseguite, "falliti": falliti, "saltate": saltate,
             "citazioni": citazioni_salvate,
             "concorrenti_nuovi": nuovi,
+            "batch_id": batch_id,
             # ⚠️ va detto: un giro «completato» che ha saltato meta' delle
             # domande perche' erano da approvare non e' un giro completo.
             "da_approvare": len(in_attesa),
@@ -341,6 +405,13 @@ _ELENCHI = (
 # stessa risposta è un segnale solo, non dodici.
 _SOGLIA_RISPOSTE = 3
 
+# Quanti concorrenti proposti dal motore possono stare in elenco. Senza un
+# tetto ogni giro ne aggiungeva fino a dieci e l'elenco cresceva finche' i
+# dati lo permettevano: su amahorse era arrivato a 25 dopo tre giri. Un
+# elenco cosi' lungo non e' una lista di concorrenti, e' la lista di chi
+# viene citato — che e' un'altra scheda.
+_MAX_PROPOSTI = 12
+
 
 def scopri_concorrenti(project_id: str, dominio_progetto: str,
                        giorni: int = 30, quanti: int = 10) -> list:
@@ -387,9 +458,13 @@ def scopri_concorrenti(project_id: str, dominio_progetto: str,
 
     classifica_domini = sorted(risposte_per_dominio.items(),
                                key=lambda kv: -len(kv[1]))
+    gia_proposti = len([c for c in _sb_ai_concorrenti(project_id)
+                        if c.get("source") == "ai_suggested"])
     proposti = []
     for d, run_ids in classifica_domini:
         if len(run_ids) < _SOGLIA_RISPOSTE or len(proposti) >= quanti:
+            break
+        if gia_proposti + len(proposti) >= _MAX_PROPOSTI:
             break
         if d in gia_noti:
             continue
