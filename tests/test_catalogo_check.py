@@ -169,7 +169,8 @@ class CatalogoDeiCheckDiPagina(unittest.TestCase):
 
 class CatalogoDeiCheckDiSito(unittest.TestCase):
 
-    ATTESI = {"crawl.ai", "crawl.conflict", "crawl.coverage", "crawl.https",
+    ATTESI = {"entity.sameas.fonti", "entity.wikidata",
+              "crawl.ai", "crawl.conflict", "crawl.coverage", "crawl.https",
               "crawl.llms", "crawl.robots", "crawl.sitemap", "perf.cls", "perf.lcp"}
 
     def _sito(self, **kw):

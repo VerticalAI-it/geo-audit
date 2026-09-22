@@ -31,10 +31,12 @@ from urllib.parse import urljoin, urldefrag, urlparse
 from datetime import datetime
 
 import requests
+
+import presenza_offsite
 from bs4 import BeautifulSoup
 
 # ============================================================ CONFIG
-ENGINE_VERSION = "1.2.0"
+ENGINE_VERSION = "1.3.0"
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 VerticalAI-GEOAudit/1.1")
 HEADERS = {"User-Agent": BROWSER_UA,
@@ -237,6 +239,9 @@ def jsonld(soup):
 # nel testo non e' un cambio di significato, cambiare la soglia si'. Se questa
 # mappa diventa «tutti all'ultima versione» smette di servire a qualcosa.
 CHECK_VERSIONE = {
+    # 1.3.0 — presenza off-site (blocco 5, solo le fonti gratuite)
+    "entity.wikidata": "1.3.0",
+    "entity.sameas.fonti": "1.3.0",
     # 1.2.0 — la revisione del motore di settembre 2026
     "render.parity": "1.2.0",     # da sempre `unknown` a stima dichiarata
     "content.atomic": "1.2.0",
@@ -1341,7 +1346,82 @@ def render_report(domain, site, pages, render_used, respect_robots):
             + act_sec + pages_sec + notes + cta + foot + theme_script + "</div></body></html>"), overall
 
 # ============================================================ MAIN
-def build_site_checks(site, soup_home=None, pagine_scoperte=None, cwv=None):
+def _sameas_dalla_home(soup) -> list:
+    """Gli URL dichiarati in `sameAs` dai blocchi JSON-LD della home."""
+    if soup is None:
+        return []
+    fuori = []
+    blocchi, _t, _v = jsonld(soup)
+    for blocco in blocchi:
+        sa = blocco.get("sameAs")
+        if isinstance(sa, str):
+            sa = [sa]
+        for u in (sa or []):
+            if isinstance(u, str) and u.strip():
+                fuori.append(u.strip())
+    return fuori
+
+
+def checks_offsite(site, offsite=None):
+    """5.2 · L'entità riconosciuta fuori dal sito, per quanto si vede gratis.
+
+    ⚠️ Due check distinti perché sono due cose diverse. Esistere su Wikidata
+    non dipende dal cliente — un'officina non può avere una voce, le regole di
+    rilevanza lo vietano — quindi la sua assenza non toglie punteggio e resta
+    `unknown`. Dichiarare il collegamento con `sameAs` dipende invece solo da
+    lui, e quello si può pretendere.
+
+    ⚠️ Con `offsite=None` i check nascono `unknown` e NON spariscono dal
+    catalogo. Un controllo che compare solo quando è stato eseguito cambia il
+    denominatore del punteggio da un audit all'altro, e due punteggi smettono
+    di essere confrontabili.
+    """
+    raggiunto = bool((offsite or {}).get("raggiunto"))
+    ent = (offsite or {}).get("entita")
+    voci = int((offsite or {}).get("voci_wikipedia") or 0)
+
+    if not raggiunto:
+        stato, dettaglio, rimedio = UNK, "Non verificato su Wikidata.", ""
+    elif ent:
+        quante = (" · voce di Wikipedia in %d lingue" % voci) if voci else                  " · nessuna voce di Wikipedia"
+        stato = OK
+        dettaglio = "Riconosciuta come %s (%s)%s." % (ent["etichetta"] or ent["qid"],
+                                                      ent["qid"], quante)
+        rimedio = ""
+    else:
+        # ⚠️ `unknown`, non `fail`: vedi il perché nella docstring. E il
+        # suggerimento NON è «creati una voce su Wikipedia»: sarebbe un
+        # consiglio dannoso, oltre che di solito impossibile da seguire.
+        stato = UNK
+        dettaglio = "Nessuna entità Wikidata dichiara questo sito come ufficiale."
+        rimedio = ("Se l'organizzazione ha già una voce su Wikipedia o Wikidata, "
+                   "controlla che vi sia indicato questo dominio come sito ufficiale.")
+    ck(site.site_checks, id="entity.wikidata", category="Presenza off-site",
+       title="Entità riconosciuta (Wikidata)", status=stato, weight=4,
+       severity="medium", detail=dettaglio, recommendation=rimedio)
+
+    # Il secondo: il sito dichiara il collegamento verso quelle fonti?
+    collegamenti = [u for u in (getattr(site, "sameas_urls", None) or [])
+                    if "wikipedia.org" in u or "wikidata.org" in u]
+    if ent and not collegamenti:
+        stato2 = WARN
+        d2 = "L'entità esiste su Wikidata, ma il sito non la richiama in sameAs."
+        r2 = ("Aggiungi %s fra i `sameAs` dello schema Organization: il "
+              "collegamento nei due sensi è ciò che rende l'associazione "
+              "certa." % ent["url"])
+    elif collegamenti:
+        stato2, d2, r2 = OK, "Il sito si collega a %d fonte/i riconosciute." % len(collegamenti), ""
+    elif not raggiunto:
+        stato2, d2, r2 = UNK, "Non verificato.", ""
+    else:
+        stato2, d2, r2 = UNK, "Nessuna entità nota a cui collegarsi.", ""
+    ck(site.site_checks, id="entity.sameas.fonti", category="Presenza off-site",
+       title="Collegamento alle fonti riconosciute", status=stato2, weight=3,
+       severity="medium", detail=d2, recommendation=r2)
+
+
+def build_site_checks(site, soup_home=None, pagine_scoperte=None, cwv=None,
+                     offsite=None):
     """Il catalogo completo dei check di sito.
 
     ⚠️ E' l'UNICA funzione che lo produce: i due controlli che hanno bisogno
@@ -1367,8 +1447,13 @@ def build_site_checks(site, soup_home=None, pagine_scoperte=None, cwv=None):
     ck(site.site_checks, id="crawl.https", category="Rendering & accesso", title="HTTPS",
        status=OK if site.https else FAIL, weight=3, severity="high",
        detail="Attivo." if site.https else "Assente.", recommendation="" if site.https else "Abilita HTTPS.")
+    # ⚠️ Raccolto QUI e non nel check delle pagine: `sameAs` è una proprietà
+    # dell'organizzazione, quindi vale per il sito, e leggerlo pagina per
+    # pagina darebbe un esito diverso a seconda di dove lo si guarda.
+    site.sameas_urls = _sameas_dalla_home(soup_home)
     checks_sito_avanzati(site, soup_home, pagine_scoperte or [])
     checks_cwv(site, cwv)
+    checks_offsite(site, offsite)
 
 def run_audit(url, max_pages=20, render=True, respect_robots=False, log=lambda *a: None):
     """Esegue un audit completo e ritorna un dict con l'HTML del report e i metadati.
@@ -1395,7 +1480,11 @@ def run_audit(url, max_pages=20, render=True, respect_robots=False, log=lambda *
     site = build_site(base)
     urls = discover(home_soup, base, site.sitemap_urls, max_pages)
     cwv = leggi_cwv(base, os.environ.get("PAGESPEED_API_KEY", ""))
-    build_site_checks(site, home_soup, urls, cwv)
+    # ⚠️ Wikidata è gratuita e non vuole chiavi, ma è pur sempre rete: se non
+    # risponde, `guarda` torna `raggiunto: False` e i due check nascono
+    # `unknown` invece di far saltare l'audit.
+    offsite = presenza_offsite.guarda(urlparse(base).netloc)
+    build_site_checks(site, home_soup, urls, cwv, offsite)
     log(f"Analizzo {len(urls)} pagine...")
     pages = []
     for u in urls:
