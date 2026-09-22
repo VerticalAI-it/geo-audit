@@ -1378,15 +1378,15 @@ def checks_offsite(site, offsite=None):
     """
     raggiunto = bool((offsite or {}).get("raggiunto"))
     ent = (offsite or {}).get("entita")
-    lingue = (offsite or {}).get("lingue") or []
+    voci = int((offsite or {}).get("voci_wikipedia") or 0)
 
     if not raggiunto:
         stato, dettaglio, rimedio = UNK, "Non verificato su Wikidata.", ""
     elif ent:
-        voci = (" · voce di Wikipedia in %d lingue" % len(lingue)) if lingue else                " · nessuna voce di Wikipedia"
+        quante = (" · voce di Wikipedia in %d lingue" % voci) if voci else                  " · nessuna voce di Wikipedia"
         stato = OK
         dettaglio = "Riconosciuta come %s (%s)%s." % (ent["etichetta"] or ent["qid"],
-                                                      ent["qid"], voci)
+                                                      ent["qid"], quante)
         rimedio = ""
     else:
         # ⚠️ `unknown`, non `fail`: vedi il perché nella docstring. E il

@@ -66,18 +66,18 @@ class CheckOffSite(unittest.TestCase):
         regole di rilevanza lo vietano. Farla fallire sarebbe una penalità per
         qualcosa che il cliente non può sistemare."""
         s = _sito()
-        g.checks_offsite(s, {"raggiunto": True, "entita": None, "lingue": []})
+        g.checks_offsite(s, {"raggiunto": True, "entita": None})
         self.assertEqual(_stato(s.site_checks, "entity.wikidata"), g.UNK)
 
     def test_e_non_le_suggerisce_di_crearsi_una_voce(self):
         s = _sito()
-        g.checks_offsite(s, {"raggiunto": True, "entita": None, "lingue": []})
+        g.checks_offsite(s, {"raggiunto": True, "entita": None})
         testo = next(c.recommendation for c in s.site_checks if c.id == "entity.wikidata").lower()
         self.assertNotIn("crea", testo)
 
     def test_l_entita_trovata_e_un_ok_e_dice_quale(self):
         s = _sito()
-        g.checks_offsite(s, {"raggiunto": True, "lingue": ["it", "en"],
+        g.checks_offsite(s, {"raggiunto": True, "voci_wikipedia": 2,
                              "entita": {"qid": "Q27586", "etichetta": "Ferrari",
                                         "url": "https://www.wikidata.org/wiki/Q27586"}})
         c = next(c for c in s.site_checks if c.id == "entity.wikidata")
@@ -88,7 +88,7 @@ class CheckOffSite(unittest.TestCase):
     def test_entita_nota_ma_non_richiamata_e_un_avviso(self):
         """Questo sì che dipende dal cliente: il collegamento lo scrive lui."""
         s = _sito()
-        g.checks_offsite(s, {"raggiunto": True, "lingue": [],
+        g.checks_offsite(s, {"raggiunto": True, "voci_wikipedia": 0,
                              "entita": {"qid": "Q1", "etichetta": "X",
                                         "url": "https://www.wikidata.org/wiki/Q1"}})
         c = next(c for c in s.site_checks if c.id == "entity.sameas.fonti")
@@ -98,7 +98,7 @@ class CheckOffSite(unittest.TestCase):
     def test_il_collegamento_dichiarato_e_un_ok(self):
         s = _sito()
         s.sameas_urls = ["https://it.wikipedia.org/wiki/X", "https://linkedin.com/x"]
-        g.checks_offsite(s, {"raggiunto": True, "lingue": [],
+        g.checks_offsite(s, {"raggiunto": True, "voci_wikipedia": 0,
                              "entita": {"qid": "Q1", "etichetta": "X",
                                         "url": "https://www.wikidata.org/wiki/Q1"}})
         self.assertEqual(_stato(s.site_checks, "entity.sameas.fonti"), g.OK)
@@ -108,7 +108,7 @@ class CheckOffSite(unittest.TestCase):
         fonti che un assistente riconosce come enciclopediche."""
         s = _sito()
         s.sameas_urls = ["https://facebook.com/x", "https://instagram.com/x"]
-        g.checks_offsite(s, {"raggiunto": True, "lingue": [],
+        g.checks_offsite(s, {"raggiunto": True, "voci_wikipedia": 0,
                              "entita": {"qid": "Q1", "etichetta": "X",
                                         "url": "https://www.wikidata.org/wiki/Q1"}})
         self.assertEqual(_stato(s.site_checks, "entity.sameas.fonti"), g.WARN)
@@ -189,3 +189,57 @@ class StrozzamentoDiWikidata(unittest.TestCase):
             self.assertLessEqual(attese[0], 30.0)
         finally:
             po.requests.get, po.time.sleep = vecchio_get, vecchio_sleep
+
+
+class TettoDiTempo(unittest.TestCase):
+    """⚠️ Il cron di Vercel ha 40 secondi di margine documentato. Senza tetto
+    il caso peggiore di questi check ne prendeva oltre centocinquanta e faceva
+    scadere la funzione su un sito già lento."""
+
+    def test_il_budget_sta_dentro_il_margine_del_cron(self):
+        self.assertLessEqual(po.BUDGET, 40.0)
+        self.assertLessEqual(po.TIMEOUT, po.BUDGET)
+
+    def test_a_budget_esaurito_non_parte_nessuna_query(self):
+        chiamate = []
+        vecchio = po.requests.get
+        po.requests.get = lambda *a, **k: chiamate.append(1)
+        try:
+            scaduto = po._Budget(0)
+            with self.assertRaises(TimeoutError):
+                po._query("X", budget=scaduto)
+            self.assertEqual(chiamate, [])
+        finally:
+            po.requests.get = vecchio
+
+    def test_non_si_aspetta_piu_del_tempo_rimasto(self):
+        """⚠️ Wikidata può dichiarare un Retry-After lunghissimo: rispettarlo
+        alla lettera vorrebbe dire far scadere la funzione invece del check."""
+        class R:
+            status_code, headers = 429, {"Retry-After": "9000"}
+
+            def raise_for_status(self):
+                raise RuntimeError("HTTP 429")
+
+        attese = []
+        vecchio_get, vecchio_sleep = po.requests.get, po.time.sleep
+        po.requests.get, po.time.sleep = (lambda *a, **k: R()), attese.append
+        try:
+            with self.assertRaises(Exception):
+                po._query("X", budget=po._Budget(1.2))
+            self.assertTrue(attese, "non ha nemmeno provato ad aspettare")
+            self.assertLess(sum(attese), 1.2,
+                            "ha aspettato più del budget invece di arrendersi")
+        finally:
+            po.requests.get, po.time.sleep = vecchio_get, vecchio_sleep
+
+    def test_un_budget_esaurito_diventa_unknown_non_un_errore(self):
+        """L'audit non deve fallire perché Wikidata è lenta."""
+        vecchio = po.entita_del_dominio
+        po.entita_del_dominio = lambda d, b=None: (_ for _ in ()).throw(TimeoutError("x"))
+        try:
+            r = po.guarda("esempio.it")
+            self.assertFalse(r["raggiunto"])
+            self.assertIsNone(r["entita"])
+        finally:
+            po.entita_del_dominio = vecchio

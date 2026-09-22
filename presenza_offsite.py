@@ -31,7 +31,16 @@ import requests
 
 ENDPOINT = "https://query.wikidata.org/sparql"
 UA = "GEO-Audit/1.0 (https://geo.verticalai.it; info@verticalai.it)"
-TIMEOUT = 25
+TIMEOUT = 8
+
+# ⚠️ Tetto complessivo per TUTTE le query di un audit, ritentativi e attese
+# comprese. Non è una preferenza: il cron di Vercel ha un margine documentato
+# di 40 secondi (`_CRON_TIME_BUDGET + 200s <= maxDuration`, vedi server.py), e
+# senza questo tetto il caso peggiore — due query con ritentativo più le
+# attese dichiarate da Wikidata — ne prendeva oltre centocinquanta, facendo
+# scadere la funzione su un sito già lento. Meglio un check `unknown` che un
+# audit che non finisce.
+BUDGET = 12.0
 
 
 def _forme(dominio: str) -> list:
@@ -53,7 +62,20 @@ def _forme(dominio: str) -> list:
     return fuori
 
 
-def _query(sparql: str, tentativi: int = 2):
+class _Budget:
+    """Il tempo che resta a questo audit per le domande a Wikidata."""
+
+    def __init__(self, secondi: float):
+        self.scade = time.monotonic() + secondi
+
+    def resta(self) -> float:
+        return self.scade - time.monotonic()
+
+    def finito(self) -> bool:
+        return self.resta() <= 0.5
+
+
+def _query(sparql: str, tentativi: int = 2, budget: "_Budget | None" = None):
     """Interroga il servizio, rispettando lo strozzamento.
 
     ⚠️ Il servizio pubblico di Wikidata limita le query ravvicinate, e con un
@@ -63,16 +85,26 @@ def _query(sparql: str, tentativi: int = 2):
     prodotto direbbe «non risulta» a clienti che invece risultano.
     """
     for giro in range(tentativi):
+        if budget and budget.finito():
+            raise TimeoutError("budget off-site esaurito")
+        quanto = min(TIMEOUT, budget.resta()) if budget else TIMEOUT
         r = requests.get(ENDPOINT, params={"query": sparql, "format": "json"},
                          headers={"User-Agent": UA,
                                   "Accept": "application/sparql-results+json"},
-                         timeout=TIMEOUT)
+                         timeout=quanto)
         if r.status_code in (429, 503) and giro + 1 < tentativi:
-            attesa = 5.0
+            attesa = 3.0
             try:
-                attesa = min(float(r.headers.get("Retry-After") or attesa), 30.0)
+                attesa = min(float(r.headers.get("Retry-After") or attesa), 10.0)
             except ValueError:
                 pass
+            # ⚠️ Non si aspetta più di quanto resta: l'attesa dichiarata da
+            # Wikidata può essere lunghissima, e rispettarla alla lettera
+            # significherebbe far scadere la funzione invece del check.
+            if budget:
+                attesa = min(attesa, max(budget.resta() - 1.0, 0))
+                if attesa <= 0:
+                    raise TimeoutError("budget off-site esaurito")
             time.sleep(attesa)
             continue
         r.raise_for_status()
@@ -80,7 +112,7 @@ def _query(sparql: str, tentativi: int = 2):
     return []
 
 
-def entita_del_dominio(dominio: str) -> dict | None:
+def entita_del_dominio(dominio: str, budget: "_Budget | None" = None) -> dict | None:
     """L'entità Wikidata che dichiara questo dominio come sito ufficiale.
 
     ⚠️ Query per VALORI ESATTI, non per REGEX: una REGEX su `P856` obbliga il
@@ -94,34 +126,34 @@ def entita_del_dominio(dominio: str) -> dict | None:
     if not forme:
         return None
     valori = " ".join("<%s>" % u for u in forme)
+    # ⚠️ Il conteggio delle voci di Wikipedia arriva DENTRO questa query, non
+    # con una query per candidato. Più entità possono dichiarare lo stesso
+    # sito — su deloitte.com ne tornano due, e la prima in ordine naturale è
+    # `Monitor-Deloitte`, una controllata — quindi serve sapere quale sia la
+    # principale. Chiederlo una riga alla volta costava troppo: col tetto di
+    # tempo la disambiguazione veniva interrotta e tornava di nuovo l'entità
+    # sbagliata, cioè il difetto si era solo spostato.
     righe = _query(
-        "SELECT ?e ?eLabel ?eDescription ?sito WHERE { VALUES ?sito { %s } "
-        "?e wdt:P856 ?sito. SERVICE wikibase:label "
-        '{ bd:serviceParam wikibase:language "it,en". } } LIMIT 5' % valori)
+        "SELECT ?e ?eLabel ?eDescription ?sito (COUNT(DISTINCT ?voce) AS ?voci) WHERE { "
+        "VALUES ?sito { %s } ?e wdt:P856 ?sito. "
+        "OPTIONAL { ?voce schema:about ?e ; schema:isPartOf ?w. "
+        'FILTER(CONTAINS(STR(?w), ".wikipedia.org")) } '
+        'SERVICE wikibase:label { bd:serviceParam wikibase:language "it,en". } } '
+        "GROUP BY ?e ?eLabel ?eDescription ?sito "
+        "ORDER BY DESC(?voci) LIMIT 5" % valori, budget=budget)
     if not righe:
         return None
-    # ⚠️ Più entità possono dichiarare lo stesso sito: su deloitte.com ne
-    # tornano due, e la prima in ordine di query è `Monitor-Deloitte`, una
-    # controllata. Prendere la prima riga vuol dire attribuire il sito al
-    # soggetto sbagliato. Vince quella con più voci di Wikipedia, che è
-    # l'entità principale in tutti i casi in cui questa ambiguità esiste.
-    if len(righe) > 1:
-        def _quante(riga):
-            try:
-                return len(lingue_wikipedia(riga["e"]["value"].rsplit("/", 1)[-1]))
-            except Exception:
-                return -1
-        righe = sorted(righe, key=_quante, reverse=True)
     r = righe[0]
     qid = r["e"]["value"].rsplit("/", 1)[-1]
     return {"qid": qid,
             "etichetta": (r.get("eLabel") or {}).get("value", ""),
             "descrizione": (r.get("eDescription") or {}).get("value", ""),
             "sito_dichiarato": r["sito"]["value"],
+            "voci_wikipedia": int((r.get("voci") or {}).get("value") or 0),
             "url": "https://www.wikidata.org/wiki/" + qid}
 
 
-def lingue_wikipedia(qid: str) -> list:
+def lingue_wikipedia(qid: str, budget: "_Budget | None" = None) -> list:
     """In quante lingue esiste una voce di Wikipedia per questa entità.
 
     È il segnale che conta più del semplice esistere: una voce in una sola
@@ -131,7 +163,7 @@ def lingue_wikipedia(qid: str) -> list:
         return []
     righe = _query(
         "SELECT ?s WHERE { ?s schema:about wd:%s ; schema:isPartOf ?w. "
-        'FILTER(CONTAINS(STR(?w), ".wikipedia.org")) } LIMIT 300' % qid)
+        'FILTER(CONTAINS(STR(?w), ".wikipedia.org")) } LIMIT 300' % qid, budget=budget)
     lingue = []
     for r in righe:
         m = re.match(r"https://([a-z\-]+)\.wikipedia\.org/", r["s"]["value"])
@@ -147,20 +179,21 @@ def guarda(dominio: str) -> dict:
     check traduce in `unknown`. Un audit non deve fallire perché Wikidata è
     lenta, e non deve nemmeno dichiarare assente ciò che non ha potuto vedere.
     """
-    esito = {"raggiunto": False, "entita": None, "lingue": [], "errore": ""}
+    esito = {"raggiunto": False, "entita": None, "voci_wikipedia": 0, "errore": ""}
     if not _forme(dominio):
         # ⚠️ Nessuna query è partita: «non l'ho chiesto» non è «non c'è».
         esito["errore"] = "dominio non interpretabile"
         return esito
+    budget = _Budget(BUDGET)
     try:
-        ent = entita_del_dominio(dominio)
+        ent = entita_del_dominio(dominio, budget)
         esito["raggiunto"] = True
         if ent:
             esito["entita"] = ent
-            try:
-                esito["lingue"] = lingue_wikipedia(ent["qid"])
-            except Exception:
-                pass          # l'entità c'è comunque: è il dato che conta
+            # ⚠️ Niente seconda query: il conteggio delle voci di Wikipedia
+            # arriva già dalla prima, e chiederlo di nuovo raddoppiava il
+            # tempo dell'audit per un dato che avevamo in mano.
+            esito["voci_wikipedia"] = ent.get("voci_wikipedia", 0)
     except Exception as e:
         esito["errore"] = str(e)[:200]
     return esito
