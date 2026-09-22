@@ -58,12 +58,14 @@ class CatalogoDeiCheckDiPagina(unittest.TestCase):
 
     # ⚠️ Aggiornare solo insieme a un bump di ENGINE_VERSION.
     ATTESI = {
-        "content.fresh", "content.h1", "content.hier", "content.len",
-        "content.q", "content.struct", "content.tldr", "meta.canonical",
-        "meta.description", "meta.lang", "meta.og", "meta.title",
-        "meta.twitter", "page.noindex", "page.status", "render.parity",
-        "sd.highvalue", "sd.present", "sd.sameas", "sd.valid", "sem.html",
-        "trust.author", "trust.contact", "trust.social",
+        "content.atomic", "content.fresh", "content.h1", "content.hidden",
+        "content.hier", "content.len", "content.q", "content.sources",
+        "content.struct", "content.tldr", "faq.answerlen", "meta.canonical",
+        "meta.canonical.consistency", "meta.description", "meta.lang",
+        "meta.og", "meta.title", "meta.twitter", "page.noindex",
+        "page.status", "render.parity", "schema.datemodified",
+        "sd.highvalue", "sd.person", "sd.present", "sd.sameas", "sd.valid",
+        "sem.html", "trust.author", "trust.contact", "trust.social",
     }
 
     def test_gli_id_emessi_sono_quelli_attesi(self):
@@ -167,7 +169,8 @@ class CatalogoDeiCheckDiPagina(unittest.TestCase):
 
 class CatalogoDeiCheckDiSito(unittest.TestCase):
 
-    ATTESI = {"crawl.ai", "crawl.https", "crawl.llms", "crawl.robots", "crawl.sitemap"}
+    ATTESI = {"crawl.ai", "crawl.conflict", "crawl.coverage", "crawl.https",
+              "crawl.llms", "crawl.robots", "crawl.sitemap", "perf.cls", "perf.lcp"}
 
     def _sito(self, **kw):
         s = g.Site(base_url="https://esempio.it", https=True)
