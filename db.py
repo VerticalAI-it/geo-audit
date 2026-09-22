@@ -1050,6 +1050,12 @@ _REPORT_PREF_DEFAULT = {
     "alert_new_critical": True,
     # Resta spento e non si accende: dipende da Competitors, che non esiste.
     "alert_competitor_overtake": False,
+    # ⚠️ Nasce SPENTO, a differenza degli altri due. Gli avvisi sul punteggio
+    # partono dopo un audit, che e' un evento raro e deliberato; questo guarda
+    # il traffico, che oscilla da solo. Acceso di default manderebbe email a
+    # chi non le ha chieste, e dopo tre nessuno legge piu' nemmeno quelle che
+    # contano.
+    "alert_traffico_ai": False,
     # ⚠️ La volonta' del cliente, e sta APPOSTA in un campo suo invece che nella
     # frequenza. Se il «disiscriviti» dell'email scrivesse `frequency = off`,
     # basterebbe che qualcuno dal pannello rimettesse «Mensile» — in buona fede,

@@ -373,16 +373,21 @@ def tab_competitors(project: dict, d: dict) -> str:
 def tab_citations(project: dict, d: dict) -> str:
     sent = d["sentiment"] or "—"
     cls_sent = {"positivo": "good", "negativo": "critical"}.get(d["sentiment"], "")
+    # ⚠️ 7.1 · questi quattro numeri vengono da domande poste davvero agli
+    # assistenti, non da stime: il badge lo dichiara. Senza, «citazioni
+    # dirette» si potrebbe leggere come un dato di piattaforma.
+    _prov = ('<span class="prov prov--monitorato" title="Ricavato da domande poste '
+             'davvero agli assistenti AI e ripetute a intervalli regolari.">MONITORATO</span>')
     kpi = (
         '<div class="kpi-strip">'
-        '<div class="kpi"><div class="kpi-top"><span class="kpi-label">Citazioni dirette (30gg)</span></div>'
+        f'<div class="kpi"><div class="kpi-top"><span class="kpi-label">Citazioni dirette (30gg)</span>{_prov}</div>'
         f'<div class="kpi-value">{d["dirette"]}</div><div class="kpi-sub">in {d["citate_in"]} risposte su {d["risposte"]}</div></div>'
-        '<div class="kpi"><div class="kpi-top"><span class="kpi-label">Pagine citate</span></div>'
+        f'<div class="kpi"><div class="kpi-top"><span class="kpi-label">Pagine citate</span>{_prov}</div>'
         f'<div class="kpi-value">{d["n_pagine"]}</div><div class="kpi-sub">pagine diverse indicate come fonte</div></div>'
-        '<div class="kpi"><div class="kpi-top"><span class="kpi-label">Argomenti coperti</span></div>'
+        f'<div class="kpi"><div class="kpi-top"><span class="kpi-label">Argomenti coperti</span>{_prov}</div>'
         f'<div class="kpi-value">{len([a for a in d["argomenti"] if a["citati"]])}</div>'
         f'<div class="kpi-sub">su {len(d["argomenti"])} monitorati</div></div>'
-        '<div class="kpi"><div class="kpi-top"><span class="kpi-label">Sentiment medio</span></div>'
+        f'<div class="kpi"><div class="kpi-top"><span class="kpi-label">Sentiment medio</span>{_prov}</div>'
         f'<div class="kpi-value {cls_sent}">{esc(sent)}</div>'
         f'<div class="kpi-sub">{"su " + str(d["voti"]) + " menzioni" if d["voti"] else "non ancora valutato"}</div></div>'
         '</div>')
