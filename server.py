@@ -18,6 +18,7 @@ import ai_giro
 import ai_monitor
 import ai_schermate
 import geo_audit
+import piani
 
 # ── moduli interni ───────────────────────────────────────────────────────────
 from config import FROM_EMAIL, RESEND_KEY, SITE_URL, SUPABASE_ANON, SUPABASE_URL, _SECRET
@@ -40,14 +41,16 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_report_log_ultimo, _sb_report_invii, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
     _sb_audit_fallito, _sb_peso_archivio, _sb_traffic_ricalcola, _sb_traffic_riepilogo, \
+    _sb_tracking_events, \
     _sb_projects_with_tracking, \
     _sb_ai_impostazioni, _sb_ai_impostazioni_salva, _sb_ai_domande, _sb_ai_domande_da_approvare, \
     _sb_ai_domanda_approva, _sb_ai_domanda_crea, _sb_ai_domanda_modifica, _sb_ai_domanda_elimina, \
     _sb_ai_argomenti, _sb_ai_argomento_crea, _sb_ai_concorrenti, _sb_ai_concorrente_aggiungi, \
-    _sb_ai_concorrente_escludi, _sb_ai_progetti_da_girare, _sb_llm_config, _sb_llm_config_salva, \
+    _sb_ai_concorrente_escludi, _sb_ai_progetti_da_girare, _sb_project_piano, \
+    _sb_llm_config, _sb_llm_config_salva, \
     _sb_llm_modelli, _sb_llm_modelli_salva
 from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, \
-    _coming_soon_tab, _roadmap_colonne_html, _roadmap_live_html, \
+    _coming_soon_tab, pannello_teaser, _roadmap_colonne_html, _roadmap_live_html, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
     _project_status, _sidebar, _subtabs, _tab_audit, _tab_campione, _tab_opportunities, \
     _tab_overview, _tab_pages, _tab_reports, _tab_settings, _tab_technical, _tab_traffic, \
@@ -1591,6 +1594,67 @@ def _send_avviso_calo(to: str, dominio: str, project_id: str, prima: int, dopo: 
                  _guscio_email(f"Calo del punteggio · {dominio}", corpo, project_id))
 
 
+def _send_avviso_traffico(to: str, dominio: str, project_id: str, fatto: dict) -> None:
+    """Gli assistenti AI hanno cambiato passo su questo sito.
+
+    ⚠️ Il testo NON promette una causa. Un aumento di passaggi puo' essere una
+    pagina nuova che ha attirato i crawler, o un cambio di politica di chi li
+    manda; un calo puo' essere un blocco in robots.txt come una decisione di
+    OpenAI. Dire «hai fatto qualcosa di giusto» o «qualcosa si e' rotto»
+    sarebbe inventare: si riporta il fatto e si indica dove guardare.
+    """
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    link = f"{SITE_URL}/project/{project_id}?tab=traffic" if SITE_URL else ""
+
+    if fatto["verso"] == "comparso":
+        occhiello, colore = "Novità", "#0E7C5A"
+        titolo = f"Gli assistenti AI hanno iniziato a leggere {geo_audit.esc(dominio)}"
+        frase = (f"Nell'ultima settimana ci sono stati <b>{fatto['recente']} passaggi</b> "
+                 "di crawler AI, dove nelle tre settimane precedenti non ce n'erano.")
+        spiega = ("È il primo segnale che il sito è entrato nel giro: da qui in poi il "
+                  "numero di passaggi diventa una misura che ha senso seguire.")
+        oggetto = f"Gli assistenti AI hanno iniziato a leggere {dominio}"
+    elif fatto["verso"] == "salito":
+        occhiello, colore = "Novità", "#0E7C5A"
+        titolo = f"Gli assistenti AI leggono {geo_audit.esc(dominio)} molto più di prima"
+        frase = (f"<b>{fatto['recente']} passaggi</b> nell'ultima settimana, contro una media "
+                 f"di <b>{fatto['atteso']}</b> nelle tre precedenti: {fatto['rapporto']}× tanto.")
+        spiega = ("Può dipendere da contenuti nuovi, da una modifica che ha reso il sito "
+                  "più leggibile, o semplicemente da come si muovono i crawler in questo "
+                  "periodo. Nella scheda vedi quali assistenti sono passati e su quali pagine.")
+        oggetto = f"{dominio}: i passaggi degli assistenti AI sono {fatto['rapporto']}× la media"
+    else:
+        occhiello, colore = "Avviso", "#B4530A"
+        titolo = f"Gli assistenti AI leggono {geo_audit.esc(dominio)} molto meno di prima"
+        frase = (f"<b>{fatto['recente']} passaggi</b> nell'ultima settimana, contro una media "
+                 f"di <b>{fatto['atteso']}</b> nelle tre precedenti.")
+        spiega = ("Vale la pena controllare il <code>robots.txt</code> e che il sito risponda "
+                  "normalmente: un blocco aggiunto per sbaglio si vede prima qui che altrove. "
+                  "Può però anche essere un cambiamento dalla parte di chi manda i crawler.")
+        oggetto = f"{dominio}: i passaggi degli assistenti AI sono calati"
+
+    corpo = f"""
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <p style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:{colore};
+                    margin:0 0 8px;font-family:'Inter',Arial,sans-serif;font-weight:700">{occhiello}</p>
+          <h1 style="font-size:22px;line-height:1.3;color:#14141C;margin:0 0 10px;
+                     font-family:'Inter',Arial,sans-serif;font-weight:700">{titolo}</h1>
+          <p class="t-2" style="font-size:15px;line-height:1.6;color:#4A4A5A;margin:0;
+                    font-family:'Inter',Arial,sans-serif">{frase}</p>
+        </td></tr>
+        <tr><td class="px" style="padding:18px 36px 34px">
+          <p class="t-3" style="font-size:13.5px;line-height:1.7;color:#76768A;margin:0 0 18px;
+                    font-family:'Inter',Arial,sans-serif">{spiega}</p>
+          {f'<a href="{link}" style="display:inline-block;background:#6C5CE7;color:#fff;'
+           f'text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;'
+           f'font-weight:600;font-family:Inter,Arial,sans-serif">Vedi il traffico AI</a>'
+           if link else ''}
+        </td></tr>"""
+    _resend_post([to], oggetto,
+                 _guscio_email(f"Traffico AI · {dominio}", corpo, project_id))
+
+
 def _send_avviso_critica(to: str, dominio: str, project_id: str,
                          nuove: list, checks: list) -> None:
     """È comparsa una criticità grave che prima non c'era."""
@@ -1834,6 +1898,58 @@ def _valuta_avvisi(project: dict, nuovo: dict, checks: list) -> None:
         print(f"[avvisi] {project.get('domain')}: {e!r}")
 
 
+# Quante volte il traffico di una settimana deve superare la media perche' sia
+# un fatto e non un'oscillazione. Due volte e' prudente: sotto, si manderebbero
+# email per il rumore.
+_SOGLIA_ANOMALIA = 2.0
+_MINIMO_PER_PARLARE = 20        # sotto questo numero di passaggi, tacere
+
+
+def valuta_traffico_ai(passaggi_per_giorno: dict, oggi: str = "") -> dict | None:
+    """Confronta gli ultimi 7 giorni con i 21 precedenti.
+
+    Torna il fatto trovato, o None se non c'e' niente da dire.
+
+    ⚠️ Confronta una settimana con TRE settimane, non con quella prima: il
+    traffico dei crawler e' irregolare per natura, e settimana-su-settimana
+    darebbe un allarme ogni volta che un bot passa due giorni di fila. Tre
+    settimane di riferimento smussano il rumore senza nascondere un cambiamento
+    vero.
+
+    ⚠️ E tace sotto i venti passaggi: su numeri piccoli un raddoppio non e' un
+    fenomeno, e' un caso. Da tre a sei passaggi e' «+100%», e non significa
+    niente.
+    """
+    from datetime import date, timedelta
+    fine = date.fromisoformat(oggi) if oggi else date.today()
+    def somma(da, a):
+        return sum(n for g, n in passaggi_per_giorno.items()
+                   if da.isoformat() <= g <= a.isoformat())
+
+    recente = somma(fine - timedelta(days=6), fine)
+    prima = somma(fine - timedelta(days=27), fine - timedelta(days=7))
+    if recente < _MINIMO_PER_PARLARE and prima < _MINIMO_PER_PARLARE:
+        return None
+    media_prima = prima / 3.0          # tre settimane -> media settimanale
+    if media_prima < 1:
+        # non c'era traffico e adesso c'e': e' una notizia, non un'anomalia
+        if recente >= _MINIMO_PER_PARLARE:
+            return {"verso": "comparso", "recente": recente, "atteso": 0, "rapporto": None}
+        return None
+    rapporto = recente / media_prima
+    # ⚠️ Per dire «e' salito» serve abbastanza traffico ADESSO, non solo un
+    # rapporto alto: quattordici passaggi contro una media di sette sono il
+    # doppio, ma restano quattordici passaggi. Il controllo speculare c'era
+    # gia' sul calo e mancava qui — l'ha trovato il test, non io.
+    if rapporto >= _SOGLIA_ANOMALIA and recente >= _MINIMO_PER_PARLARE:
+        return {"verso": "salito", "recente": recente, "atteso": round(media_prima),
+                "rapporto": round(rapporto, 1)}
+    if rapporto <= (1 / _SOGLIA_ANOMALIA) and prima >= _MINIMO_PER_PARLARE:
+        return {"verso": "sceso", "recente": recente, "atteso": round(media_prima),
+                "rapporto": round(rapporto, 2)}
+    return None
+
+
 def _email_del_progetto(project: dict) -> str:
     """A chi scrivere per questo progetto: l'email di chi lo possiede."""
     try:
@@ -1911,7 +2027,7 @@ async def project_report_prefs(project_id: str, request: Request):
         if valore is not False:
             return JSONResponse({"esito": "solo_riattivazione"}, status_code=400)
         valore = False
-    elif campo in ("alert_score_drop", "alert_new_critical"):
+    elif campo in ("alert_score_drop", "alert_new_critical", "alert_traffico_ai"):
         valore = bool(valore)
     elif campo in ("client_digest_frequency", "team_digest_frequency"):
         if valore not in ("weekly", "monthly", "off"):
@@ -2470,6 +2586,54 @@ async def api_cron(request: Request, max_projects: int = 3):
             "digest_inviati": digest}
 
 
+# Quanto spesso al massimo si puo' mandare l'avviso sul traffico. Il cron gira
+# ogni ora: senza questo, un'anomalia che dura una settimana produrrebbe
+# centosessantotto email.
+_ATTESA_AVVISO_TRAFFICO = timedelta(days=7)
+
+
+def _forse_avvisa_traffico(project: dict, prefs: dict, inviati: list) -> None:
+    """7.3 · manda l'avviso sul traffico AI, se c'e' qualcosa da dire.
+
+    ⚠️ Non solleva mai: sta in coda al cron degli audit, e un avviso che
+    fallisce non deve buttare via il lavoro fatto.
+    """
+    try:
+        if not prefs.get("alert_traffico_ai"):
+            return
+        pid = project["id"]
+        ultimo = _sb_report_log_ultimo(pid, "alert_traffico_ai")
+        if ultimo:
+            try:
+                quando = datetime.fromisoformat(str(ultimo).replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) - quando < _ATTESA_AVVISO_TRAFFICO:
+                    return
+            except Exception:
+                pass
+
+        eventi = _sb_tracking_events(pid, days=28)
+        per_giorno: dict = {}
+        for e in eventi:
+            if e.get("event_name") != "crawler":
+                continue
+            g = (e.get("created_at") or "")[:10]
+            if g:
+                per_giorno[g] = per_giorno.get(g, 0) + 1
+        fatto = valuta_traffico_ai(per_giorno)
+        if not fatto:
+            return
+
+        destinatario = _email_del_progetto(project)
+        if not destinatario:
+            return
+        _send_avviso_traffico(destinatario, project.get("domain") or "", pid, fatto)
+        _sb_report_log_scrivi(pid, "alert_traffico_ai", destinatario)
+        inviati.append({"progetto": project.get("domain"), "tipo": "alert_traffico_ai",
+                        "verso": fatto["verso"]})
+    except Exception as e:
+        print(f"[avviso traffico] {project.get('domain')}: {e!r}")
+
+
 def _manda_i_digest_scaduti(iniziato_a: float) -> list:
     """Manda i riepiloghi ai progetti che ne hanno uno in scadenza.
 
@@ -2483,6 +2647,7 @@ def _manda_i_digest_scaduti(iniziato_a: float) -> list:
                 break                       # il tempo è finito: si riprende al giro dopo
             try:
                 prefs = _sb_report_prefs(project["id"])
+                _forse_avvisa_traffico(project, prefs, inviati)
                 for tipo in ("client_digest", "team_digest"):
                     if not _digest_da_mandare(project, prefs, tipo):
                         continue
@@ -2684,6 +2849,26 @@ async def _admin_ai_azione(request: Request, project_id: str):
     except Exception:
         body = {}
     return user, project, body, None
+
+
+@app.post("/admin/progetti/{project_id}/piano")
+async def admin_progetto_piano(request: Request, project_id: str):
+    """6.2 · Assegna il piano a un progetto, dal pannello."""
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err:
+        return err
+    piano = (body.get("piano") or "").strip().lower()
+    if piano not in piani.PIANI:
+        return JSONResponse({"esito": "piano_non_valido"}, status_code=400)
+    if not _sb_project_piano(project_id, piano, chi=user.get("email") or ""):
+        # ⚠️ La colonna `plan` arriva con la fase I: finche' non c'e', il
+        # salvataggio non riesce e lo si DICE, invece di rispondere ok e
+        # lasciare il pannello a mostrare un piano che non e' stato scritto.
+        return JSONResponse(
+            {"esito": "la colonna dei piani non esiste ancora sul database"},
+            status_code=503)
+    _admin_traccia(user, f"piano_{piano}", project.get("domain") or project_id)
+    return JSONResponse({"esito": "ok", "piano": piano})
 
 
 @app.post("/admin/progetti/{project_id}/ai/impostazioni")
@@ -3209,7 +3394,14 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
     aperte = len([i for i in _sb_issues_by_project(project_id, status="open")])
 
     if tab in _SCHEDE_AI:
-        body = ai_schermate.scheda_cliente(tab, project)
+        # ⚠️ Il controllo sta QUI, sul server, non nel CSS della pagina: una
+        # patina grigia si toglie con l'ispettore del browser, e sotto ci
+        # sarebbero i dati veri.
+        funzione = {"citations": "citazioni", "competitors": "competitors"}.get(tab)
+        if funzione and not piani.incluso(project, funzione):
+            body = pannello_teaser(project, funzione)
+        else:
+            body = ai_schermate.scheda_cliente(tab, project)
     elif tab in _SEZIONI_CAMPIONE:
         # sezione non ancora attiva: dati dimostrativi con banner esplicito
         body = _tab_campione(tab, project.get("domain") or project.get("name") or "")
@@ -3242,7 +3434,7 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
         # L'ultimo audit serve per i testi «come si risolve»: le issue salvano
         # il problema, non il rimedio (vedi `_rimedi_per_check`).
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
-        body = _tab_opportunities(project_id, latest_full[0] if latest_full else None)
+        body = _tab_opportunities(project_id, latest_full[0] if latest_full else None, project)
     elif tab == "traffic":
         body = _tab_traffic(project)
     elif tab == "reports":
