@@ -1,7 +1,17 @@
 # GEO Audit · Design System
 
-Documento di architettura del frontend e delle email.
-Fonte di verità visiva: `docs/design-system/ds.html` e i quattro template email in `docs/design-system/`.
+Architettura del frontend e delle email.
+
+⚠️ **Le 72 route non stanno tutte qui.** Questo documento descrive **come** è
+fatto il frontend; l'elenco completo e aggiornato delle route si ricava dal
+codice, che è l'unica fonte che non invecchia:
+
+```
+grep -o '@app\.\(get\|post\)("[^"]*")' server.py
+```
+
+Fonte di verità visiva: le pagine servite da `templates/` con
+`static/css/geo-ds.css`.
 
 ---
 
@@ -11,98 +21,115 @@ Fonte di verità visiva: `docs/design-system/ds.html` e i quattro template email
 
 | Layer | Tecnologia | Note |
 |---|---|---|
-| Backend | Python · FastAPI | `server.py` (app principale) + `api/cron.py` (worker cron) |
-| Rendering HTML | Template statici + string injection | Non c'è un motore di template (no Jinja2). Le pagine sono file `.html` in `templates/` caricati a memoria, con sostituzioni via `.replace()` per i report. |
-| CSS | Inline `<style>` + `/static/css/design-system.css` | Il file CSS condiviso è la fonte unica dei token. Le pagine di prodotto lo linkano via `<link>`. I report generati da `geo_audit.py` possono avere stili inline propri — non toccarli. |
-| JavaScript | Vanilla JS inline | Nessun framework. Script minimi per form, gate e stato di scansione. |
-| Deploy | Vercel (serverless) + Docker (container) | Vercel route tutto a `/api/index`; FastAPI serve `/static/*` direttamente. |
+| Backend | Python · FastAPI | `server.py` — **una sola applicazione**. Il cron è la route `/api/cron`, non un file a parte |
+| Rendering HTML | Template statici + sostituzione di stringhe | Nessun motore di template. I file `.html` di `templates/` sono letti in memoria all'avvio e riempiti con `.replace()`; il corpo delle schede lo compongono `views.py`, `admin.py`, `ai_schermate.py` |
+| CSS | Tre fogli, in migrazione | vedi sotto |
+| JavaScript | Vanilla, inline | Nessun framework. Gli script stanno accanto al markup che pilotano |
+| Deploy | Vercel (serverless) | Tutto passa da `/api/index`; FastAPI serve `/static/*` direttamente |
 
-### Route e template
+### I tre fogli di stile, e quale carica cosa
 
-| Route | Metodo | Template / risposta | Note |
+⚠️ **Convivono due generazioni di CSS.** È debito dichiarato
+([11 · Next steps](../docs/11-next-steps.md)): `ponte-legacy.css` rimappa i
+token vecchi sui nuovi, e va tolto a migrazione finita.
+
+| Foglio | Chi lo carica | Contiene |
+|---|---|---|
+| `geo-ds.css` | `project.html`, `dashboard.html`, `admin.html` | Il design system nuovo: token, sidebar, schede, tabelle dati, grafici |
+| `ponte-legacy.css` | `project.html` | Rimappa i nomi vecchi sui token nuovi, più i componenti che il nuovo non ha ancora (`.alert`, tabelle responsive) |
+| `design-system.css` | le pagine pubbliche (`home`, `form`, `login`, `lead`, `privacy`, `cookie`) | La generazione precedente |
+
+⚠️ **Un componente usato su una pagina dev'essere definito nel foglio che
+quella pagina carica.** Le classi `.alert--warning` e `.alert--info` esistevano
+solo in `design-system.css`: sulla pagina progetto, che non lo carica, un
+avviso e una nota uscivano come due scatole grigie identiche. Stesso genere di
+problema per il pannello: `admin.html` **non carica `geo-ds.css`**, ha il
+proprio `<style>` in testa, quindi le classi del prodotto lì non esistono — le
+schermate del monitoraggio AI usano infatti le classi `ai-*` definite dentro
+quel template.
+
+### Font
+
+| Ruolo | Famiglia | Dove |
+|---|---|---|
+| Display / titoli | Space Grotesk | ovunque |
+| Body / UI | Inter | ovunque |
+| Mono / dati | IBM Plex Mono | prodotto e pannello |
+| Mono / dati | JetBrains Mono | solo `design-system.css`, cioè le pagine pubbliche |
+
+⚠️ Le due mono sono un residuo della migrazione, non una scelta: vanno
+unificate su IBM Plex Mono quando si toglie il ponte.
+
+### Le route, per famiglia
+
+Non l'elenco (sta nel codice), ma le famiglie e come si comportano:
+
+| Famiglia | Prefisso | Accesso | Risposta a chi non può |
 |---|---|---|---|
-| `/` | GET | `templates/home.html` | Landing marketing |
-| `/audit` | GET | `templates/form.html` | Form inserimento URL |
-| `/scan` | POST | Redirect a `/r/{id}` | Esegue audit, salva su Supabase |
-| `/r/{job_id}` | GET | HTML report da Supabase + overlay iniettato | Gate (blur) se non autenticato, barra azioni se sbloccato |
-| `/unlock/{job_id}` | POST | HTTP 200 | Salva email, invia "report pronto" |
-| `/miei-report` | GET | String inline (`_MIEI_REPORT_PAGE`) | Form recupero link |
-| `/miei-report` | POST | String inline (`_MIEI_REPORT_SENT`) | Invia email con lista report |
-| `/contact/{job_id}` | POST | HTTP 200 | Salva richiesta contatto, notifica interna |
-| `/health` | GET | JSON | Health check |
+| Pubbliche | `/`, `/audit`, `/r/{id}`, `/roadmap`, `/privacy`… | nessuno | — |
+| Cliente | `/project/{id}`, `/preferenze`, `/auth` | sessione valida | redirect a `/login` |
+| Pannello del team | `/admin/*` | ruolo admin in `app_metadata` | **404, non 403** |
+| Servizio | `/api/cron`, `/api/cron-ai`, `/t`, `/health` | `CRON_SECRET` sulle prime due, nessuno sulle altre | 401 |
 
-### CSS: token e integrazione
+⚠️ Al pannello si risponde **404** apposta: un 403 confermerebbe che a quel
+percorso c'è qualcosa.
 
-Il file `static/css/design-system.css` contiene:
-- Design token (`:root` light + `[data-theme="dark"]`)
-- Reset / base
-- Componenti: `.btn`, `.input`, `.field`, `.badge`, `.card`, `.alert`, `.tabs`, `.tbl`, `.gauge`, `.eyebrow`, `.spin`, `.hist-row`
-- Responsive per tabelle e gauge
+### Soglie di colore del punteggio
 
-**Mappatura token vecchi → nuovi:**
-
-| Vecchio (repo) | Nuovo (DS) | Valore dark |
+| Intervallo | Etichetta | Token |
 |---|---|---|
-| `--bg:#0B0B16` | `--canvas` | `#0B0A12` |
-| `--card:#17152A` | `--surface` | `#131220` |
-| `--line:#2A2640` | `--border` | `#272636` |
-| `--violet:#6C5CE7` | `--brand` | `#7C6BEC` |
-| `--vbright:#9B8CFF` | `--brand-text` / `--brand-hover` | `#B3A8F7` |
-| `--text:#F2F1F8` | `--text` / `--ink` | `#F4F3F8` |
-| `--muted:#9C99B5` | `--text-2` | `#BCBBCB` |
+| 75–100 | Ottimo | `--state-good` |
+| 50–74 | Migliorabile | `--state-warn` |
+| 0–49 | Critico | `--state-critical` |
 
-**Font stack:**
-
-| Ruolo | Vecchio | Nuovo |
-|---|---|---|
-| Display / titoli | Archivo | Space Grotesk |
-| Body / UI | Hanken Grotesk | Inter |
-| Mono / dati | IBM Plex Mono | JetBrains Mono |
-
-**Soglie score colore:**
-
-| Range | Label | Colore |
-|---|---|---|
-| 75–100 | Ottimo | `--success` (#0E9F6E light / #3DDC97 dark) |
-| 50–74 | Migliorabile | `--warning` (#C77700 light / #F5BE57 dark) |
-| 0–49 | Critico | `--danger` (#D92D34 light / #FF6B70 dark) |
+⚠️ Il **report generato** da `geo_audit.py` usa una seconda scala a lettere
+(A ≥ 90, B ≥ 75, C ≥ 60, D ≥ 45, E ≥ 30, F). Sono due scale diverse sullo
+stesso numero, ed è voluto: la lettera è un giudizio sintetico per il cliente,
+il colore è uno stato operativo per chi lavora.
 
 ---
 
 ## Architettura email
 
-Tutte le email sono inviate tramite **Resend** (API REST). Le funzioni di invio sono in `server.py` e `api/cron.py`.
+Tutte le email passano da **Resend**, con un solo punto di uscita:
+`_resend_post()` in `server.py`. Chi aggiunge un'email passa di lì, così la
+gestione degli errori e il mittente restano in un posto solo.
 
-### Inventario email
+### Inventario
 
-| Email | Funzione | Trigger | Stato |
-|---|---|---|---|
-| Report pronto (sblocco da gate) | `_send_unlock_email()` in `server.py` | POST `/unlock/{job_id}` | ✅ Aggiornata al nuovo template |
-| Report pronto (cron async) | `_send_report_email()` in `api/cron.py` | Cron job al completamento audit | ✅ Aggiornata al nuovo template |
-| Conferma audit ricevuto | `_send_conferma_audit()` in `api/cron.py` | Presa in carico job pending — TODO: aggancia al momento del claim (vedi sotto) | ✅ Funzione pronta |
-| I miei report | `_send_my_reports_email()` in `server.py` | POST `/miei-report` | ✅ Aggiornata al nuovo template |
-| Notifica contatto (interna) | `_send_contact_notif()` in `server.py` | POST `/contact/{job_id}` | ✅ Aggiornata al nuovo template |
-| Analisi completa (follow-up) | `_send_analisi_completa()` in `server.py` | TODO: trigger di follow-up non implementato | ✅ Funzione pronta |
-| Report mensile / monitoraggio | `_send_report_mensile()` in `server.py` | TODO: scheduler non implementato | ✅ Funzione pronta |
+| Email | Funzione | Quando parte |
+|---|---|---|
+| Link di accesso | `_send_magic_link()` | richiesta di accesso, o invito dal pannello |
+| Report pronto (sblocco) | `_send_unlock_email()` | `POST /unlock/{job_id}` |
+| I miei report | `_send_my_reports_email()` | `POST /miei-report` |
+| Notifica contatto (interna) | `_send_contact_notif()` | `POST /contact/{job_id}` |
+| Notifica lead (interna) | `_send_lead_notif()` | richiesta di analisi da un nuovo contatto |
+| Promemoria tracking | `_send_promemoria_tracking()` | azione dal pannello |
+| Avviso calo punteggio | `_send_avviso_calo()` | cron, se il punteggio scende oltre la soglia |
+| Avviso nuova criticità grave | `_send_avviso_critica()` | cron, su criticità alta o critica nuova |
+| Riepilogo periodico | `_send_digest()` | cron, secondo le preferenze del progetto |
+| Richiesta report (al team) | `_send_report_request_admin()` | il cliente chiede un report |
+| Richiesta report (al cliente) | `_send_report_request_user()` | conferma al cliente |
 
-### TODO residui email
+### Le tre funzioni senza innesco
 
-1. **`_send_conferma_audit`**: la funzione esiste in `api/cron.py`. Va chiamata subito dopo il claim atomico del job (riga ~120 di `cron.py`, dopo `claim.data`), prima di avviare l'audit. Questo garantisce che l'utente sappia che il lavoro è iniziato.
+Esistono, sono scritte, non le chiama nessuno:
 
-2. **`_send_analisi_completa`**: la funzione esiste in `server.py`. Decidere il trigger: subito dopo il report (es. X ore dopo `_send_unlock_email`), o su azione esplicita del team. Al momento è solo esposta come helper — il wiring va fatto nella logica di business.
+| Funzione | Cosa aspetta |
+|---|---|
+| `_send_conferma_audit()` | la coda asincrona, la cui sorte è una decisione aperta (11 · Next steps, 1.4) |
+| `_send_analisi_completa()` | un innesco di follow-up mai deciso |
+| `_send_report_mensile()` | uno scheduler mensile; il `digest` periodico copre quasi lo stesso bisogno |
 
-3. **`_send_report_mensile`**: funzione pronta in `server.py`. Richiede uno scheduler (es. Vercel Cron, cron.py dedicato) che la invochi una volta al mese per ogni email con report attivi. I dati necessari (storico mensile, delta score) devono venire da una query a Supabase.
+⚠️ Non vanno cancellate né agganciate a caso: sono decisioni di prodotto, non
+codice morto per distrazione.
 
 ---
 
-## PR aperte e ordine di merge consigliato
+## Quando si tocca questo documento
 
-| # | Branch | Titolo | Dipendenze | Stato |
-|---|---|---|---|---|
-| 1 | `feat/ds-tokens-and-docs` | Design tokens CSS + docs | nessuna | Aperta |
-| 2 | `feat/ds-frontend` | Refactor frontend templates | PR #1 (CSS file) | Aperta |
-| 3 | `feat/ds-emails` | Redesign template email | nessuna | Aperta |
-
-**Ordine di merge consigliato:** PR1 → PR2 → PR3 (PR3 è indipendente, può entrare in qualsiasi momento).
-
-Nota: PR2 dipende da `/static/css/design-system.css` creato in PR1. Fare il merge di PR1 prima garantisce che le pagine linkino correttamente il CSS.
+Quando cambia **come** è fatto il frontend — un foglio di stile in più, una
+famiglia di route nuova, un'email nuova. Non quando si aggiunge una route: per
+quelle c'è il codice, e un elenco copiato a mano invecchia in una settimana.
+È già successo: questo documento ha elencato per mesi nove route su settantadue
+e un file `api/cron.py` che non esiste più.

@@ -136,6 +136,20 @@
 }
 .alert--danger{background:var(--state-critical-dim); border-color:var(--state-critical-dim); color:var(--state-critical);}
 .alert--success{background:var(--state-good-dim); border-color:var(--state-good-dim); color:var(--state-good);}
+/* Mancavano, e le usa la pagina progetto: un avviso e una nota uscivano come
+   due scatole grigie identiche, indistinguibili da un blocco di testo. */
+.alert--warning{background:var(--state-warn-dim); border-color:var(--state-warn-dim); color:var(--state-warn);}
+.alert--info{background:var(--accent-primary-dim); border-color:var(--accent-primary-dim); color:var(--text-primary);}
+/* Il pallino colorato a sinistra: nel design system e' il segno che distingue
+   i tre livelli a colpo d'occhio. */
+.alert{display:flex; align-items:flex-start; gap:10px;}
+.alert .ic{width:18px; height:18px; border-radius:50%; flex-shrink:0; display:flex;
+  align-items:center; justify-content:center; font-size:11px; font-weight:700;
+  color:#fff; background:var(--text-muted); margin-top:1px;}
+.alert--warning .ic{background:var(--state-warn);}
+.alert--danger .ic{background:var(--state-critical);}
+.alert--success .ic{background:var(--state-good);}
+.alert--info .ic{background:var(--accent-primary);}
 
 /* tabelle responsive: su schermo stretto ogni cella mostra la sua intestazione */
 @media (max-width:700px){

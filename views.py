@@ -16,7 +16,13 @@ import geo_audit
 from ai_sources import CRAWLER_CATEGORIE
 from config import SITE_URL
 from db import _REPORT_PREF_DEFAULT, _TETTO_EVENTI, _sb_audits_by_project, \
-    _sb_has_tracking, _sb_issues_by_project, _sb_recent_audits_by_user, _sb_tracking_events
+    _sb_has_tracking, _sb_issues_by_project, _sb_recent_audits_by_user, _sb_tracking_events, \
+    _sb_tracking_events_conta
+
+
+def _migliaia(n: int) -> str:
+    """12000 -> «12.000». Il separatore italiano e' il punto."""
+    return f"{n:,}".replace(",", ".")
 
 
 _SCAN_FREQUENCY_LABELS = {"daily": "Giornaliero", "weekly": "Settimanale", "monthly": "Mensile"}
@@ -2006,13 +2012,21 @@ def _tab_traffic(project: dict) -> str:
 
     # Un dato parziale non deve mai passare per completo: se il tetto di lettura
     # ha tagliato, la scheda lo dice invece di mostrare numeri piu' bassi del vero.
+    #
+    # ⚠️ L'avviso dice QUANTI eventi mancano, non che si e' superata una soglia:
+    # «12.000 su 18.431» si capisce, «hai superato i 12.000» lascia il lettore
+    # senza sapere di quanto e' incompleto il numero che sta guardando.
     avviso_parziale = ''
     if len(events) >= _TETTO_EVENTI:
+        in_tutto = _sb_tracking_events_conta(project["id"], days=30)
+        quanti = (f'{_migliaia(len(events))} eventi sui {_migliaia(in_tutto)} del periodo'
+                  if in_tutto > len(events) else f'{_migliaia(len(events))} eventi')
         avviso_parziale = (
-            '<div class="alert alert--warn" style="margin-bottom:16px"><div class="ic">!</div>'
-            f'<div>Il progetto ha superato i {_TETTO_EVENTI:,} eventi in 30 giorni: '
-            'i numeri qui sotto sono calcolati sui più recenti, non su tutto il periodo.</div></div>'
-        ).replace(",", ".")
+            '<div class="alert alert--warning" style="margin-bottom:16px"><div class="ic">!</div>'
+            f'<div>Questo progetto ha più eventi di quanti la scheda ne carichi in una '
+            f'volta: i numeri qui sotto sono calcolati su <b>{quanti}</b>, i più '
+            'recenti.</div></div>'
+        )
 
     return (
         avviso_parziale
