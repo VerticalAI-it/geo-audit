@@ -818,7 +818,7 @@ def _score_history_chart(project_id: str, history: list) -> str:
     con almeno {overall, created_at}; il rendering effettivo è lato client
     (JS) così i filtri non richiedono un round-trip al server."""
     points = [
-        {"t": h["created_at"], "s": h["overall"]}
+        {"t": h["created_at"], "s": h["overall"], "v": h.get("engine_version") or ""}
         for h in reversed(history)
         if h.get("overall") is not None
     ]
@@ -838,6 +838,22 @@ def _score_history_chart(project_id: str, history: list) -> str:
             'Il prossimo audit automatico aggiungerà un nuovo punto.</p></div>'
             '</div>'
         )
+
+    # ⚠️ Se nello storico convivono due versioni del motore, il gradino fra
+    # l'una e l'altra non e' il sito che e' cambiato: sono i criteri. Dirlo
+    # costa una riga; non dirlo fa pensare a un peggioramento che non c'e'
+    # stato, e un cliente che vede -14 senza spiegazione chiama.
+    versioni = [p["v"] for p in points if p["v"]]
+    nota_versione = ""
+    if versioni and len(set(versioni)) > 1:
+        nota_versione = (
+            '<p class="card-sub" style="margin-top:10px">⚠️ In questo periodo '
+            'sono cambiati i criteri di valutazione (motore '
+            f'v{geo_audit.esc(sorted(set(versioni))[0])} → '
+            f'v{geo_audit.esc(sorted(set(versioni))[-1])}): '
+            'il salto che vedi nel grafico è dovuto a quello, non a un '
+            'cambiamento del sito. I punti prima e dopo non sono confrontabili '
+            'fra loro.</p>')
 
     chart_id = f"score-chart-{project_id}"
     js = (_SCORE_CHART_JS
@@ -862,7 +878,8 @@ def _score_history_chart(project_id: str, history: list) -> str:
         f'<svg class="score-chart-svg" id="{chart_id}" viewBox="0 0 600 180" preserveAspectRatio="none" '
         'role="img" aria-label="Andamento del punteggio GEO nel tempo"></svg>'
         f'<div class="score-chart-tooltip" id="{chart_id}-tip" hidden></div>'
-        '</div></div></div>'
+        '</div></div>'
+        f'{nota_versione}</div>'
         f'<script>{js}</script>'
     )
 

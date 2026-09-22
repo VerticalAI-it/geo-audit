@@ -34,7 +34,7 @@ import requests
 from bs4 import BeautifulSoup
 
 # ============================================================ CONFIG
-ENGINE_VERSION = "1.1.0"
+ENGINE_VERSION = "1.2.0"
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 VerticalAI-GEOAudit/1.1")
 HEADERS = {"User-Agent": BROWSER_UA,
@@ -80,6 +80,11 @@ session = requests.Session(); session.headers.update(HEADERS)
 class Check:
     id: str; category: str; title: str; status: str
     weight: int = 1; severity: str = "medium"; detail: str = ""; recommendation: str = ""
+    # ⚠️ In quale versione del motore questo controllo e' nato o ha cambiato
+    # significato — NON la versione del motore che ha girato, che sta gia'
+    # sull'audit. Serve a sapere perche' uno storico ha un gradino: se il
+    # check e' cambiato il gradino e' nostro, se non e' cambiato e' del sito.
+    versione: str = ""
 
 @dataclass
 class Page:
@@ -225,7 +230,21 @@ def jsonld(soup):
                 types.update(t if isinstance(t, list) else [t] if t else [])
     return blocks, types, valid
 
-def ck(checks, **kw): checks.append(Check(**kw))
+# In quale versione del motore ogni check e' nato o ha cambiato significato.
+# Chi non compare qui c'era gia' nella 1.0.0.
+#
+# ⚠️ Si aggiorna SOLO quando il controllo cambia davvero: correggere un refuso
+# nel testo non e' un cambio di significato, cambiare la soglia si'. Se questa
+# mappa diventa «tutti all'ultima versione» smette di servire a qualcosa.
+CHECK_VERSIONE = {
+    # 1.2.0 — la revisione del motore di settembre 2026
+    "render.parity": "1.2.0",     # da sempre `unknown` a stima dichiarata
+}
+
+
+def ck(checks, **kw):
+    kw.setdefault("versione", CHECK_VERSIONE.get(kw.get("id", ""), "1.0.0"))
+    checks.append(Check(**kw))
 
 def checks_structured(soup, checks):
     blocks, types, valid = jsonld(soup)
@@ -390,12 +409,81 @@ def checks_indexing(soup, checks, status_code, redirects, url):
            detail="meta robots NOINDEX: verifica se intenzionale.",
            recommendation="Se la pagina deve essere trovata, rimuovi il noindex.")
 
+# Indizi, nel solo HTML statico, che il contenuto vero arrivi dal JavaScript.
+# Sono i contenitori vuoti che i framework lasciano in pagina prima di
+# riempirli: se il testo del documento e' poco e uno di questi c'e', la pagina
+# quasi certamente si costruisce nel browser.
+_RADICI_SPA = ("root", "app", "__next", "__nuxt", "q-app", "svelte")
+
+
+def stima_parita_statica(soup):
+    """Quanto della pagina e' gia' nell'HTML, senza eseguire il JavaScript.
+
+    Torna (stato, dettaglio, rimedio) oppure None se non si puo' dire niente.
+
+    ⚠️ E' una STIMA, e il testo lo dice a chi legge. La misura vera vuole il
+    rendering headless, che su Vercel non gira (docs/10). Fino alla 1.1.0
+    questo controllo era percio' sempre `unknown`, cioe' fuori dal punteggio:
+    il limite funzionale piu' grave del prodotto non pesava NIENTE sul numero
+    che il cliente legge. Una stima dichiarata vale piu' di un silenzio.
+
+    ⚠️ E' volutamente prudente: segnala solo i casi grossolani. Un falso
+    allarme qui accusa il sito del cliente di un difetto che non ha, e su un
+    check da peso 8 si vede.
+    """
+    testo = soup.get_text(" ", strip=True)
+    parole = len(testo.split())
+
+    # Il guscio vuoto: un contenitore noto senza testo dentro.
+    guscio = None
+    for ident in _RADICI_SPA:
+        el = soup.find(attrs={"id": ident})
+        if el is not None and len(el.get_text(" ", strip=True).split()) < 20:
+            guscio = ident
+            break
+
+    if guscio and parole < 120:
+        return (FAIL,
+                f"Stima senza rendering: l'HTML contiene {parole} parole e un "
+                f"contenitore «{guscio}» vuoto. Il contenuto sembra costruito dal "
+                "JavaScript, che molti crawler AI non eseguono.",
+                "Abilita SSR o prerendering: quello che non e' nell'HTML statico, "
+                "per gran parte degli assistenti non esiste.")
+
+    if parole < 60:
+        return (WARN,
+                f"Stima senza rendering: solo {parole} "
+                + ("parola" if parole == 1 else "parole") + " nell'HTML statico. "
+                "Puo' essere una pagina davvero breve, oppure contenuto iniettato "
+                "via JavaScript.",
+                "Verifica che il testo principale sia nel sorgente della pagina, "
+                "non aggiunto dal browser.")
+
+    if parole >= 250:
+        return (OK,
+                f"Stima senza rendering: {parole} parole gia' presenti nell'HTML "
+                "statico, quindi leggibili da un crawler che non esegue JavaScript.",
+                "")
+
+    # Fra le 60 e le 250 parole senza gusci sospetti non si puo' dire niente di
+    # utile: meglio tacere che tirare a indovinare su un check che pesa 8.
+    return None
+
+
 def check_js_parity(checks, static_html, rendered_used, rendered_soup):
     if not rendered_used:
-        ck(checks, id="render.parity", category="Rendering & accesso", title="Parità contenuto senza JS",
-           status=UNK, weight=8, severity="high",
-           detail="Rendering headless non eseguito: confronto non disponibile.",
-           recommendation="Esegui con Playwright per verificare il contenuto visibile ai crawler AI.")
+        stima = stima_parita_statica(BeautifulSoup(static_html, "lxml"))
+        if stima is None:
+            ck(checks, id="render.parity", category="Rendering & accesso",
+               title="Parità contenuto senza JS", status=UNK, weight=8, severity="high",
+               detail="Rendering headless non eseguito, e l'HTML statico non dà "
+                      "indizi chiari in un senso o nell'altro.",
+               recommendation="Esegui con Playwright per il confronto esatto.")
+            return
+        st, det, rec = stima
+        ck(checks, id="render.parity", category="Rendering & accesso",
+           title="Parità contenuto senza JS (stima)", status=st, weight=8,
+           severity="high", detail=det, recommendation=rec)
         return
     sw = len(BeautifulSoup(static_html, "lxml").get_text(" ", strip=True).split())
     rw = len(rendered_soup.get_text(" ", strip=True).split())
@@ -411,11 +499,56 @@ def check_js_parity(checks, static_html, rendered_used, rendered_soup):
 
 # ============================================================ SCORING
 def score_checks(checks):
+    """Media pesata di un insieme di check. Gli `unknown` restano fuori da
+    numeratore e denominatore: un controllo che non abbiamo potuto misurare
+    non deve ne' premiare ne' punire il sito."""
     frac = {OK: 1.0, WARN: 0.5, FAIL: 0.0}; num = den = 0.0
     for c in checks:
         if c.status in frac:
             den += c.weight; num += c.weight * frac[c.status]
     return round(100 * num / den) if den else 0
+
+
+def peso_misurabile(checks):
+    """Quanto pesa, in tutto, cio' che si e' potuto misurare."""
+    return sum(c.weight for c in checks if c.status in (OK, WARN, FAIL))
+
+
+# Quanto conta l'infrastruttura del sito rispetto alla qualita' delle pagine.
+#
+# ⚠️ Fino alla 1.1.0 c'era un solo calderone, e i cinque check di sito si
+# DILUIVANO fra le pagine: pesano 21 in tutto, contro ~92 per ogni pagina
+# analizzata. Su trenta pagine erano lo 0,75% del punteggio, e `crawl.ai` —
+# il controllo che rileva se il sito blocca del tutto i crawler AI — valeva
+# lo 0,43%. Un sito irraggiungibile dagli assistenti prendeva comunque un bel
+# voto, e il report lo scriveva fra le criticita' mentre il numero diceva il
+# contrario.
+#
+# Ora sono due punteggi separati e poi mescolati. Con 30/70, un sito che
+# blocca tutti i crawler AI perde 12/21 del 30%, cioe' circa 17 punti: una
+# cifra che si vede e che corrisponde alla gravita' del fatto.
+PESO_SITO = 0.30
+
+
+def score_complessivo(site_checks, page_checks):
+    """Il punteggio del report: infrastruttura di sito e qualita' delle
+    pagine pesate separatamente, poi combinate.
+
+    ⚠️ Se uno dei due insiemi non ha niente di misurabile, l'altro vale per
+    intero. Un sito senza pagine analizzabili non deve prendere 30 su 100
+    solo perche' il pezzo «pagine» e' mancante: sarebbe una penalita' per un
+    limite del crawler, non per un difetto del sito.
+    """
+    peso_s = peso_misurabile(site_checks)
+    peso_p = peso_misurabile(page_checks)
+    if not peso_s and not peso_p:
+        return 0
+    if not peso_p:
+        return score_checks(site_checks)
+    if not peso_s:
+        return score_checks(page_checks)
+    return round(PESO_SITO * score_checks(site_checks)
+                 + (1 - PESO_SITO) * score_checks(page_checks))
 
 def grade(s): return "A" if s>=90 else "B" if s>=75 else "C" if s>=60 else "D" if s>=45 else "E" if s>=30 else "F"
 def band(s): return "Eccellente" if s>=90 else "Buono" if s>=75 else "Discreto" if s>=60 else "Da rafforzare" if s>=45 else "Critico"
@@ -695,7 +828,9 @@ def compute_area_scores(checks):
 
 def render_report(domain, site, pages, render_used, respect_robots):
     allc = list(site.site_checks) + [c for p in pages for c in p.checks]
-    overall = score_checks(allc); g = grade(overall); bnd = band(overall)
+    pagine_checks = [c for p in pages for c in p.checks]
+    overall = score_complessivo(site.site_checks, pagine_checks)
+    g = grade(overall); bnd = band(overall)
     nok = len([c for c in allc if c.status == OK]); nwarn = len([c for c in allc if c.status == WARN])
     nfail = len([c for c in allc if c.status == FAIL])
     catmap, cats = compute_area_scores(allc)
