@@ -737,3 +737,119 @@ UPDATE public.monitored_prompts
 SET approved = TRUE, approved_at = NOW(), approved_by = 'migrazione fase G'
 WHERE approved = FALSE
   AND created_at < TIMESTAMPTZ '2026-09-08 00:00:00+00';
+-- ══════════════════════════════════════════════════════════════════════════
+-- FASE H · AI Traffic: il riepilogo giornaliero
+-- 22 settembre 2026
+--
+-- Oggi la scheda AI Traffic legge fino a 12.000 eventi e li conta in Python, a
+-- ogni apertura. Funziona finche' i numeri sono quelli di adesso (il sito piu'
+-- attivo fa ~3.800 eventi in trenta giorni), ma ha un tetto: oltre, la scheda
+-- mostra una parte e lo dichiara. Un cliente con volumi veri lo supererebbe in
+-- una settimana.
+--
+-- Questa tabella tiene un conteggio per giorno, invece degli eventi uno per
+-- uno. Trenta righe al posto di dodicimila.
+--
+-- ⚠️ Solo tabelle e colonne NUOVE, ma si usa comunque ALTER ... ADD COLUMN IF
+-- NOT EXISTS dove si aggiunge a qualcosa che esiste: su una tabella gia'
+-- presente il CREATE non aggiunge le colonne e non avvisa.
+--
+-- Lo script e' rieseguibile per intero quante volte si vuole.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ── Il riepilogo di una giornata, per progetto ────────────────────────────
+-- Una riga per (progetto, giorno, tipo, sorgente). Esempio:
+--   progetto X, 2026-09-22, 'crawler', 'OpenAI GPTBot'  -> 143
+--   progetto X, 2026-09-22, 'visita',  NULL             -> 512
+--   progetto X, 2026-09-22, 'referral','ChatGPT'        -> 3
+
+CREATE TABLE IF NOT EXISTS public.traffic_daily (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id  UUID        REFERENCES public.project(id) ON DELETE CASCADE,
+    giorno      DATE        NOT NULL,
+    -- 'crawler' (un assistente ha letto il sito) · 'referral' (un assistente
+    -- ha mandato una persona) · 'visita' (traffico normale). Sono i tre
+    -- fenomeni che la scheda tiene separati, e confonderli e' il difetto che
+    -- la scheda aveva prima del 2 settembre.
+    tipo        TEXT        NOT NULL,
+    -- Il nome dell'assistente. NULL per le visite normali.
+    sorgente    TEXT,
+    -- Per i crawler: training | search | user. NULL altrove.
+    categoria   TEXT,
+    eventi      INT         NOT NULL DEFAULT 0,
+    -- Sessioni distinte: serve solo ai referral e alle visite. Un crawler non
+    -- ha sessione, e contarla darebbe un numero senza significato.
+    sessioni    INT         NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (project_id, giorno, tipo, sorgente, categoria),
+    CONSTRAINT traffic_tipo CHECK (tipo IN ('crawler','referral','visita'))
+);
+
+ALTER TABLE public.traffic_daily ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "own_traffic_daily" ON public.traffic_daily;
+CREATE POLICY "own_traffic_daily" ON public.traffic_daily
+    FOR SELECT
+    USING (EXISTS (SELECT 1 FROM public.project p
+                   WHERE p.id = traffic_daily.project_id AND p.user_id = auth.uid()));
+
+-- La scheda chiede sempre «questo progetto, ultimi N giorni».
+CREATE INDEX IF NOT EXISTS traffic_daily_progetto
+    ON public.traffic_daily (project_id, giorno DESC);
+
+
+-- ── Chi lo riempie ────────────────────────────────────────────────────────
+-- Una funzione, non un trigger: un trigger su ogni evento farebbe una
+-- scrittura in piu' per ogni passaggio di crawler, e i crawler sono la parte
+-- piu' numerosa del traffico. Il cron la chiama una volta l'ora e ricalcola
+-- solo i giorni toccati di recente.
+--
+-- ⚠️ Ricalcola invece di sommare. Sommare richiede di sapere cosa si e' gia'
+-- contato, e al primo passaggio andato storto i numeri divergono per sempre
+-- senza che nulla lo segnali. Ricalcolare un giorno costa una query e non
+-- puo' sbagliare.
+
+CREATE OR REPLACE FUNCTION public.ricalcola_traffic_daily(giorni INT DEFAULT 2)
+RETURNS INT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    da DATE := (NOW() AT TIME ZONE 'UTC')::DATE - (giorni - 1);
+    scritte INT := 0;
+BEGIN
+    DELETE FROM traffic_daily WHERE giorno >= da;
+
+    INSERT INTO traffic_daily (project_id, giorno, tipo, sorgente, categoria,
+                               eventi, sessioni)
+    SELECT
+        e.project_id,
+        (e.created_at AT TIME ZONE 'UTC')::DATE AS giorno,
+        CASE
+            WHEN e.event_name = 'crawler' THEN 'crawler'
+            WHEN e.ai_source IS NOT NULL   THEN 'referral'
+            ELSE 'visita'
+        END AS tipo,
+        CASE WHEN e.event_name = 'crawler' OR e.ai_source IS NOT NULL
+             THEN e.ai_source END AS sorgente,
+        CASE WHEN e.event_name = 'crawler'
+             THEN e.properties ->> 'categoria' END AS categoria,
+        COUNT(*)                        AS eventi,
+        COUNT(DISTINCT e.session_id)    AS sessioni
+    FROM tracking_event e
+    WHERE e.project_id IS NOT NULL
+      AND (e.created_at AT TIME ZONE 'UTC')::DATE >= da
+    GROUP BY 1, 2, 3, 4, 5;
+
+    GET DIAGNOSTICS scritte = ROW_COUNT;
+    RETURN scritte;
+END;
+$$;
+
+
+-- ── Il primo riempimento: tutto lo storico ────────────────────────────────
+-- Trecentosessantacinque giorni indietro, una volta sola. Dopo, il cron
+-- ricalcola solo gli ultimi due.
+SELECT public.ricalcola_traffic_daily(365);

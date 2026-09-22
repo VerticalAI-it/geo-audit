@@ -39,7 +39,7 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_auth_get_user, _sb_report_prefs, _sb_report_prefs_salva, _sb_report_log_scrivi, \
     _sb_report_log_ultimo, _sb_report_invii, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
-    _sb_audit_fallito, \
+    _sb_audit_fallito, _sb_peso_archivio, _sb_traffic_ricalcola, _sb_traffic_riepilogo, \
     _sb_projects_with_tracking, \
     _sb_ai_impostazioni, _sb_ai_impostazioni_salva, _sb_ai_domande, _sb_ai_domande_da_approvare, \
     _sb_ai_domanda_approva, _sb_ai_domanda_crea, _sb_ai_domanda_modifica, _sb_ai_domanda_elimina, \
@@ -1429,7 +1429,7 @@ def admin_job_log(request: Request):
     return _apply_refresh(HTMLResponse(_admin_pagina(
         request, user, "job", "Job & Scan log",
         "Le esecuzioni del motore di audit, di tutti i progetti.",
-        admin.schermata_job(audit),
+        admin.schermata_job(audit, _sb_peso_archivio()),
         {**_admin_conteggi(), "job": falliti})), refreshed)
 
 
@@ -2452,7 +2452,18 @@ async def api_cron(request: Request, max_projects: int = 3):
     if (time.monotonic() - started) < _CRON_TIME_BUDGET:
         digest = _manda_i_digest_scaduti(started)
 
+    # Il riepilogo giornaliero del traffico: due giorni, cosi' quello in corso
+    # e quello appena chiuso restano esatti. Costa una query e non solleva —
+    # se la tabella non c'e' ancora (fase H non eseguita) torna zero e la
+    # scheda continua a contare gli eventi in Python.
+    righe_traffico = 0
+    try:
+        righe_traffico = _sb_traffic_ricalcola(2)
+    except Exception as e:
+        print(f"[cron] riepilogo traffico non riuscito: {e!r}")
+
     return {"processed": len(results),
+            "traffico_righe": righe_traffico,
             "digest": len(digest),
             "elapsed": round(time.monotonic() - started, 1),
             "results": results,
