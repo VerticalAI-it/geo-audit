@@ -117,9 +117,13 @@ Esistono, sono scritte, non le chiama nessuno:
 
 | Funzione | Cosa aspetta |
 |---|---|
-| `_send_conferma_audit()` | la coda asincrona, la cui sorte è una decisione aperta (11 · Next steps, 1.4) |
 | `_send_analisi_completa()` | un innesco di follow-up mai deciso |
 | `_send_report_mensile()` | uno scheduler mensile; il `digest` periodico copre quasi lo stesso bisogno |
+
+⚠️ `_send_conferma_audit()` è citata in `docs/11-next-steps.md` e in vecchi
+appunti come terza funzione orfana: **non esiste più**. Apparteneva alla coda
+asincrona, che è stata rimossa; oggi l'audit è sincrono e non c'è un momento in
+cui «confermare la presa in carico».
 
 ⚠️ Non vanno cancellate né agganciate a caso: sono decisioni di prodotto, non
 codice morto per distrazione.

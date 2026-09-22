@@ -760,7 +760,7 @@ def schermata_log(azioni: list) -> str:
             f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
 
 
-def schermata_job(audit: list) -> str:
+def schermata_job(audit: list, archivio: dict | None = None) -> str:
     """Le esecuzioni del motore, con i fallimenti in evidenza.
 
     ⚠️ Fino al 3 settembre 2026 un audit che falliva **non lasciava una riga**:
@@ -771,6 +771,25 @@ def schermata_job(audit: list) -> str:
     che è fallito prima resta perduto, e non c'è modo di recuperarlo.
     """
     falliti = [a for a in audit if a.get("status") == "failed" or a.get("error")]
+
+    # ⚠️ Quanto pesa l'archivio degli HTML. Non c'e' nessuna pulizia
+    # automatica ed e' voluto: gli indirizzi dei report stanno nelle email
+    # gia' mandate ai clienti, quindi cancellarne uno vecchio rompe un link
+    # che qualcuno puo' aver salvato. Qui si MISURA, cosi' quando la crescita
+    # diventa un problema lo si vede prima di subirlo.
+    riga_archivio = ""
+    if archivio and archivio.get("report"):
+        mb = archivio["mb"]
+        classe = "warn" if mb >= 500 else ""
+        riga_archivio = (
+            f'<div class="avviso" style="margin-bottom:18px"><div>📦</div><div>'
+            f'<b>{archivio["report"]} report conservati, {mb} MB</b> '
+            f'({archivio["kb_medi"]} KB l’uno). Non si cancella niente: gli '
+            f'indirizzi dei report sono nelle email già mandate ai clienti. '
+            + ("Sopra il mezzo giga conviene spostarli su Storage."
+               if not classe else
+               "<b>Conviene spostarli su Storage.</b>")
+            + '</div></div>')
 
     aperti = falliti_da_rilanciare(audit)
     id_aperti = {a["id"] for a in aperti if a.get("id")}
@@ -847,8 +866,9 @@ def schermata_job(audit: list) -> str:
                 'può dire nulla.</div></div>')
 
     if not audit:
-        return _vuoto("Nessuna esecuzione", "Il motore non ha ancora prodotto audit.")
-    return (nota + '<div class="tab-wrap"><table class="tab"><thead><tr>'
+        return riga_archivio + _vuoto("Nessuna esecuzione",
+                                      "Il motore non ha ancora prodotto audit.")
+    return (riga_archivio + nota + '<div class="tab-wrap"><table class="tab"><thead><tr>'
             '<th>Quando</th><th>Sito</th><th>Origine</th><th>Punteggio</th>'
             '<th>Esito</th><th>Durata</th><th>Errore</th><th></th>'
             f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')

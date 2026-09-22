@@ -39,7 +39,7 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_auth_get_user, _sb_report_prefs, _sb_report_prefs_salva, _sb_report_log_scrivi, \
     _sb_report_log_ultimo, _sb_report_invii, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
-    _sb_audit_fallito, \
+    _sb_audit_fallito, _sb_peso_archivio, _sb_traffic_ricalcola, _sb_traffic_riepilogo, \
     _sb_projects_with_tracking, \
     _sb_ai_impostazioni, _sb_ai_impostazioni_salva, _sb_ai_domande, _sb_ai_domande_da_approvare, \
     _sb_ai_domanda_approva, _sb_ai_domanda_crea, _sb_ai_domanda_modifica, _sb_ai_domanda_elimina, \
@@ -1193,6 +1193,59 @@ def _admin_o_no(request: Request):
     return user, refreshed, None
 
 
+def _progetto_del_cliente(request: Request, project_id: str, come: str = "html"):
+    """(utente, progetto, refreshed, stop) per una route che tocca un progetto.
+
+    ⚠️ **La service role key bypassa le Row Level Security.** Ogni route che
+    legge o scrive dati di progetto deve quindi verificare la proprieta' da
+    se': il database non la protegge. Il controllo stava copiato in sette
+    punti, ciascuno con una risposta diversa — e sette copie di un controllo
+    di sicurezza sono sette occasioni di dimenticarne una.
+
+    ⚠️ Non e' una dependency di FastAPI, che pure il piano proponeva, per due
+    motivi. Il primo e' che `_current_user` puo' rinnovare i cookie di
+    sessione, e quei cookie vanno scritti sulla risposta che la route
+    restituisce davvero: una dependency che solleva non ce la fa. Il secondo
+    e' piu' importante: **una dependency la si dimentica esattamente come il
+    controllo copiato**. Cio' che chiude davvero la classe di bug e' il test
+    che enumera le route e pretende che ognuna passi di qui
+    (`tests/test_autorizzazione.py`).
+
+    `come` sceglie la risposta a chi non ha diritto:
+      · `html` — chi non e' loggato va al login, a chi non e' suo si da' 404
+      · `json` — 401 e 404 in JSON, per le azioni chiamate via fetch
+      · `muto` — solo lo stato, senza corpo
+
+    ⚠️ A un progetto di un altro si risponde **404, non 403**: un 403
+    confermerebbe che quel progetto esiste.
+    """
+    user, refreshed = _current_user(request)
+
+    if not user:
+        if come == "json":
+            stop = JSONResponse({"esito": "non_autenticato"}, status_code=401)
+        elif come == "muto":
+            stop = Response(status_code=401)
+        else:
+            stop = RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
+        return None, None, refreshed, stop
+
+    project = _sb_project_get(project_id)
+    if not project or project.get("user_id") != user["id"]:
+        if come == "json":
+            stop = JSONResponse({"esito": "non_trovato"}, status_code=404)
+        elif come == "muto":
+            stop = Response(status_code=404)
+        else:
+            stop = HTMLResponse(_page(
+                "Non trovato",
+                "<h2>Progetto non trovato.</h2>"
+                "<p><a href='/dashboard'>\u2190 I tuoi progetti</a></p>"), status_code=404)
+        return None, None, refreshed, stop
+
+    return user, project, refreshed, None
+
+
 def _admin_traccia(user: dict, azione: str, bersaglio: str = "") -> None:
     """Ogni azione del pannello lascia una riga. Non deve poter far fallire
     l'azione stessa: se il registro non risponde, l'approvazione resta valida."""
@@ -1376,7 +1429,7 @@ def admin_job_log(request: Request):
     return _apply_refresh(HTMLResponse(_admin_pagina(
         request, user, "job", "Job & Scan log",
         "Le esecuzioni del motore di audit, di tutti i progetti.",
-        admin.schermata_job(audit),
+        admin.schermata_job(audit, _sb_peso_archivio()),
         {**_admin_conteggi(), "job": falliti})), refreshed)
 
 
@@ -1840,14 +1893,9 @@ def _manda_digest(project: dict, tipo: str) -> bool:
 @app.post("/project/{project_id}/reports/preferenze")
 async def project_report_prefs(project_id: str, request: Request):
     """Salva un interruttore o una frequenza della scheda Rapporti."""
-    user, refreshed = _current_user(request)
-    if not user:
-        return JSONResponse({"esito": "non_autenticato"}, status_code=401)
-
-    project = _sb_project_get(project_id)
-    if not project or project.get("user_id") != user["id"]:
-        # la service role bypassa le RLS: la proprietà si verifica qui
-        return JSONResponse({"esito": "non_trovato"}, status_code=404)
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id, "json")
+    if stop is not None:
+        return stop
 
     try:
         corpo = await request.json()
@@ -1892,15 +1940,9 @@ def project_export_xlsx(project_id: str, request: Request, cosa: str = "criticit
     quella descrizione va aperta per vederla: un export serve a lavorarci fuori
     dal prodotto, e senza il rimedio è un elenco di problemi senza risposte.
     """
-    user, refreshed = _current_user(request)
-    if not user:
-        return _apply_refresh(RedirectResponse("/login", status_code=303), refreshed)
-
-    project = _sb_project_get(project_id)
-    if not project or project.get("user_id") != user["id"]:
-        # La service role bypassa le RLS: la proprietà si verifica qui.
-        return _apply_refresh(HTMLResponse(
-            _page("Non trovato", "<h2>Progetto non trovato.</h2>"), status_code=404), refreshed)
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
 
     try:
         from openpyxl import Workbook
@@ -2410,7 +2452,18 @@ async def api_cron(request: Request, max_projects: int = 3):
     if (time.monotonic() - started) < _CRON_TIME_BUDGET:
         digest = _manda_i_digest_scaduti(started)
 
+    # Il riepilogo giornaliero del traffico: due giorni, cosi' quello in corso
+    # e quello appena chiuso restano esatti. Costa una query e non solleva —
+    # se la tabella non c'e' ancora (fase H non eseguita) torna zero e la
+    # scheda continua a contare gli eventi in Python.
+    righe_traffico = 0
+    try:
+        righe_traffico = _sb_traffic_ricalcola(2)
+    except Exception as e:
+        print(f"[cron] riepilogo traffico non riuscito: {e!r}")
+
     return {"processed": len(results),
+            "traffico_righe": righe_traffico,
             "digest": len(digest),
             "elapsed": round(time.monotonic() - started, 1),
             "results": results,
@@ -2787,12 +2840,10 @@ async def admin_progetto_ai_comp_rigenera(request: Request, project_id: str):
 # ── il cliente: l'unica azione self-service, i concorrenti ──────────────────
 
 async def _cliente_ai_azione(request: Request, project_id: str):
-    user, refreshed = _current_user(request)
-    if not user:
-        return None, None, None, JSONResponse({"esito": "login"}, status_code=401)
-    project = _sb_project_get(project_id)
-    if not project or project.get("user_id") != user["id"]:
-        return None, None, None, JSONResponse({"esito": "progetto"}, status_code=404)
+    """Il preambolo delle azioni AI del cliente: chi sei, che progetto, che corpo."""
+    user, project, _refreshed, stop = _progetto_del_cliente(request, project_id, "json")
+    if stop is not None:
+        return None, None, None, stop
     try:
         body = await request.json()
     except Exception:
@@ -3143,16 +3194,9 @@ for _cat_key, _cat_label, _children in _TAB_CATEGORIES:
 
 @app.get("/project/{project_id}", response_class=HTMLResponse)
 def project_detail(project_id: str, request: Request, tab: str = "overview", rerun_error: str = ""):
-    user, refreshed = _current_user(request)
-    if not user:
-        return RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
-
-    project = _sb_project_get(project_id)
-    if not project or project.get("user_id") != user["id"]:
-        return HTMLResponse(
-            _page("Non trovato", "<h2>Progetto non trovato.</h2><p><a href='/dashboard'>← I tuoi progetti</a></p>"),
-            status_code=404,
-        )
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
 
     valid_tabs = set(_ALL_TAB_KEYS)
     if tab not in valid_tabs:
@@ -3231,15 +3275,9 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
 @app.post("/project/{project_id}/issue/{issue_id}/resolve")
 def issue_resolve(project_id: str, issue_id: str, request: Request):
     """Chiude a mano una criticità dalla schermata Opportunities."""
-    user, refreshed = _current_user(request)
-    if not user:
-        return Response(status_code=401)
-
-    # controllo di proprietà: la service role key bypassa le RLS, quindi va
-    # ripetuto in ogni route che tocca dati di progetto
-    project = _sb_project_get(project_id)
-    if not project or project.get("user_id") != user["id"]:
-        return Response(status_code=404)
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id, "muto")
+    if stop is not None:
+        return stop
 
     try:
         riga = _sb_issue_resolve_manually(issue_id, user["id"])
@@ -3257,13 +3295,9 @@ def issue_resolve(project_id: str, issue_id: str, request: Request):
 @app.post("/project/{project_id}/settings")
 def project_settings(project_id: str, request: Request, name: str = Form(...), sector: str = Form(""),
                       scan_frequency: str = Form("weekly")):
-    user, refreshed = _current_user(request)
-    if not user:
-        return RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
-
-    project = _sb_project_get(project_id)
-    if not project or project.get("user_id") != user["id"]:
-        return HTMLResponse(status_code=404, content="Non trovato")
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
 
     name = (name or "").strip() or project["domain"]
     sector = (sector or "").strip() or None
@@ -3280,13 +3314,9 @@ def project_settings(project_id: str, request: Request, name: str = Form(...), s
 
 @app.post("/project/{project_id}/rerun")
 async def project_rerun(project_id: str, request: Request):
-    user, refreshed = _current_user(request)
-    if not user:
-        return RedirectResponse(f"/login?next=/project/{project_id}", status_code=303)
-
-    project = _sb_project_get(project_id)
-    if not project or project.get("user_id") != user["id"]:
-        return HTMLResponse(status_code=404, content="Non trovato")
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
 
     domain = project["domain"]
     url = domain if domain.startswith(("http://", "https://")) else "https://" + domain

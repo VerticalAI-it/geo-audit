@@ -257,6 +257,95 @@ def _sb_contact_requests(limit: int = 300) -> list:
     return r.json() if r.ok else []
 
 
+_TRAFFIC_DAILY = None
+
+
+def _traffic_daily_c_e() -> bool:
+    """Se la tabella di riepilogo giornaliero esiste gia' (fase H).
+
+    ⚠️ Come per la fase G: il codice esce prima della migrazione, e nel
+    frattempo la scheda deve continuare a funzionare contando gli eventi in
+    Python. Si prova a leggere la tabella: se PostgREST non la conosce
+    risponde con un errore invece che con dei dati.
+    """
+    global _TRAFFIC_DAILY
+    if _TRAFFIC_DAILY is None:
+        try:
+            r = req.get(f"{SUPABASE_URL}/rest/v1/traffic_daily", headers=_SB_H,
+                        timeout=10, params={"select": "id", "limit": "1"})
+            _TRAFFIC_DAILY = r.ok
+        except Exception:
+            return False          # guasto di rete, non risposta sullo schema
+    return bool(_TRAFFIC_DAILY)
+
+
+def _sb_traffic_riepilogo(project_id: str, days: int = 30) -> list:
+    """Il traffico del periodo, gia' contato per giorno.
+
+    Trenta righe invece di dodicimila eventi. Torna lista vuota se la tabella
+    non c'e' ancora: chi chiama ripiega sul conteggio in Python.
+    """
+    if not _traffic_daily_c_e():
+        return []
+    da = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/traffic_daily", headers=_SB_H, timeout=15,
+                    params={"project_id": f"eq.{project_id}", "giorno": f"gte.{da}",
+                            "select": "giorno,tipo,sorgente,categoria,eventi,sessioni",
+                            "order": "giorno.desc", "limit": "2000"})
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_traffic_ricalcola(giorni: int = 2) -> int:
+    """Rifa' il conteggio degli ultimi giorni. La chiama il cron.
+
+    ⚠️ Ricalcola invece di sommare: sommare vuol dire sapere cosa si e' gia'
+    contato, e al primo passaggio andato storto i numeri divergono per sempre
+    senza che nulla lo segnali.
+    """
+    if not _traffic_daily_c_e():
+        return 0
+    try:
+        r = req.post(f"{SUPABASE_URL}/rest/v1/rpc/ricalcola_traffic_daily",
+                     headers=_SB_H, timeout=60, json={"giorni": giorni})
+        return int(r.json()) if r.ok else 0
+    except Exception:
+        return 0
+
+
+def _sb_peso_archivio(campione: int = 60) -> dict:
+    """Quanto pesa l'HTML dei report conservato, e quanto pesera'.
+
+    ⚠️ Serve a decidere QUANDO fare la retention, non a farla. Al 22/09/2026
+    sono 204 report per ~7 MB in tutto: costruire ora lo spostamento su
+    Storage sarebbe macchinario per un problema che non c'e'. E cancellarli
+    non sarebbe gratis — gli indirizzi `/r/{id}` stanno nelle email gia'
+    mandate ai clienti, quindi buttare un HTML vecchio rompe un link che
+    qualcuno puo' aver salvato.
+
+    Si misura su un campione: scaricare l'HTML di tutti i report per pesarli
+    costerebbe piu' di quanto valga la risposta.
+    """
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/audits",
+                    headers={**_SB_H, "Prefer": "count=exact", "Range": "0-0"},
+                    timeout=15, params={"select": "id"})
+        totale = int((r.headers.get("content-range") or "/0").split("/")[-1])
+        r = req.get(f"{SUPABASE_URL}/rest/v1/audits", headers=_SB_H, timeout=30,
+                    params={"select": "html", "order": "created_at.desc",
+                            "limit": str(campione)})
+        pesi = [len(x.get("html") or "") for x in (r.json() or []) if x.get("html")]
+    except Exception:
+        return {}
+    if not pesi:
+        return {"report": totale, "mb": 0.0, "kb_medi": 0}
+    medio = sum(pesi) / len(pesi)
+    return {"report": totale, "kb_medi": round(medio / 1024),
+            "mb": round(totale * medio / 1024 / 1024, 1)}
+
+
 def _sb_audits_recenti(limit: int = 500) -> list:
     """Audit di tutti, per il pannello. `site_checks` serve all'anteprima delle
     criticita' nella coda lead; l'HTML no, e pesa decine di KB per riga."""
@@ -368,7 +457,11 @@ def _sb_project_bump_scan(project_id: str, frequency: str) -> None:
     _sb_project_patch(project_id, {"next_scan_at": _next_scan_at(frequency)})
 
 
-_AUDIT_LIGHT_FIELDS = "id,overall,grade,band,pages_count,issues_count,critical_count,status,created_at"
+# ⚠️ `engine_version` serve al grafico storico: quando il motore cambia, il
+# punteggio fa un gradino che NON e' il sito a essere cambiato, ed e' l'unico
+# modo che ha la pagina per dirlo invece di lasciarlo interpretare.
+_AUDIT_LIGHT_FIELDS = ("id,overall,grade,band,pages_count,issues_count,critical_count,"
+                       "status,engine_version,created_at")
 _AUDIT_FULL_FIELDS = ("id,url,domain,status,overall,grade,band,pages_count,engine_version,"
                        "areas,site_checks,pages_detail,actions,issues_count,critical_count,"
                        "created_at,completed_at")
