@@ -58,12 +58,14 @@ class CatalogoDeiCheckDiPagina(unittest.TestCase):
 
     # ⚠️ Aggiornare solo insieme a un bump di ENGINE_VERSION.
     ATTESI = {
-        "content.fresh", "content.h1", "content.hier", "content.len",
-        "content.q", "content.struct", "content.tldr", "meta.canonical",
-        "meta.description", "meta.lang", "meta.og", "meta.title",
-        "meta.twitter", "page.noindex", "page.status", "render.parity",
-        "sd.highvalue", "sd.present", "sd.sameas", "sd.valid", "sem.html",
-        "trust.author", "trust.contact", "trust.social",
+        "content.atomic", "content.fresh", "content.h1", "content.hidden",
+        "content.hier", "content.len", "content.q", "content.sources",
+        "content.struct", "content.tldr", "faq.answerlen", "meta.canonical",
+        "meta.canonical.consistency", "meta.description", "meta.lang",
+        "meta.og", "meta.title", "meta.twitter", "page.noindex",
+        "page.status", "render.parity", "schema.datemodified",
+        "sd.highvalue", "sd.person", "sd.present", "sd.sameas", "sd.valid",
+        "sem.html", "trust.author", "trust.contact", "trust.social",
     }
 
     def test_gli_id_emessi_sono_quelli_attesi(self):
@@ -129,17 +131,46 @@ class CatalogoDeiCheckDiPagina(unittest.TestCase):
             "Rendering & accesso",
         }, f"categoria fuori catalogo: {aree}")
 
-    def test_render_parity_e_non_misurabile_senza_rendering(self):
-        """⚠️ E' il limite funzionale dichiarato in `docs/10`: su Vercel il
-        rendering non gira, quindi questo check e' sempre `unknown`. Il test
-        lo fissa: quando 1.5 sara' risolto, DEVE cadere."""
+    def test_render_parity_stima_quando_il_rendering_non_gira(self):
+        """Dalla 1.2.0 il check non e' piu' sempre `unknown`: quando il
+        rendering headless non gira (su Vercel non gira mai) prova a stimare
+        dal solo HTML, e DICE che e' una stima.
+
+        ⚠️ Resta `unknown` nella zona grigia — fra le 60 e le 250 parole senza
+        contenitori sospetti — perche' su un check da peso 8 un falso allarme
+        accusa il sito del cliente di un difetto che non ha."""
         parity = next(c for c in _pagina(PAGINA_COMPLETA).checks if c.id == "render.parity")
+        self.assertIn(parity.status, (g.OK, g.WARN, g.FAIL, g.UNK))
+        if parity.status != g.UNK:
+            self.assertIn("stima", (parity.title + parity.detail).lower())
+
+    def test_una_spa_vuota_viene_riconosciuta(self):
+        spa = ('<!doctype html><html><body><div id="root"></div>'
+               '<script src="/bundle.js"></script></body></html>')
+        parity = next(c for c in _pagina(spa).checks if c.id == "render.parity")
+        self.assertEqual(parity.status, g.FAIL)
+        self.assertIn("root", parity.detail)
+
+    def test_nella_zona_grigia_il_check_tace(self):
+        """Fra le 60 e le 250 parole, senza gusci sospetti, non si puo' dire
+        niente di utile: meglio `unknown` che tirare a indovinare."""
+        grigia = "<!doctype html><html><body><p>" + ("parola " * 100) + "</p></body></html>"
+        parity = next(c for c in _pagina(grigia).checks if c.id == "render.parity")
         self.assertEqual(parity.status, g.UNK)
+
+    def test_ogni_check_dichiara_in_che_versione_e_nato(self):
+        """2.4 · serve a leggere uno storico con un gradino: se il check e'
+        cambiato il gradino e' nostro, se non e' cambiato e' del sito."""
+        for c in _pagina(PAGINA_COMPLETA).checks:
+            self.assertTrue(c.versione, c.id)
+        parity = next(c for c in _pagina(PAGINA_COMPLETA).checks if c.id == "render.parity")
+        self.assertEqual(parity.versione, "1.2.0")
 
 
 class CatalogoDeiCheckDiSito(unittest.TestCase):
 
-    ATTESI = {"crawl.ai", "crawl.https", "crawl.llms", "crawl.robots", "crawl.sitemap"}
+    ATTESI = {"crawl.ai", "crawl.conflict", "crawl.coverage", "crawl.https",
+              "crawl.llms", "crawl.robots", "crawl.sitemap", "perf.cls", "perf.lcp"}
 
     def _sito(self, **kw):
         s = g.Site(base_url="https://esempio.it", https=True)

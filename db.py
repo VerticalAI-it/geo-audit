@@ -457,7 +457,11 @@ def _sb_project_bump_scan(project_id: str, frequency: str) -> None:
     _sb_project_patch(project_id, {"next_scan_at": _next_scan_at(frequency)})
 
 
-_AUDIT_LIGHT_FIELDS = "id,overall,grade,band,pages_count,issues_count,critical_count,status,created_at"
+# ⚠️ `engine_version` serve al grafico storico: quando il motore cambia, il
+# punteggio fa un gradino che NON e' il sito a essere cambiato, ed e' l'unico
+# modo che ha la pagina per dirlo invece di lasciarlo interpretare.
+_AUDIT_LIGHT_FIELDS = ("id,overall,grade,band,pages_count,issues_count,critical_count,"
+                       "status,engine_version,created_at")
 _AUDIT_FULL_FIELDS = ("id,url,domain,status,overall,grade,band,pages_count,engine_version,"
                        "areas,site_checks,pages_detail,actions,issues_count,critical_count,"
                        "created_at,completed_at")

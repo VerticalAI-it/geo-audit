@@ -42,18 +42,52 @@ class FormulaDelPunteggio(unittest.TestCase):
         self.assertEqual(g.score_checks([]), 0)
         self.assertEqual(g.score_checks([ck(g.UNK)]), 0)
 
-    def test_i_check_di_sito_si_diluiscono(self):
-        """⚠️ Non e' una regola voluta, e' il difetto dichiarato in
-        `docs/10`: `crawl.ai` pesa 12 e con trenta pagine il denominatore
-        arriva a ~2.500, quindi un sito che blocca del tutto i crawler AI
-        perde meno di mezzo punto. Il test lo fissa per iscritto: quando
-        si rivede la formula (blocco 2.3) deve CADERE, ed e' il segnale
-        che il difetto e' stato corretto."""
+    def test_in_un_calderone_solo_i_check_di_sito_si_diluiscono(self):
+        """Il difetto che c'era fino alla 1.1.0, lasciato qui come promemoria
+        di cosa succede a mettere tutto in un pool unico: `crawl.ai` pesa 12,
+        trenta pagine pesano ~2.500, e bloccare i crawler AI costa meno di
+        mezzo punto."""
         crawl_ai_bloccato = ck(g.FAIL, 12, id_="crawl.ai")
         trenta_pagine = [ck(g.OK, 3) for _ in range(800)]
-        punteggio = g.score_checks([crawl_ai_bloccato] + trenta_pagine)
-        self.assertGreaterEqual(punteggio, 99,
-                                "il difetto della diluizione e' cambiato: rivedere 2.3")
+        self.assertGreaterEqual(g.score_checks([crawl_ai_bloccato] + trenta_pagine), 99)
+
+
+class PunteggioComplessivo(unittest.TestCase):
+    """La formula della 1.2.0: sito e pagine pesati separatamente."""
+
+    SITO_OK = [ck(g.OK, 12, "crawl.ai"), ck(g.OK, 2), ck(g.OK, 3), ck(g.OK, 1), ck(g.OK, 3)]
+    SITO_BLOCCATO = [ck(g.FAIL, 12, "crawl.ai"), ck(g.OK, 2), ck(g.OK, 3),
+                     ck(g.OK, 1), ck(g.OK, 3)]
+    PAGINE_PERFETTE = [ck(g.OK, 3) for _ in range(800)]
+
+    def test_bloccare_i_crawler_ai_costa_davvero(self):
+        """⚠️ E' il motivo per cui la formula e' cambiata. Con un pool unico
+        costava meno di un punto; adesso ne costa diciassette, che e' una
+        cifra proporzionata al fatto che il sito e' invisibile agli
+        assistenti."""
+        sano = g.score_complessivo(self.SITO_OK, self.PAGINE_PERFETTE)
+        bloccato = g.score_complessivo(self.SITO_BLOCCATO, self.PAGINE_PERFETTE)
+        self.assertEqual(sano, 100)
+        self.assertGreaterEqual(sano - bloccato, 15)
+
+    def test_senza_pagine_conta_solo_il_sito(self):
+        """⚠️ Un sito le cui pagine non si sono potute analizzare non deve
+        prendere 30 su 100: sarebbe una penalita' per un limite del crawler,
+        non per un difetto suo."""
+        self.assertEqual(g.score_complessivo(self.SITO_OK, []), 100)
+
+    def test_senza_check_di_sito_contano_solo_le_pagine(self):
+        self.assertEqual(g.score_complessivo([], self.PAGINE_PERFETTE), 100)
+
+    def test_niente_di_misurabile_fa_zero(self):
+        self.assertEqual(g.score_complessivo([], []), 0)
+        self.assertEqual(g.score_complessivo([ck(g.UNK, 5)], [ck(g.UNK, 5)]), 0)
+
+    def test_i_pesi_sono_quelli_dichiarati(self):
+        """Sito al 30%, pagine al 70%: sito perfetto e pagine a zero fa 30."""
+        self.assertEqual(g.PESO_SITO, 0.30)
+        self.assertEqual(g.score_complessivo(self.SITO_OK, [ck(g.FAIL, 3)]), 30)
+        self.assertEqual(g.score_complessivo([ck(g.FAIL, 3)], self.PAGINE_PERFETTE), 70)
 
 
 class LettereEBande(unittest.TestCase):

@@ -25,7 +25,7 @@ USO
     python geo_audit.py esempio.it --no-render | --respect-robots | --no-pdf | --json dati.json
 """
 from __future__ import annotations
-import sys, re, json, time, math, argparse, html as H
+import os, sys, re, json, time, math, argparse, html as H
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urldefrag, urlparse
 from datetime import datetime
@@ -34,7 +34,7 @@ import requests
 from bs4 import BeautifulSoup
 
 # ============================================================ CONFIG
-ENGINE_VERSION = "1.1.0"
+ENGINE_VERSION = "1.2.0"
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 VerticalAI-GEOAudit/1.1")
 HEADERS = {"User-Agent": BROWSER_UA,
@@ -80,6 +80,11 @@ session = requests.Session(); session.headers.update(HEADERS)
 class Check:
     id: str; category: str; title: str; status: str
     weight: int = 1; severity: str = "medium"; detail: str = ""; recommendation: str = ""
+    # ⚠️ In quale versione del motore questo controllo e' nato o ha cambiato
+    # significato — NON la versione del motore che ha girato, che sta gia'
+    # sull'audit. Serve a sapere perche' uno storico ha un gradino: se il
+    # check e' cambiato il gradino e' nostro, se non e' cambiato e' del sito.
+    versione: str = ""
 
 @dataclass
 class Page:
@@ -225,7 +230,32 @@ def jsonld(soup):
                 types.update(t if isinstance(t, list) else [t] if t else [])
     return blocks, types, valid
 
-def ck(checks, **kw): checks.append(Check(**kw))
+# In quale versione del motore ogni check e' nato o ha cambiato significato.
+# Chi non compare qui c'era gia' nella 1.0.0.
+#
+# ⚠️ Si aggiorna SOLO quando il controllo cambia davvero: correggere un refuso
+# nel testo non e' un cambio di significato, cambiare la soglia si'. Se questa
+# mappa diventa «tutti all'ultima versione» smette di servire a qualcosa.
+CHECK_VERSIONE = {
+    # 1.2.0 — la revisione del motore di settembre 2026
+    "render.parity": "1.2.0",     # da sempre `unknown` a stima dichiarata
+    "content.atomic": "1.2.0",
+    "content.sources": "1.2.0",
+    "content.hidden": "1.2.0",
+    "schema.datemodified": "1.2.0",
+    "faq.answerlen": "1.2.0",
+    "sd.person": "1.2.0",
+    "meta.canonical.consistency": "1.2.0",
+    "crawl.conflict": "1.2.0",
+    "crawl.coverage": "1.2.0",
+    "perf.lcp": "1.2.0",
+    "perf.cls": "1.2.0",
+}
+
+
+def ck(checks, **kw):
+    kw.setdefault("versione", CHECK_VERSIONE.get(kw.get("id", ""), "1.0.0"))
+    checks.append(Check(**kw))
 
 def checks_structured(soup, checks):
     blocks, types, valid = jsonld(soup)
@@ -390,12 +420,81 @@ def checks_indexing(soup, checks, status_code, redirects, url):
            detail="meta robots NOINDEX: verifica se intenzionale.",
            recommendation="Se la pagina deve essere trovata, rimuovi il noindex.")
 
+# Indizi, nel solo HTML statico, che il contenuto vero arrivi dal JavaScript.
+# Sono i contenitori vuoti che i framework lasciano in pagina prima di
+# riempirli: se il testo del documento e' poco e uno di questi c'e', la pagina
+# quasi certamente si costruisce nel browser.
+_RADICI_SPA = ("root", "app", "__next", "__nuxt", "q-app", "svelte")
+
+
+def stima_parita_statica(soup):
+    """Quanto della pagina e' gia' nell'HTML, senza eseguire il JavaScript.
+
+    Torna (stato, dettaglio, rimedio) oppure None se non si puo' dire niente.
+
+    ⚠️ E' una STIMA, e il testo lo dice a chi legge. La misura vera vuole il
+    rendering headless, che su Vercel non gira (docs/10). Fino alla 1.1.0
+    questo controllo era percio' sempre `unknown`, cioe' fuori dal punteggio:
+    il limite funzionale piu' grave del prodotto non pesava NIENTE sul numero
+    che il cliente legge. Una stima dichiarata vale piu' di un silenzio.
+
+    ⚠️ E' volutamente prudente: segnala solo i casi grossolani. Un falso
+    allarme qui accusa il sito del cliente di un difetto che non ha, e su un
+    check da peso 8 si vede.
+    """
+    testo = soup.get_text(" ", strip=True)
+    parole = len(testo.split())
+
+    # Il guscio vuoto: un contenitore noto senza testo dentro.
+    guscio = None
+    for ident in _RADICI_SPA:
+        el = soup.find(attrs={"id": ident})
+        if el is not None and len(el.get_text(" ", strip=True).split()) < 20:
+            guscio = ident
+            break
+
+    if guscio and parole < 120:
+        return (FAIL,
+                f"Stima senza rendering: l'HTML contiene {parole} parole e un "
+                f"contenitore «{guscio}» vuoto. Il contenuto sembra costruito dal "
+                "JavaScript, che molti crawler AI non eseguono.",
+                "Abilita SSR o prerendering: quello che non e' nell'HTML statico, "
+                "per gran parte degli assistenti non esiste.")
+
+    if parole < 60:
+        return (WARN,
+                f"Stima senza rendering: solo {parole} "
+                + ("parola" if parole == 1 else "parole") + " nell'HTML statico. "
+                "Puo' essere una pagina davvero breve, oppure contenuto iniettato "
+                "via JavaScript.",
+                "Verifica che il testo principale sia nel sorgente della pagina, "
+                "non aggiunto dal browser.")
+
+    if parole >= 250:
+        return (OK,
+                f"Stima senza rendering: {parole} parole gia' presenti nell'HTML "
+                "statico, quindi leggibili da un crawler che non esegue JavaScript.",
+                "")
+
+    # Fra le 60 e le 250 parole senza gusci sospetti non si puo' dire niente di
+    # utile: meglio tacere che tirare a indovinare su un check che pesa 8.
+    return None
+
+
 def check_js_parity(checks, static_html, rendered_used, rendered_soup):
     if not rendered_used:
-        ck(checks, id="render.parity", category="Rendering & accesso", title="Parità contenuto senza JS",
-           status=UNK, weight=8, severity="high",
-           detail="Rendering headless non eseguito: confronto non disponibile.",
-           recommendation="Esegui con Playwright per verificare il contenuto visibile ai crawler AI.")
+        stima = stima_parita_statica(BeautifulSoup(static_html, "lxml"))
+        if stima is None:
+            ck(checks, id="render.parity", category="Rendering & accesso",
+               title="Parità contenuto senza JS", status=UNK, weight=8, severity="high",
+               detail="Rendering headless non eseguito, e l'HTML statico non dà "
+                      "indizi chiari in un senso o nell'altro.",
+               recommendation="Esegui con Playwright per il confronto esatto.")
+            return
+        st, det, rec = stima
+        ck(checks, id="render.parity", category="Rendering & accesso",
+           title="Parità contenuto senza JS (stima)", status=st, weight=8,
+           severity="high", detail=det, recommendation=rec)
         return
     sw = len(BeautifulSoup(static_html, "lxml").get_text(" ", strip=True).split())
     rw = len(rendered_soup.get_text(" ", strip=True).split())
@@ -409,13 +508,388 @@ def check_js_parity(checks, static_html, rendered_used, rendered_soup):
     ck(checks, id="render.parity", category="Rendering & accesso", title="Parità contenuto senza JS",
        status=st, weight=8, severity="high", detail=det, recommendation=rec)
 
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# I controlli aggiunti nella 1.2.0
+#
+# ⚠️ Ogni check nuovo cambia il denominatore del punteggio, quindi i voti non
+# sono piu' confrontabili con lo storico. Per questo entrano tutti insieme, in
+# un lotto solo, con un salto di ENGINE_VERSION e il grafico che dichiara la
+# discontinuita' (vedi `_score_history_chart`).
+# ══════════════════════════════════════════════════════════════════════════
+
+# Le parole con cui un testo italiano o inglese attribuisce un dato a una
+# fonte. Sono volutamente poche e inequivocabili: allargarle significherebbe
+# scambiare per citazione ogni frase che nomina un'azienda.
+_ATTRIBUZIONE = re.compile(
+    r"\b(secondo|stando a|fonte:|fonti:|come riporta|riporta|dati di|dati "
+    r"|elaborazione|ricerca di|studio di|indagine|rapporto|according to|source:)\b",
+    re.I)
+
+# Contenitori che nascondono il contenuto finche' qualcuno non clicca.
+_APERTURA = ("accordion", "collapse", "toggle", "tab-pane", "panel-collapse")
+
+
+def checks_contenuto_avanzato(soup, checks):
+    """I controlli sulla qualita' del testo che gli assistenti leggono."""
+    testo = soup.get_text(" ", strip=True)
+    parole = testo.split()
+
+    # ── content.atomic · com'e' fatto il primo paragrafo ───────────────────
+    # Non basta che ci sia un TL;DR: conta che il primo blocco risponda da
+    # solo. Un assistente che estrae un frammento estrae quello.
+    primo = ""
+    for p in soup.find_all("p"):
+        t = p.get_text(" ", strip=True)
+        if len(t.split()) >= 15:
+            primo = t
+            break
+    n_primo = len(primo.split())
+    ha_dato = bool(re.search(r"\d", primo))
+    if not primo:
+        st, det, rec = (FAIL, "Nessun paragrafo di apertura leggibile.",
+                        "Apri con un paragrafo che risponda da solo alla domanda della pagina.")
+    elif 40 <= n_primo <= 80 and ha_dato:
+        st, det, rec = (OK, f"Paragrafo d'apertura di {n_primo} parole, con almeno un dato.", "")
+    elif 40 <= n_primo <= 80:
+        st, det, rec = (WARN, f"Paragrafo d'apertura di {n_primo} parole, ma senza dati o cifre.",
+                        "Aggiungi un numero o un riferimento concreto: le AI citano piu' volentieri "
+                        "affermazioni verificabili.")
+    else:
+        st, det, rec = (WARN, f"Paragrafo d'apertura di {n_primo} parole "
+                              f"({'troppo corto' if n_primo < 40 else 'troppo lungo'}).",
+                        "Punta a 40-80 parole: affermazione, dato, contesto.")
+    ck(checks, id="content.atomic", category="Contenuti & answerability",
+       title="Paragrafo d'apertura autosufficiente", status=st, weight=5,
+       severity="medium", detail=det, recommendation=rec)
+
+    # ── content.sources · i dati sono attribuiti? ──────────────────────────
+    attribuzioni = len(_ATTRIBUZIONE.findall(testo))
+    if len(parole) < 200:
+        ck(checks, id="content.sources", category="Autorità & trust",
+           title="Dati attribuiti a una fonte", status=UNK, weight=4, severity="medium",
+           detail="Pagina troppo breve perche' la domanda abbia senso.",
+           recommendation="")
+    else:
+        attese = max(1, len(parole) // 300)
+        st = OK if attribuzioni >= attese else (WARN if attribuzioni else FAIL)
+        ck(checks, id="content.sources", category="Autorità & trust",
+           title="Dati attribuiti a una fonte", status=st, weight=4, severity="medium",
+           detail=f"{attribuzioni} attribuzioni su {len(parole)} parole "
+                  f"(una ogni ~300 sarebbe {attese}).",
+           recommendation="" if st == OK else
+                          "Attribuisci i numeri a una fonte citata: e' il segnale che rende "
+                          "un'affermazione ripetibile da un assistente.")
+
+    # ── content.hidden · contenuto dietro un clic ──────────────────────────
+    # ⚠️ I crawler AI non aprono gli accordion e quasi mai leggono i PDF: cio'
+    # che sta li' dentro, per loro, non esiste.
+    # ⚠️ Solo i contenitori PIU' ESTERNI. Gli accordion sono quasi sempre
+    # annidati (il gruppo contiene i pannelli, il pannello contiene il corpo):
+    # sommando tutti si conta lo stesso testo due o tre volte, e la prima
+    # versione di questo check ha dichiarato «il 128% del testo e' nascosto».
+    aperture = [el for el in soup.find_all(True)
+                if any(a in " ".join(el.get("class") or []).lower() for a in _APERTURA)]
+    esterni = [el for el in aperture
+               if not any(altro is not el and altro in el.parents for altro in aperture)]
+    nascosti = sum(len(el.get_text(" ", strip=True).split()) for el in esterni)
+    pdf = [a for a in soup.find_all("a", href=True) if a["href"].lower().endswith(".pdf")]
+    quota = (nascosti / len(parole)) if parole else 0
+    if quota >= 0.4:
+        st, det = FAIL, f"Circa il {int(quota*100)}% del testo sta dentro accordion o tab."
+    elif quota >= 0.15 or pdf:
+        pezzi = []
+        if quota >= 0.15:
+            pezzi.append(f"il {int(quota*100)}% del testo sta dentro accordion o tab")
+        if pdf:
+            pezzi.append(f"{len(pdf)} contenuti linkati come PDF")
+        st, det = WARN, ("Contenuto poco raggiungibile: " + ", ".join(pezzi) + ".")
+    else:
+        st, det = OK, "Il contenuto principale e' leggibile senza aprire niente."
+    ck(checks, id="content.hidden", category="Contenuti & answerability",
+       title="Contenuto raggiungibile senza clic", status=st, weight=4, severity="medium",
+       detail=det,
+       recommendation="" if st == OK else
+                      "Porta fuori dagli accordion il contenuto che conta, e affianca al PDF "
+                      "una versione in HTML: i crawler AI non aprono ne' l'uno ne' l'altro.")
+
+
+def checks_struttura_avanzata(soup, checks, url):
+    """Controlli su indicizzazione, canonical e dati strutturati fini."""
+    # ── schema.datemodified · la data che Perplexity e Gemini guardano ─────
+    blocchi, tipi, _ = jsonld(soup)
+    articolo = [b for b in blocchi
+                if isinstance(b, dict)
+                and str(b.get("@type", "")) in ("Article", "BlogPosting", "NewsArticle")]
+    if not articolo:
+        ck(checks, id="schema.datemodified", category="Dati strutturati",
+           title="dateModified nello schema", status=UNK, weight=3, severity="low",
+           detail="La pagina non dichiara uno schema di tipo Article.", recommendation="")
+    else:
+        con_data = [a for a in articolo if a.get("dateModified")]
+        ck(checks, id="schema.datemodified", category="Dati strutturati",
+           title="dateModified nello schema", status=OK if con_data else WARN,
+           weight=3, severity="medium",
+           detail="Presente." if con_data else "Schema Article senza `dateModified`.",
+           recommendation="" if con_data else
+                          "Aggiungi `dateModified`: e' il segnale di freschezza primario per "
+                          "Perplexity e Gemini, piu' affidabile di una data nel testo.")
+
+    # ── faq.answerlen · quanto sono lunghe le risposte ─────────────────────
+    risposte = []
+    for b in blocchi:
+        if not isinstance(b, dict) or str(b.get("@type", "")) != "FAQPage":
+            continue
+        for voce in (b.get("mainEntity") or []):
+            if not isinstance(voce, dict):
+                continue
+            acc = voce.get("acceptedAnswer") or {}
+            testo = acc.get("text") if isinstance(acc, dict) else None
+            if testo:
+                risposte.append(len(re.sub(r"<[^>]+>", " ", str(testo)).split()))
+    if not risposte:
+        ck(checks, id="faq.answerlen", category="Dati strutturati",
+           title="Lunghezza delle risposte FAQ", status=UNK, weight=3, severity="low",
+           detail="Nessuna FAQPage con risposte da misurare.", recommendation="")
+    else:
+        giuste = [n for n in risposte if 50 <= n <= 100]
+        quota = len(giuste) / len(risposte)
+        st = OK if quota >= 0.6 else WARN
+        media = round(sum(risposte) / len(risposte))
+        ck(checks, id="faq.answerlen", category="Dati strutturati",
+           title="Lunghezza delle risposte FAQ", status=st, weight=3, severity="low",
+           detail=f"{len(risposte)} risposte, {media} parole in media; "
+                  f"{len(giuste)} nella fascia 50-100.",
+           recommendation="" if st == OK else
+                          "Punta a 50-100 parole per risposta: piu' corte non rispondono, "
+                          "piu' lunghe non vengono estratte intere.")
+
+    # ── sd.person · l'autore e' un'entita' riconoscibile ───────────────────
+    persone = [b for b in blocchi
+               if isinstance(b, dict) and str(b.get("@type", "")) == "Person"]
+    if not persone:
+        ck(checks, id="sd.person", category="Autorità & trust",
+           title="Autore come entità riconoscibile", status=UNK, weight=3, severity="low",
+           detail="La pagina non dichiara uno schema Person.", recommendation="")
+    else:
+        autorevoli = ("wikipedia.org", "wikidata.org", "scholar.google",
+                      "orcid.org", "linkedin.com")
+        collegati = []
+        for p in persone:
+            same = p.get("sameAs") or []
+            if isinstance(same, str):
+                same = [same]
+            collegati += [u for u in same if any(d in str(u) for d in autorevoli)]
+        ck(checks, id="sd.person", category="Autorità & trust",
+           title="Autore come entità riconoscibile", status=OK if collegati else WARN,
+           weight=3, severity="medium",
+           detail=(f"{len(collegati)} collegamenti a fonti di identita'."
+                   if collegati else "Schema Person senza `sameAs` verso fonti riconosciute."),
+           recommendation="" if collegati else
+                          "Collega l'autore a Wikipedia, Wikidata, ORCID o LinkedIn: e' cosi' "
+                          "che un assistente capisce che e' una persona vera e non un nome.")
+
+    # ── meta.canonical.consistency · il canonical punta a se stesso? ───────
+    can = soup.find("link", attrs={"rel": "canonical"})
+    href = (can.get("href") or "").strip() if can else ""
+    if not href:
+        ck(checks, id="meta.canonical.consistency", category="Meta & social",
+           title="Coerenza del canonical", status=UNK, weight=3, severity="medium",
+           detail="Nessun canonical dichiarato (lo rileva gia' `meta.canonical`).",
+           recommendation="")
+    else:
+        uguale = norm(urljoin(url, href)) == norm(url)
+        hreflang = soup.find_all("link", attrs={"rel": "alternate", "hreflang": True})
+        ck(checks, id="meta.canonical.consistency", category="Meta & social",
+           title="Coerenza del canonical", status=OK if uguale else WARN,
+           weight=3, severity="medium",
+           detail=("Il canonical punta a questa stessa pagina."
+                   + (f" {len(hreflang)} varianti hreflang." if hreflang else "")
+                   if uguale else f"Il canonical punta altrove: {esc(href)[:120]}"),
+           recommendation="" if uguale else
+                          "Un canonical che punta a un'altra pagina dice all'assistente di "
+                          "citare quella, non questa. Verifica che sia voluto.")
+
+
+# ── 2.2 · Core Web Vitals ──────────────────────────────────────────────────
+# I dati di campo di Google (CrUX), presi via PageSpeed Insights. Misurano
+# l'esperienza reale degli utenti, non una simulazione.
+#
+# La gap analysis riporta due numeri concreti: con CLS sopra 0,1 la probabilita'
+# di finire in una AI Overview cala del 29,8%; con LCP sopra 2,5 s e' 1,47 volte
+# piu' bassa. Sono fra i pochi segnali di performance che contano davvero per
+# la visibilita' sugli assistenti.
+#
+# ⚠️ Serve una chiave API Google in `PAGESPEED_API_KEY`. SENZA, il check resta
+# `unknown` e lo dichiara: NON si prova la chiamata senza chiave. Quella strada
+# funziona ma ha un limite di frequenza stretto, e in un cron che gira ogni ora
+# su ventinove progetti significherebbe far fallire gli audit a caso per un
+# limite che non controlliamo.
+_PSI = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+CWV_SOGLIE = {"LARGEST_CONTENTFUL_PAINT_MS": 2500, "CUMULATIVE_LAYOUT_SHIFT_SCORE": 0.1}
+
+
+def leggi_cwv(url: str, chiave: str) -> dict | None:
+    """LCP (ms) e CLS dai dati di campo. None se non si sono potuti avere."""
+    if not chiave:
+        return None
+    try:
+        r = requests.get(_PSI, timeout=25, params={
+            "url": url, "key": chiave, "strategy": "mobile", "category": "performance"})
+        if not r.ok:
+            return None
+        campo = (r.json().get("loadingExperience") or {}).get("metrics") or {}
+    except Exception:
+        return None
+    if not campo:
+        return None                 # sito senza abbastanza traffico per i dati di campo
+    fuori = {}
+    for chiave_metrica in CWV_SOGLIE:
+        m = campo.get(chiave_metrica) or {}
+        if m.get("percentile") is not None:
+            fuori[chiave_metrica] = m["percentile"]
+    return fuori or None
+
+
+def checks_cwv(site, cwv):
+    """I due check di performance. Sempre emessi: `unknown` quando i dati non
+    ci sono, cosi' il catalogo non cambia da audit a audit."""
+    def emetti(ident, titolo, valore, soglia, unita, spiega):
+        if valore is None:
+            ck(site.site_checks, id=ident, category="Rendering & accesso", title=titolo,
+               status=UNK, weight=4, severity="medium",
+               detail="Dati di campo non disponibili: serve la chiave PageSpeed, "
+                      "oppure il sito non ha abbastanza traffico perche' Google li raccolga.",
+               recommendation="")
+            return
+        buono = valore <= soglia
+        ck(site.site_checks, id=ident, category="Rendering & accesso", title=titolo,
+           status=OK if buono else WARN, weight=4, severity="medium",
+           detail=f"{valore}{unita} sul 75° percentile degli utenti reali "
+                  f"(soglia {soglia}{unita}).",
+           recommendation="" if buono else spiega)
+
+    cwv = cwv or {}
+    lcp = cwv.get("LARGEST_CONTENTFUL_PAINT_MS")
+    cls = cwv.get("CUMULATIVE_LAYOUT_SHIFT_SCORE")
+    emetti("perf.lcp", "Caricamento del contenuto principale (LCP)", lcp, 2500, " ms",
+           "Sopra i 2,5 secondi la probabilita' di finire in una AI Overview e' "
+           "circa 1,5 volte piu' bassa. Comprimi le immagini grandi e togli il "
+           "JavaScript che blocca il primo disegno.")
+    emetti("perf.cls", "Stabilita' del layout (CLS)",
+           round(cls / 100, 3) if cls is not None else None, 0.1, "",
+           "Sopra 0,1 la probabilita' di inclusione nelle AI Overview cala di circa "
+           "il 30%. Dichiara le dimensioni di immagini e riquadri pubblicitari.")
+
+
+def checks_sito_avanzati(site, soup_home, pagine_scoperte):
+    """Controlli sul sito che hanno bisogno della home e delle pagine trovate.
+
+    ⚠️ Vengono emessi SEMPRE, anche quando quei dati mancano: in quel caso
+    valgono `unknown`. Se comparissero solo a volte, il catalogo di sito
+    cambierebbe da audit a audit e con lui il denominatore del punteggio —
+    lo stesso difetto gia' misurato sui check dei dati strutturati.
+    """
+    if soup_home is None:
+        for ident, titolo in (("crawl.conflict", "Coerenza fra robots.txt e meta robots"),
+                              ("crawl.coverage", "Copertura della sitemap")):
+            ck(site.site_checks, id=ident, category="Rendering & accesso", title=titolo,
+               status=UNK, weight=4 if ident == "crawl.conflict" else 3, severity="medium",
+               detail="Home non disponibile per questo controllo.", recommendation="")
+        return
+    # ── crawl.conflict · robots.txt e meta robots si contraddicono? ────────
+    meta_rob = soup_home.find("meta", attrs={"name": re.compile("^robots$", re.I)})
+    contenuto = (meta_rob.get("content") or "").lower() if meta_rob else ""
+    noindex = "noindex" in contenuto
+    ck(site.site_checks, id="crawl.conflict", category="Rendering & accesso",
+       title="Coerenza fra robots.txt e meta robots",
+       status=FAIL if (noindex and site.sitemap_found) else OK,
+       weight=4, severity="high",
+       detail=("La home e' in `noindex` ma compare nella sitemap: due istruzioni opposte."
+               if (noindex and site.sitemap_found) else
+               "Nessuna contraddizione fra robots.txt e meta robots."),
+       recommendation=("Decidi quale vale: una pagina in sitemap dichiarata noindex spreca "
+                       "il passaggio del crawler e confonde chi la legge."
+                       if (noindex and site.sitemap_found) else ""))
+
+    # ── crawl.coverage · la sitemap copre quello che c'e'? ─────────────────
+    in_sitemap = {norm(u) for u in site.sitemap_urls}
+    scoperte = {norm(u) for u in pagine_scoperte}
+    if not in_sitemap:
+        ck(site.site_checks, id="crawl.coverage", category="Rendering & accesso",
+           title="Copertura della sitemap", status=UNK, weight=3, severity="medium",
+           detail="Nessuna sitemap leggibile (lo rileva gia' `crawl.sitemap`).",
+           recommendation="")
+    elif not scoperte:
+        ck(site.site_checks, id="crawl.coverage", category="Rendering & accesso",
+           title="Copertura della sitemap", status=UNK, weight=3, severity="medium",
+           detail="Nessuna pagina scoperta con cui confrontare la sitemap.",
+           recommendation="")
+    else:
+        fuori = scoperte - in_sitemap
+        quota = 1 - (len(fuori) / len(scoperte))
+        st = OK if quota >= 0.8 else WARN
+        ck(site.site_checks, id="crawl.coverage", category="Rendering & accesso",
+           title="Copertura della sitemap", status=st, weight=3, severity="medium",
+           detail=f"{len(scoperte) - len(fuori)} pagine su {len(scoperte)} trovate "
+                  f"navigando sono anche in sitemap.",
+           recommendation="" if st == OK else
+                          "Le pagine fuori sitemap vengono scoperte piu' tardi e meno spesso: "
+                          "allinea la sitemap a cio' che il sito pubblica davvero.")
+
 # ============================================================ SCORING
 def score_checks(checks):
+    """Media pesata di un insieme di check. Gli `unknown` restano fuori da
+    numeratore e denominatore: un controllo che non abbiamo potuto misurare
+    non deve ne' premiare ne' punire il sito."""
     frac = {OK: 1.0, WARN: 0.5, FAIL: 0.0}; num = den = 0.0
     for c in checks:
         if c.status in frac:
             den += c.weight; num += c.weight * frac[c.status]
     return round(100 * num / den) if den else 0
+
+
+def peso_misurabile(checks):
+    """Quanto pesa, in tutto, cio' che si e' potuto misurare."""
+    return sum(c.weight for c in checks if c.status in (OK, WARN, FAIL))
+
+
+# Quanto conta l'infrastruttura del sito rispetto alla qualita' delle pagine.
+#
+# ⚠️ Fino alla 1.1.0 c'era un solo calderone, e i cinque check di sito si
+# DILUIVANO fra le pagine: pesano 21 in tutto, contro ~92 per ogni pagina
+# analizzata. Su trenta pagine erano lo 0,75% del punteggio, e `crawl.ai` —
+# il controllo che rileva se il sito blocca del tutto i crawler AI — valeva
+# lo 0,43%. Un sito irraggiungibile dagli assistenti prendeva comunque un bel
+# voto, e il report lo scriveva fra le criticita' mentre il numero diceva il
+# contrario.
+#
+# Ora sono due punteggi separati e poi mescolati. Con 30/70, un sito che
+# blocca tutti i crawler AI perde 12/21 del 30%, cioe' circa 17 punti: una
+# cifra che si vede e che corrisponde alla gravita' del fatto.
+PESO_SITO = 0.30
+
+
+def score_complessivo(site_checks, page_checks):
+    """Il punteggio del report: infrastruttura di sito e qualita' delle
+    pagine pesate separatamente, poi combinate.
+
+    ⚠️ Se uno dei due insiemi non ha niente di misurabile, l'altro vale per
+    intero. Un sito senza pagine analizzabili non deve prendere 30 su 100
+    solo perche' il pezzo «pagine» e' mancante: sarebbe una penalita' per un
+    limite del crawler, non per un difetto del sito.
+    """
+    peso_s = peso_misurabile(site_checks)
+    peso_p = peso_misurabile(page_checks)
+    if not peso_s and not peso_p:
+        return 0
+    if not peso_p:
+        return score_checks(site_checks)
+    if not peso_s:
+        return score_checks(page_checks)
+    return round(PESO_SITO * score_checks(site_checks)
+                 + (1 - PESO_SITO) * score_checks(page_checks))
 
 def grade(s): return "A" if s>=90 else "B" if s>=75 else "C" if s>=60 else "D" if s>=45 else "E" if s>=30 else "F"
 def band(s): return "Eccellente" if s>=90 else "Buono" if s>=75 else "Discreto" if s>=60 else "Da rafforzare" if s>=45 else "Critico"
@@ -453,6 +927,8 @@ def analyze_page(url, fetched, static_for_parity, render_used):
     checks_indexing(soup, checks, fetched.status, fetched.redirects, url)
     checks_meta(soup, checks); checks_structured(soup, checks)
     checks_content(soup, checks); checks_eeat(soup, checks)
+    checks_contenuto_avanzato(soup, checks)
+    checks_struttura_avanzata(soup, checks, url)
     check_js_parity(checks, static_for_parity.html, render_used and fetched.rendered, soup)
     _, types, _ = jsonld(soup)
     title = soup.title.get_text(strip=True) if soup.title else url
@@ -695,7 +1171,9 @@ def compute_area_scores(checks):
 
 def render_report(domain, site, pages, render_used, respect_robots):
     allc = list(site.site_checks) + [c for p in pages for c in p.checks]
-    overall = score_checks(allc); g = grade(overall); bnd = band(overall)
+    pagine_checks = [c for p in pages for c in p.checks]
+    overall = score_complessivo(site.site_checks, pagine_checks)
+    g = grade(overall); bnd = band(overall)
     nok = len([c for c in allc if c.status == OK]); nwarn = len([c for c in allc if c.status == WARN])
     nfail = len([c for c in allc if c.status == FAIL])
     catmap, cats = compute_area_scores(allc)
@@ -863,7 +1341,14 @@ def render_report(domain, site, pages, render_used, respect_robots):
             + act_sec + pages_sec + notes + cta + foot + theme_script + "</div></body></html>"), overall
 
 # ============================================================ MAIN
-def build_site_checks(site):
+def build_site_checks(site, soup_home=None, pagine_scoperte=None, cwv=None):
+    """Il catalogo completo dei check di sito.
+
+    ⚠️ E' l'UNICA funzione che lo produce: i due controlli che hanno bisogno
+    della home passano di qui, non da una chiamata separata. Averli in due
+    posti voleva dire che il catalogo dipendeva da chi lo costruiva, e chi
+    chiamava solo questa ne otteneva uno incompleto senza accorgersene.
+    """
     site.site_checks = []
     ck(site.site_checks, id="crawl.ai", category="Rendering & accesso", title="Accesso crawler AI (robots.txt)",
        status=FAIL if site.ai_bots_blocked else OK, weight=12, severity="critical",
@@ -882,7 +1367,8 @@ def build_site_checks(site):
     ck(site.site_checks, id="crawl.https", category="Rendering & accesso", title="HTTPS",
        status=OK if site.https else FAIL, weight=3, severity="high",
        detail="Attivo." if site.https else "Assente.", recommendation="" if site.https else "Abilita HTTPS.")
-
+    checks_sito_avanzati(site, soup_home, pagine_scoperte or [])
+    checks_cwv(site, cwv)
 
 def run_audit(url, max_pages=20, render=True, respect_robots=False, log=lambda *a: None):
     """Esegue un audit completo e ritorna un dict con l'HTML del report e i metadati.
@@ -907,8 +1393,9 @@ def run_audit(url, max_pages=20, render=True, respect_robots=False, log=lambda *
     base = home.final_url
     home_soup = BeautifulSoup(home.html, "lxml")
     site = build_site(base)
-    build_site_checks(site)
     urls = discover(home_soup, base, site.sitemap_urls, max_pages)
+    cwv = leggi_cwv(base, os.environ.get("PAGESPEED_API_KEY", ""))
+    build_site_checks(site, home_soup, urls, cwv)
     log(f"Analizzo {len(urls)} pagine...")
     pages = []
     for u in urls:
