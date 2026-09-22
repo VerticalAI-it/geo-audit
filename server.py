@@ -2472,6 +2472,31 @@ async def api_cron_ai(request: Request):
         esito = await run_in_threadpool(
             ai_giro.esegui_giro, project["id"], project["domain"], conf["chiavi"],
             _CRON_AI_BUDGET, bool(s_.get("sentiment_enabled", True)), conf["modelli"])
+
+        if esito.get("esito") == "nessuna_domanda":
+            # ⚠️ Il progetto non e' mai stato preparato. Prima questo caso
+            # usciva dalla funzione, e siccome 27 progetti su 28 non avevano
+            # domande il cron si fermava sul primo e non faceva MAI niente:
+            # una settimana di passaggi a vuoto senza lasciare traccia.
+            #
+            # Adesso e' il cron a preparare il progetto. Le domande nascono
+            # DA APPROVARE (richiesta di Francesco dell'8 settembre), quindi
+            # questo passaggio finisce qui: il giro vero parte quando il team
+            # le ha guardate.
+            try:
+                quante = await run_in_threadpool(
+                    ai_giro.prepara_progetto, project["id"], project["domain"],
+                    project.get("sector") or "", conf["chiavi"])
+            except Exception as e:
+                print(f"[cron-ai] {project.get('domain')}: generazione fallita {e!r}")
+                continue
+            if not quante:
+                # nessun audit ancora: le domande si scrivono leggendo le
+                # pagine vere, non indovinando dal nome del dominio
+                continue
+            return {"progetto": project["domain"], "esito": "domande_generate",
+                    "domande": quante, "nota": "in attesa di approvazione dal team"}
+
         if esito.get("esito") == "da_approvare":
             # niente da fare qui finche' il team non approva: si passa al
             # progetto dopo, invece di restare fermi su questo

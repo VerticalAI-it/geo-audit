@@ -248,6 +248,40 @@ r = c.get(f"/admin/progetti/{PID}/ai")
 controlla("e non vede il pannello (404, non 403)", r.status_code == 404)
 server._current_user = lambda req: (UTENTE, None)
 
+# ── 6b. il cron non deve restare fermo ─────────────────────────────────────
+print("\nIl cron del monitoraggio")
+_segreto = server._CRON_SECRET
+server._CRON_SECRET = ""
+try:
+    # ⚠️ Il controllo che conta: il cron NON deve mai tornare «nessuna_domanda».
+    # Fino al 22/09 lo faceva — usciva sul primo progetto della coda, e siccome
+    # 27 progetti su 28 non avevano domande non e' partito niente per una
+    # settimana, senza lasciare una riga da nessuna parte.
+    r = c.get("/api/cron-ai")
+    e = r.json()
+    controlla("un passaggio del cron non torna «nessuna_domanda»",
+              e.get("esito") != "nessuna_domanda", str(e)[:120])
+    controlla("e fa qualcosa di sensato",
+              e.get("esito") in ("domande_generate", "completato", "parziale",
+                                 "niente_da_fare", "nessuna_chiave"), str(e)[:120])
+finally:
+    server._CRON_SECRET = _segreto
+
+# un progetto senza audit non riceve domande: il generatore indovinerebbe il
+# mercato dal nome del dominio, che e' l'errore di amahorse
+_senza_audit = next((p for p in progetti
+                     if not db._sb_audits_by_project(p["id"], limit=1)
+                     and not db._sb_ai_domande(p["id"])), None)
+if _senza_audit:
+    n_prima = len(db._sb_ai_domande(_senza_audit["id"]))
+    ai_giro.prepara_progetto(_senza_audit["id"], _senza_audit.get("domain") or "",
+                             "", ai_giro.chiavi_configurate()["chiavi"])
+    controlla("senza audit non si generano domande",
+              len(db._sb_ai_domande(_senza_audit["id"])) == n_prima,
+              _senza_audit.get("domain"))
+else:
+    print("   -- nessun progetto senza audit: salto")
+
 # ── 7. due fette di un giro vero ───────────────────────────────────────────
 if "--giro" in sys.argv:
     print("\nIl giro a fette (spende)")

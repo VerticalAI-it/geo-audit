@@ -170,9 +170,19 @@ def _chiedi_senza_cercare(provider: str, richiesta: str, chiave: str) -> str:
 
 
 def prepara_progetto(project_id: str, dominio: str, settore: str, chiavi: dict) -> int:
-    """Crea le domande di un progetto che non ne ha. Torna quante ne ha create."""
+    """Crea le domande di un progetto che non ne ha. Torna quante ne ha create.
+
+    ⚠️ Serve un audit gia' fatto: le domande si scrivono leggendo le pagine
+    vere del sito (`com_e_fatto_il_sito`), e senza quelle il modello indovina
+    il settore dal nome del dominio. E' l'errore di amahorse — dieci domande
+    da e-commerce a un gruppo industriale, visibilita' 0% su un mercato in cui
+    quel sito non gioca. Meglio aspettare il primo audit che generare domande
+    su cui poi si misurera' per mesi.
+    """
     if _sb_ai_domande(project_id):
         return 0                       # ce le ha già: non si sovrascrive niente
+    if not com_e_fatto_il_sito(project_id):
+        return 0                       # nessun audit: non si indovina il mercato
 
     chiave = chiavi.get("anthropic") or chiavi.get("openai") or chiavi.get("gemini")
     provider = ("anthropic" if chiavi.get("anthropic") else
