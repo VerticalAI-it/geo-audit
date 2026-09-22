@@ -235,15 +235,50 @@ def _barra_semplice(valore: int, classe: str = "warn") -> str:
             f'style="--w:{valore}%"></div></div>')
 
 
-def _kpi_semplice(valore, etichetta: str, sotto: str = "", classe: str = "") -> str:
+# ── 7.1 · da dove viene ogni numero ────────────────────────────────────────
+#
+# ⚠️ Il principio, scritto nella roadmap: **mai dire «ricerche su ChatGPT»
+# quando il dato e' un referral identificato o un panel monitorato.** Sono
+# cose diverse, e chi legge un cruscotto assume che un numero sia misurato
+# finche' qualcuno non gli dice il contrario.
+#
+# Il badge su ogni tessera dichiara la natura del dato, e il titolo spiega
+# come si ottiene. Costa poco e toglie ambiguita' proprio dove sarebbe piu'
+# dannosa: fra cio' che abbiamo osservato e cio' che abbiamo dedotto.
+PROVENIENZA = {
+    "audit":      ("AUDIT", "Rilevato dal nostro crawler leggendo le pagine del sito."),
+    "misurato":   ("MISURATO", "Osservato sul sito dallo snippet di tracking: sono "
+                               "passaggi ed eventi realmente accaduti."),
+    "monitorato": ("MONITORATO", "Ricavato da domande poste davvero agli assistenti AI "
+                                 "e ripetute a intervalli regolari."),
+    "piattaforma": ("PIATTAFORMA", "Fornito da un servizio esterno."),
+    "stimato":    ("STIMATO", "Dedotto da segnali indiretti, non misurato direttamente."),
+}
+
+
+def _badge_provenienza(tipo: str) -> str:
+    voce = PROVENIENZA.get(tipo)
+    if not voce:
+        return ""
+    sigla, spiega = voce
+    return (f'<span class="prov prov--{tipo}" title="{geo_audit.esc(spiega)}">'
+            f'{sigla}</span>')
+
+
+def _kpi_semplice(valore, etichetta: str, sotto: str = "", classe: str = "",
+                  provenienza: str = "") -> str:
     """Una tessera della `.kpi-strip` del design system.
 
     Sta qui e non dentro una singola scheda perche' la usano in due, e due copie
     della stessa tessera divergono al primo ritocco.
+
+    `provenienza` e' una chiave di `PROVENIENZA`: dichiara se il numero e'
+    stato misurato, monitorato o dedotto.
     """
     return (
         '<div class="kpi">'
-        f'<div class="kpi-top"><span class="kpi-label">{etichetta}</span></div>'
+        f'<div class="kpi-top"><span class="kpi-label">{etichetta}</span>'
+        f'{_badge_provenienza(provenienza)}</div>'
         f'<div class="kpi-value-row"><span class="kpi-value {classe}">{valore}</span></div>'
         + (f'<div class="kpi-sub">{sotto}</div>' if sotto else '')
         + '</div>'
@@ -949,9 +984,10 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
     aree = (latest.get("areas") or []) if latest else []
     peggiore = min(aree, key=lambda a: a.get("score", 100)) if aree else None
 
-    def kpi(etichetta, valore, classe, sotto):
+    def kpi(etichetta, valore, classe, sotto, provenienza=""):
         return ('<div class="kpi">'
-                f'<div class="kpi-top"><span class="kpi-label">{geo_audit.esc(etichetta)}</span></div>'
+                f'<div class="kpi-top"><span class="kpi-label">{geo_audit.esc(etichetta)}</span>'
+                f'{_badge_provenienza(provenienza)}</div>'
                 f'<div class="kpi-value {classe}">{geo_audit.esc(valore)}</div>'
                 f'<div class="kpi-sub">{geo_audit.esc(sotto)}</div>'
                 '</div>')
@@ -959,15 +995,15 @@ def _tab_overview(project_id: str, latest: dict | None, previous: dict | None,
     cls_issue = "critical" if (critici or 0) > 0 else ("warn" if open_issues else "good")
     kpis = ('<div class="kpi-strip">'
             + kpi("Issue aperte", open_issues if open_issues is not None else "\u2014",
-                  cls_issue, f"{resolved_recent} risolte di recente")
+                  cls_issue, f"{resolved_recent} risolte di recente", "audit")
             + kpi("Criticità", critici if critici is not None else "\u2014",
                   "critical" if (critici or 0) > 0 else "good",
-                  "check falliti nell'ultimo audit")
+                  "check falliti nell'ultimo audit", "audit")
             + kpi("Pagine analizzate", pagine if pagine is not None else "\u2014",
-                  "", "nell'ultimo audit")
+                  "", "nell'ultimo audit", "audit")
             + kpi("Area più debole",
                   f'{peggiore["score"]}' if peggiore else "\u2014", "warn",
-                  peggiore["key"] if peggiore else "nessun dato per area")
+                  peggiore["key"] if peggiore else "nessun dato per area", "audit")
             + '</div>')
 
     # _overview_sections_grid stampa gia' il proprio titolo
@@ -1470,6 +1506,60 @@ def _rimedi_per_check(latest: dict | None) -> dict:
     return rimedi
 
 
+_GRAVITA_CLASSE = {"critical": "critical", "high": "critical", "medium": "warn",
+                   "low": "good", "info": "good"}
+
+
+def _roadmap_90(project_id: str, issues: list, latest: dict | None) -> str:
+    """7.2 · Le criticità aperte diventano un piano in tre fasi da 30 giorni.
+
+    ⚠️ L'ordine delle fasi è per DIPENDENZE, non per gravità: sistemare le FAQ
+    su un sito che blocca GPTBot è lavoro sprecato, perché nessuno le leggerà.
+    Per questo `crawl.ai` — il check più grave del catalogo — sta in fase 1
+    accanto a cose molto meno gravi ma altrettanto bloccanti.
+    """
+    import roadmap90
+    fasi = roadmap90.costruisci(issues, _rimedi_per_check(latest))
+    if not roadmap90.quante_voci(fasi):
+        return ""
+
+    blocchi = ""
+    for f in fasi:
+        if not f["voci"]:
+            corpo = ('<p class="card-desc" style="padding:12px 20px;margin:0">'
+                     'Niente da fare in questa fase: è già a posto.</p>')
+        else:
+            righe = ""
+            for v in f["voci"]:
+                pagine = (f'<span class="issue-count">{v["pagine"]}</span> '
+                          + ("pagina" if v["pagine"] == 1 else "pagine"))
+                righe += (
+                    '<div class="interv-item"><div class="interv-top">'
+                    f'<span class="badge badge--{"danger" if _GRAVITA_CLASSE[v["gravita"]] == "critical" else ("warning" if _GRAVITA_CLASSE[v["gravita"]] == "warn" else "neutral")}">'
+                    f'{geo_audit.esc(v["gravita"])}</span>'
+                    f'<span class="interv-title">{geo_audit.esc(v["titolo"])}</span>'
+                    f'<span class="interv-action">{pagine}</span></div>'
+                    + (f'<p class="interv-desc">{geo_audit.esc(v["rimedio"])}</p>'
+                       if v["rimedio"] else "")
+                    + '</div>')
+            righe = f'<div class="interv-list">{righe}</div>'
+            corpo = righe
+        blocchi += (
+            '<div class="data-card" style="margin-bottom:14px">'
+            '<div class="section-header">'
+            f'<div class="section-title">{geo_audit.esc(f["titolo"])}</div>'
+            f'<div class="card-desc">{geo_audit.esc(f["sottotitolo"])}</div></div>'
+            f'{corpo}</div>')
+
+    return (
+        '<div class="card-title" style="margin:26px 0 6px">Piano a 90 giorni</div>'
+        '<p class="card-sub" style="margin-bottom:14px">Le criticità aperte '
+        'raggruppate in tre fasi da trenta giorni. L’ordine segue le '
+        '<b>dipendenze</b>, non la gravità: finché il sito non è '
+        'leggibile dagli assistenti, il lavoro sul contenuto non produce effetti.</p>'
+        + blocchi)
+
+
 def _tab_opportunities(project_id: str, latest: dict | None = None) -> str:
     """Criticità del progetto: filtri, raggruppamento e paginazione reale.
 
@@ -1509,6 +1599,9 @@ def _tab_opportunities(project_id: str, latest: dict | None = None) -> str:
     aperte = len([d for d in dati if d["stato"] == "aperta"])
     risolte = len(dati) - aperte
 
+    # la roadmap chiude la scheda: prima si vede cosa non va, poi in che
+    # ordine affrontarlo
+    coda_roadmap = _roadmap_90(project_id, issues, latest)
     return (
         '<div class="filter-bar">'
         '<div class="search-mini">'
@@ -1759,6 +1852,7 @@ def _tab_opportunities(project_id: str, latest: dict | None = None) -> str:
         })();
         """
         '</script>'
+        + coda_roadmap
     )
 
 
@@ -1955,10 +2049,13 @@ def _tab_traffic(project: dict) -> str:
     # già responsive (4 → 2 colonne).
     kpi = (
         '<div class="kpi-strip">'
-        + _kpi_semplice(len(crawler_hits), "Passaggi di crawler AI", "ultimi 30 giorni", "good")
-        + _kpi_semplice(total_sessions, "Sessioni", "ultimi 30 giorni")
-        + _kpi_semplice(ai_count, "Sessioni da AI", "arrivate da un assistente", "good")
-        + _kpi_semplice(f"{ai_pct}%", "Quota AI", "sul totale delle sessioni")
+        + _kpi_semplice(len(crawler_hits), "Passaggi di crawler AI", "ultimi 30 giorni",
+                        "good", "misurato")
+        + _kpi_semplice(total_sessions, "Sessioni", "ultimi 30 giorni", "", "misurato")
+        + _kpi_semplice(ai_count, "Sessioni da AI", "arrivate da un assistente",
+                        "good", "misurato")
+        + _kpi_semplice(f"{ai_pct}%", "Quota AI", "sul totale delle sessioni",
+                        "", "misurato")
         + '</div>'
     )
 
@@ -2223,15 +2320,16 @@ def _tab_reports(project: dict, prefs: dict | None = None, invii: list | None = 
                         "Punteggio GEO",
                         (f'{freccia}{abs(r["delta"])} punti in {r["giorni"]} giorni'
                          if r["delta"] else f'{r["audit_fatti"]} audit nel periodo'),
-                        classe_delta)
-        + _kpi_semplice(r["risolte"], "Criticità risolte", f'negli ultimi {r["giorni"]} giorni', "good")
+                        classe_delta, "audit")
+        + _kpi_semplice(r["risolte"], "Criticità risolte", f'negli ultimi {r["giorni"]} giorni',
+                        "good", "audit")
         + _kpi_semplice(r["aperte"], "Criticità aperte",
                         (_plurale(r["nuove"], "comparsa", "comparse") + " nel periodo")
-                        if r["nuove"] else "nessuna nuova")
+                        if r["nuove"] else "nessuna nuova", "", "audit")
         + _kpi_semplice(r["crawler"] if r["crawler"] is not None else "—", "Passaggi di crawler AI",
                         "tracking non installato" if not r["tracking"]
                         else _plurale(r["sessioni_ai"], "visita da AI", "visite da AI"),
-                        "good" if r["crawler"] else "")
+                        "good" if r["crawler"] else "", "misurato")
         + '</div>'
     )
 
@@ -2336,6 +2434,11 @@ def _pannello_invii(project: dict, r: dict, prefs: dict, invii: list) -> str:
                        "Avvisa quando un audit trova una criticità di gravità critica "
                        "che prima non c'era.",
                        bool(prefs.get("alert_new_critical")))
+        + _riga_avviso("alert_traffico_ai", "Cambio di passo degli assistenti AI",
+                       "Avvisa se in una settimana i passaggi dei crawler AI raddoppiano "
+                       "o si dimezzano rispetto alle tre settimane precedenti. Al massimo "
+                       "un avviso a settimana, e mai su numeri troppo piccoli per contare.",
+                       bool(prefs.get("alert_traffico_ai")))
         + _riga_avviso("alert_competitor_overtake", "Sorpasso di un concorrente", "",
                        False, spento_per_sempre=True,
                        motivo="Avviserà quando un concorrente seguito supererà il tuo "
