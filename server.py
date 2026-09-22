@@ -18,6 +18,7 @@ import ai_giro
 import ai_monitor
 import ai_schermate
 import geo_audit
+import piani
 
 # ── moduli interni ───────────────────────────────────────────────────────────
 from config import FROM_EMAIL, RESEND_KEY, SITE_URL, SUPABASE_ANON, SUPABASE_URL, _SECRET
@@ -45,10 +46,11 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_ai_impostazioni, _sb_ai_impostazioni_salva, _sb_ai_domande, _sb_ai_domande_da_approvare, \
     _sb_ai_domanda_approva, _sb_ai_domanda_crea, _sb_ai_domanda_modifica, _sb_ai_domanda_elimina, \
     _sb_ai_argomenti, _sb_ai_argomento_crea, _sb_ai_concorrenti, _sb_ai_concorrente_aggiungi, \
-    _sb_ai_concorrente_escludi, _sb_ai_progetti_da_girare, _sb_llm_config, _sb_llm_config_salva, \
+    _sb_ai_concorrente_escludi, _sb_ai_progetti_da_girare, _sb_project_piano, \
+    _sb_llm_config, _sb_llm_config_salva, \
     _sb_llm_modelli, _sb_llm_modelli_salva
 from views import _COMING_SOON_TABS, _ROADMAP_COLONNE, _SEZIONI_CAMPIONE, _TAB_CATEGORIES, \
-    _coming_soon_tab, _roadmap_colonne_html, _roadmap_live_html, \
+    _coming_soon_tab, pannello_teaser, _roadmap_colonne_html, _roadmap_live_html, \
     _dashboard_summary_banner, _fmt_date, _portfolio_sparkline, _project_actions, \
     _project_status, _sidebar, _subtabs, _tab_audit, _tab_campione, _tab_opportunities, \
     _tab_overview, _tab_pages, _tab_reports, _tab_settings, _tab_technical, _tab_traffic, \
@@ -2824,6 +2826,26 @@ async def _admin_ai_azione(request: Request, project_id: str):
     return user, project, body, None
 
 
+@app.post("/admin/progetti/{project_id}/piano")
+async def admin_progetto_piano(request: Request, project_id: str):
+    """6.2 · Assegna il piano a un progetto, dal pannello."""
+    user, project, body, err = await _admin_ai_azione(request, project_id)
+    if err:
+        return err
+    piano = (body.get("piano") or "").strip().lower()
+    if piano not in piani.PIANI:
+        return JSONResponse({"esito": "piano_non_valido"}, status_code=400)
+    if not _sb_project_piano(project_id, piano, chi=user.get("email") or ""):
+        # ⚠️ La colonna `plan` arriva con la fase I: finche' non c'e', il
+        # salvataggio non riesce e lo si DICE, invece di rispondere ok e
+        # lasciare il pannello a mostrare un piano che non e' stato scritto.
+        return JSONResponse(
+            {"esito": "la colonna dei piani non esiste ancora sul database"},
+            status_code=503)
+    _admin_traccia(user, f"piano_{piano}", project.get("domain") or project_id)
+    return JSONResponse({"esito": "ok", "piano": piano})
+
+
 @app.post("/admin/progetti/{project_id}/ai/impostazioni")
 async def admin_progetto_ai_impostazioni(request: Request, project_id: str):
     user, project, body, err = await _admin_ai_azione(request, project_id)
@@ -3347,7 +3369,14 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
     aperte = len([i for i in _sb_issues_by_project(project_id, status="open")])
 
     if tab in _SCHEDE_AI:
-        body = ai_schermate.scheda_cliente(tab, project)
+        # ⚠️ Il controllo sta QUI, sul server, non nel CSS della pagina: una
+        # patina grigia si toglie con l'ispettore del browser, e sotto ci
+        # sarebbero i dati veri.
+        funzione = {"citations": "citazioni", "competitors": "competitors"}.get(tab)
+        if funzione and not piani.incluso(project, funzione):
+            body = pannello_teaser(project, funzione)
+        else:
+            body = ai_schermate.scheda_cliente(tab, project)
     elif tab in _SEZIONI_CAMPIONE:
         # sezione non ancora attiva: dati dimostrativi con banner esplicito
         body = _tab_campione(tab, project.get("domain") or project.get("name") or "")
@@ -3380,7 +3409,7 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
         # L'ultimo audit serve per i testi «come si risolve»: le issue salvano
         # il problema, non il rimedio (vedi `_rimedi_per_check`).
         latest_full = _sb_audits_by_project(project_id, limit=1, full=True)
-        body = _tab_opportunities(project_id, latest_full[0] if latest_full else None)
+        body = _tab_opportunities(project_id, latest_full[0] if latest_full else None, project)
     elif tab == "traffic":
         body = _tab_traffic(project)
     elif tab == "reports":

@@ -444,6 +444,42 @@ def _sb_project_get(project_id: str) -> dict | None:
     return d[0] if d else None
 
 
+_PIANO_C_E = None
+
+
+def _piano_c_e() -> bool:
+    """Se la colonna `plan` esiste gia' (fase I).
+
+    ⚠️ Stessa ragione delle fasi G e H: il codice esce prima della migrazione,
+    e nel frattempo il prodotto deve continuare a funzionare. Senza la colonna
+    ogni progetto risulta «completo», che e' il comportamento di oggi.
+    """
+    global _PIANO_C_E
+    if _PIANO_C_E is None:
+        try:
+            r = req.get(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=10,
+                        params={"select": "plan", "limit": "1"})
+            _PIANO_C_E = r.ok
+        except Exception:
+            return False
+    return bool(_PIANO_C_E)
+
+
+def _sb_project_piano(project_id: str, piano: str, chi: str = "") -> bool:
+    """Assegna il piano a un progetto. Torna False se la colonna non c'e'."""
+    if not _piano_c_e() or piano not in ("free", "paid"):
+        return False
+    try:
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=15,
+                      params={"id": f"eq.{project_id}"},
+                      json={"plan": piano,
+                            "plan_updated_at": datetime.now(timezone.utc).isoformat(),
+                            "plan_updated_by": chi or None})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
 def _sb_project_patch(project_id: str, data: dict) -> None:
     data = {**data, "updated_at": datetime.now(timezone.utc).isoformat()}
     req.patch(f"{SUPABASE_URL}/rest/v1/project",
