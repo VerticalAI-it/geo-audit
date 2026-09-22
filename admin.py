@@ -1060,6 +1060,25 @@ def schermata_interesse(richieste: list, audit_per_id: dict, account: set,
 
     return kpi + sezione_richieste + sezione_iscritti + sezione_voti
 
+def _scelta_piano(p: dict) -> str:
+    """La tendina che assegna il piano a un progetto.
+
+    ⚠️ Un progetto senza piano scritto vale «Completo», ed e' dichiarato nella
+    tendina: i progetti nati prima dei piani vedono tutto, e farli diventare
+    Base in silenzio toglierebbe funzioni a chi le sta usando.
+    """
+    import piani
+    attuale = piani.piano_del_progetto(p)
+    mai_scelto = not (p.get("plan") or "").strip()
+    voci = "".join(
+        f'<option value="{k}"{" selected" if k == attuale else ""}>{piani.NOME_PIANO[k]}'
+        + (" (predefinito)" if mai_scelto and k == piani.PAID else "")
+        + "</option>"
+        for k in piani.PIANI)
+    return (f'<select class="ai-select" data-piano="{geo_audit.esc(p["id"])}" '
+            'style="min-width:130px;font-size:12px;padding:5px 8px">' + voci + "</select>")
+
+
 def schermata_cliente(c: dict, accessi: list, note: list, audit: list,
                       con_tracking: set, chi_sono: str) -> str:
     """La scheda di un singolo cliente: chi è, cosa segue, come sta andando.
@@ -1127,10 +1146,11 @@ def schermata_cliente(c: dict, accessi: list, note: list, audit: list,
                 f'{punteggio if punteggio is not None else "—"}</td>'
                 f'<td>{_quando(a.get("created_at")) if a else "nessun audit"}</td>'
                 f'<td>{tracc}</td>'
+                f'<td>{_scelta_piano(p)}</td>'
                 f'<td><a class="activity-link" href="/admin/progetti/{p["id"]}/ai">⚙ Configura</a></td></tr>')
         blocco_progetti = ('<div class="tab-wrap" style="margin-bottom:22px">'
                            '<table class="tab"><thead><tr>'
-                           '<th>Sito</th><th>Punteggio</th><th>Ultimo audit</th><th>Tracking</th><th>AI Monitoring</th>'
+                           '<th>Sito</th><th>Punteggio</th><th>Ultimo audit</th><th>Tracking</th><th>Piano</th><th>AI Monitoring</th>'
                            f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
     else:
         blocco_progetti = ('<div class="vuoto" style="margin-bottom:22px">'
@@ -1210,4 +1230,29 @@ def schermata_cliente(c: dict, accessi: list, note: list, audit: list,
               'margin:4px 0 12px">Progetti</div>' + blocco_progetti
             + blocco_note
             + '<div style="font-family:var(--font-display);font-size:17px;font-weight:600;'
-              'margin:4px 0 12px">Accessi</div>' + blocco_accessi)
+              'margin:4px 0 12px">Accessi</div>' + blocco_accessi
+            + _JS_PIANO)
+
+
+# Il cambio di piano si salva al volo, senza un bottone «salva»: e' una
+# tendina sola, e un modulo con un bottone per una tendina si dimentica
+# aperto.
+_JS_PIANO = """<script>
+document.querySelectorAll('select[data-piano]').forEach(function(s){
+  s.addEventListener('change', function(){
+    var prima = s.dataset.prima || '';
+    fetch('/admin/progetti/' + s.dataset.piano + '/piano', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({piano: s.value})
+    }).then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      s.dataset.prima = s.value;
+      s.style.outline = '2px solid var(--state-good)';
+      setTimeout(function(){ s.style.outline = ''; }, 1200);
+    }).catch(function(e){
+      alert('Non sono riuscito a cambiare il piano: ' + e.message);
+      if(prima) s.value = prima;
+    });
+  });
+});
+</script>"""

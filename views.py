@@ -533,6 +533,35 @@ def _tab_campione(chiave: str, dominio: str) -> str:
     return _banner_campione(dominio, cosa_serve) + costruisci(dominio)
 
 
+def pannello_teaser(project: dict, funzione: str) -> str:
+    """6.1 · Il pannello che compare al posto di una funzione non inclusa.
+
+    ⚠️ Dichiara di essere bloccato. Il documento chiede il «placeholder
+    greyed-out» come leva di vendita — mostrare che la funzione esiste anche
+    quando non la si calcola — ma mostrarla e far credere che stia caricando
+    sono due cose diverse: la seconda e' una bugia, e il cliente se ne accorge
+    al secondo tentativo.
+
+    ⚠️ E non si inventano numeri sotto la patina grigia. Un'anteprima con dati
+    finti insegna al cliente che i nostri numeri possono essere finti, il
+    giorno che ne vede uno che non torna.
+    """
+    import piani
+    titolo = piani.ETICHETTA.get(funzione, funzione)
+    dominio = geo_audit.esc(project.get("domain") or "")
+    return (
+        '<div class="card coming-soon-card" style="text-align:center;padding:44px 28px">'
+        '<span class="badge badge--neutral"><span class="dot"></span>Non compreso nel piano Base</span>'
+        f'<h2 style="margin:14px 0 8px">{geo_audit.esc(titolo)}</h2>'
+        '<p class="card-sub" style="max-width:540px;margin:0 auto 18px">Questa parte c’è '
+        f'e funziona, ma per <b>{dominio}</b> non è attiva: il progetto è sul piano '
+        'Base. Non stiamo calcolando questi dati, quindi qui sotto non c’è niente da '
+        'mostrare — nemmeno un esempio.</p>'
+        '<a class="btn btn-primary" href="mailto:info@verticalai.it?subject='
+        f'{geo_audit.esc(titolo)}%20per%20{dominio}">Parlane con VerticalAI →</a>'
+        '</div>')
+
+
 def _coming_soon_tab(title: str, description: str) -> str:
     return (
         '<div class="card coming-soon-card">'
@@ -1506,11 +1535,78 @@ def _rimedi_per_check(latest: dict | None) -> dict:
     return rimedi
 
 
+def _per_assistente(latest: dict | None, progetto: dict | None = None) -> str:
+    """6.3 · Da dove partire, assistente per assistente.
+
+    ⚠️ Qui NON ci sono quattro punteggi, ed è una scelta presa sui dati. I
+    sotto-punteggi per motore esistono (`punteggi_motore.per_motore`) ma sui
+    progetti veri cadono tutti entro 2-3 punti: quattro numeri quasi identici
+    affermano una differenza che non c'è, e su una funzione a pagamento è
+    peggio che non averla.
+
+    ⚠️ Gli ELENCHI invece si separano: misurati su 29 progetti, in 25 almeno
+    due motori danno un ordine diverso. Quello è il contenuto utile, ed è
+    quello che il cliente vede.
+    """
+    import piani
+    import punteggi_motore as pm
+    if not latest:
+        return ""
+    sito = latest.get("site_checks") or []
+    pagine = [c for pg in (latest.get("pages_detail") or []) for c in (pg.get("checks") or [])]
+    if not sito and not pagine:
+        return ""
+    blocchi = pm.priorita_per_motore(sito, pagine, _rimedi_per_check(latest))
+    if not any(b["voci"] for b in blocchi):
+        return ""
+
+    testa = ('<div class="card-title" style="margin:26px 0 6px">Da dove partire, '
+             'assistente per assistente</div>')
+    if not piani.incluso(progetto, "punteggio_motore"):
+        return testa + (
+            '<div class="card coming-soon-card" style="text-align:center;padding:34px 26px">'
+            '<span class="badge badge--neutral"><span class="dot"></span>Piano Base</span>'
+            '<p class="card-sub" style="max-width:540px;margin:12px auto 16px">Gli stessi '
+            'problemi non pesano uguale per i quattro assistenti: ognuno ha un primo '
+            'intervento diverso. L’ordine per motore è compreso nel piano Completo.</p>'
+            '<a class="btn btn-primary" href="mailto:info@verticalai.it?subject='
+            'Priorit%C3%A0%20per%20assistente">Parlane con VerticalAI →</a></div>')
+
+    colonne = ""
+    for b in blocchi:
+        righe = ""
+        for i, v in enumerate(b["voci"], 1):
+            marchio = ('<span class="badge badge--neutral" style="margin-left:6px">conta '
+                       'di più qui</span>' if v["specifico"] else '')
+            rimedio = (f'<div class="card-desc" style="margin-top:4px">'
+                       f'{geo_audit.esc(v["rimedio"])}</div>' if v["rimedio"] else '')
+            righe += (
+                '<li style="padding:10px 0;border-top:1px solid var(--line)">'
+                f'<b>{i}.</b> {geo_audit.esc(v["titolo"] or v["check_id"])}{marchio}'
+                f'<div class="card-desc">su {v["volte"]} '
+                f'{"pagina" if v["volte"] == 1 else "pagine"}</div>{rimedio}</li>')
+        colonne += (
+            '<div class="card" style="padding:16px 18px">'
+            f'<div class="card-title" style="margin:0 0 4px">{geo_audit.esc(b["nome"])}</div>'
+            f'<ul style="list-style:none;margin:0;padding:0">{righe}</ul></div>')
+
+    return testa + (
+        '<p class="card-sub" style="margin:0 0 12px">L’ordine è diverso da motore a '
+        'motore perché i quattro non cercano le stesse cose. '
+        f'{_badge_provenienza("stimato")}</p>'
+        '<div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">'
+        f'{colonne}</div>'
+        '<p class="card-desc" style="margin-top:10px">⚠️ I pesi per motore sono una '
+        'stima ricavata dai criteri che i quattro dichiarano, non una nostra misura. '
+        'Col monitoraggio in corso si potranno correggere sulle citazioni reali.</p>')
+
+
 _GRAVITA_CLASSE = {"critical": "critical", "high": "critical", "medium": "warn",
                    "low": "good", "info": "good"}
 
 
-def _roadmap_90(project_id: str, issues: list, latest: dict | None) -> str:
+def _roadmap_90(project_id: str, issues: list, latest: dict | None,
+                progetto: dict | None = None) -> str:
     """7.2 · Le criticità aperte diventano un piano in tre fasi da 30 giorni.
 
     ⚠️ L'ordine delle fasi è per DIPENDENZE, non per gravità: sistemare le FAQ
@@ -1518,10 +1614,26 @@ def _roadmap_90(project_id: str, issues: list, latest: dict | None) -> str:
     Per questo `crawl.ai` — il check più grave del catalogo — sta in fase 1
     accanto a cose molto meno gravi ma altrettanto bloccanti.
     """
+    import piani
     import roadmap90
     fasi = roadmap90.costruisci(issues, _rimedi_per_check(latest))
     if not roadmap90.quante_voci(fasi):
         return ""
+
+    # Nel piano Base si dice quante cose ci sono da fare e in quante fasi,
+    # ma non quali: il conteggio e' vero e verificabile, l'elenco no.
+    if not piani.incluso(progetto, "roadmap_90"):
+        quante = roadmap90.quante_voci(fasi)
+        return (
+            '<div class="card-title" style="margin:26px 0 6px">Piano a 90 giorni</div>'
+            '<div class="card coming-soon-card" style="text-align:center;padding:34px 26px">'
+            '<span class="badge badge--neutral"><span class="dot"></span>Piano Base</span>'
+            f'<p class="card-sub" style="max-width:520px;margin:12px auto 16px">Dalle '
+            f'criticità qui sopra si ricavano <b>{quante} interventi</b>, ordinati in '
+            'tre fasi da trenta giorni secondo cosa sblocca cosa. L’elenco è '
+            'compreso nel piano Completo.</p>'
+            '<a class="btn btn-primary" href="mailto:info@verticalai.it?subject='
+            'Piano%20a%2090%20giorni">Parlane con VerticalAI →</a></div>')
 
     blocchi = ""
     for f in fasi:
@@ -1560,7 +1672,8 @@ def _roadmap_90(project_id: str, issues: list, latest: dict | None) -> str:
         + blocchi)
 
 
-def _tab_opportunities(project_id: str, latest: dict | None = None) -> str:
+def _tab_opportunities(project_id: str, latest: dict | None = None,
+                       progetto: dict | None = None) -> str:
     """Criticità del progetto: filtri, raggruppamento e paginazione reale.
 
     Manca l'azione "Segna risolto" prevista dal redesign: richiede un terzo
@@ -1601,7 +1714,8 @@ def _tab_opportunities(project_id: str, latest: dict | None = None) -> str:
 
     # la roadmap chiude la scheda: prima si vede cosa non va, poi in che
     # ordine affrontarlo
-    coda_roadmap = _roadmap_90(project_id, issues, latest)
+    coda_roadmap = _roadmap_90(project_id, issues, latest, progetto)
+    coda_roadmap += _per_assistente(latest, progetto)
     return (
         '<div class="filter-bar">'
         '<div class="search-mini">'
