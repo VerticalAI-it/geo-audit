@@ -74,6 +74,20 @@ v = ai_dati.visibilita(PID)
 controlla("AI Visibility: il punteggio e' quello vero",
           f'gauge-score">{v["punteggio"]}<' in h, f"punteggio {v['punteggio']}")
 controlla("quattro motori, non tre", all(n in h for n in ("ChatGPT", "Gemini", "Perplexity", "Claude")))
+# ⚠️ Un motore senza chiave configurata non deve comparire a 0%: zero si legge
+# «non ti cita mai», mentre la verita' e' «non gli abbiamo chiesto niente».
+import ai_schermate as _sch
+_finti = [{"provider": "openai", "nome": "ChatGPT", "colore": "#10A37F", "percentuale": 30,
+           "risposte": 10, "citati": 3, "interrogato": True},
+          {"provider": "gemini", "nome": "Gemini", "colore": "#4285F4", "percentuale": 0,
+           "risposte": 0, "citati": 0, "interrogato": False}]
+_h = _sch.tab_ai_visibility({"domain": "prova.it"}, {
+    "punteggio": 30, "delta": None, "trend": [], "motori": _finti, "argomenti": [],
+    "risposte": 10, "motori_interrogati": 1, "motori_totali": 4, "domande_contate": None})
+controlla("un motore senza chiave dice «non interrogato», non 0%",
+          "non interrogato" in _h and 'area-fill" style="--w:0%' not in _h)
+controlla("e la nota non promette quattro assistenti quando ce n'e' uno",
+          "di 1 assistente su 4" in _h and "dei quattro assistenti" not in _h)
 controlla("nessun residuo di Google AI Overview/Mode", "AI Overview" not in h and "AI Mode" not in h)
 controlla("la legenda competitor e' bloccata col lucchetto", "Confronto competitor" in h and "not-allowed" in h)
 controlla("gli argomenti sono quelli veri", v["argomenti"][0]["nome"] in h)

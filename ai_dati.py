@@ -86,12 +86,18 @@ def visibilita(project_id: str, giorni: int = 30) -> dict:
         c = per_provider.setdefault(p, {"risposte": 0, "citati": 0})
         c["risposte"] += 1
         c["citati"] += 1 if e["id"] in b["run_citati"] else 0
+    # ⚠️ Un motore senza risposte NON vale zero per cento. Zero vuol dire
+    # «gli abbiamo chiesto e non ci ha mai citati»; nessuna risposta vuol dire
+    # «non gliel'abbiamo chiesto», di solito perche' la sua chiave API non e'
+    # configurata. Mostrarli allo stesso modo mette in bocca al prodotto
+    # un'affermazione che non ha misurato.
     motori = []
     for p in _ORDINE_PROVIDER:
         c = per_provider.get(p, {"risposte": 0, "citati": 0})
         motori.append({"provider": p, "nome": PROVIDER_NOME[p], "colore": PROVIDER_COLORE[p],
                        "percentuale": _pct(c["citati"], c["risposte"]),
-                       "risposte": c["risposte"], "citati": c["citati"]})
+                       "risposte": c["risposte"], "citati": c["citati"],
+                       "interrogato": c["risposte"] > 0})
 
     # per argomento
     per_topic = defaultdict(lambda: {"risposte": 0, "citati": 0})
@@ -115,8 +121,14 @@ def visibilita(project_id: str, giorni: int = 30) -> dict:
     if foto and foto[0].get("delta_vs_previous") is not None:
         delta = round(float(foto[0]["delta_vs_previous"]), 1)
 
+    attivi = [m for m in motori if m["interrogato"]]
     return {"punteggio": punteggio, "delta": delta, "trend": trend, "motori": motori,
             "argomenti": argomenti, "risposte": len(b["esecuzioni"]),
+            # su quanti motori il punteggio e' davvero misurato: con una sola
+            # chiave configurata non e' «la visibilita' sugli assistenti», e'
+            # la visibilita' su quell'assistente
+            "motori_interrogati": len(attivi),
+            "motori_totali": len(motori),
             "domande_contate": (foto[0].get("prompts_counted") if foto else None)}
 
 

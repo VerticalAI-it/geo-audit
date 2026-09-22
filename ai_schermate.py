@@ -143,19 +143,40 @@ def tab_ai_visibility(project: dict, d: dict) -> str:
     dominio = project.get("domain") or ""
     p = d["punteggio"]
     etichetta, cls = ai_dati.fascia(p)
+    # ⚠️ «i quattro assistenti» era scritto a mano e poteva essere falso: con
+    # una sola chiave configurata il punteggio misura un assistente solo, e
+    # chiamarlo visibilita' sugli assistenti sarebbe una promessa non mantenuta.
+    n_att, n_tot = d.get("motori_interrogati", 0), d.get("motori_totali", 4)
+    quali = ("dei quattro assistenti" if n_att >= n_tot
+             else f'di {n_att} assistente su {n_tot}' if n_att == 1
+             else f'di {n_att} assistenti su {n_tot}')
     if d["delta"] is None:
-        nota = f'Calcolato su {d["risposte"]} risposte dei quattro assistenti negli ultimi 30 giorni.'
+        nota = f'Calcolato su {d["risposte"]} risposte {quali}, negli ultimi 30 giorni.'
     else:
         segno = "+" if d["delta"] > 0 else ""
         nota = (f'{segno}{d["delta"]} punti rispetto al giro precedente'
-                + (f', su {d["domande_contate"]} domande comuni a tutti i motori.' if d["domande_contate"] else '.'))
+                + (f', su {d["domande_contate"]} domande comuni a tutti i motori interrogati.'
+                   if d["domande_contate"] else '.'))
 
-    motori = "".join(
-        f'<div class="engine-row"><div class="engine-name"><span class="legend-dot" '
-        f'style="background:{m["colore"]};margin-right:6px"></span>{esc(m["nome"])}</div>'
-        f'<div class="area-track"><div class="area-fill" style="--w:{m["percentuale"]}%;background:{m["colore"]}"></div></div>'
-        f'<div class="area-value" title="{m["citati"]} risposte su {m["risposte"]}">{m["percentuale"]}%</div></div>'
-        for m in d["motori"])
+    def _riga_motore(m):
+        pallino = (f'<span class="legend-dot" style="background:{m["colore"]};'
+                   'margin-right:6px"></span>')
+        if not m["interrogato"]:
+            # ⚠️ Non una barra vuota con «0%»: quella si legge «non ti cita
+            # mai». Qui la verita' e' che non gli abbiamo chiesto niente.
+            return (f'<div class="engine-row" style="opacity:.6"><div class="engine-name">'
+                    f'{pallino}{esc(m["nome"])}</div>'
+                    '<div class="area-track"></div>'
+                    '<div class="area-value" style="font-size:11px;white-space:nowrap" '
+                    'title="La chiave API di questo assistente non e’ configurata: '
+                    'non gli e’ stata posta nessuna domanda">non interrogato</div></div>')
+        return (f'<div class="engine-row"><div class="engine-name">{pallino}{esc(m["nome"])}</div>'
+                f'<div class="area-track"><div class="area-fill" style="--w:{m["percentuale"]}%;'
+                f'background:{m["colore"]}"></div></div>'
+                f'<div class="area-value" title="{m["citati"]} risposte su {m["risposte"]}">'
+                f'{m["percentuale"]}%</div></div>')
+
+    motori = "".join(_riga_motore(m) for m in d["motori"])
 
     if d["argomenti"]:
         righe = "".join(
