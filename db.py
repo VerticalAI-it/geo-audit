@@ -1086,12 +1086,17 @@ _REPORT_PREF_DEFAULT = {
     "alert_new_critical": True,
     # Resta spento e non si accende: dipende da Competitors, che non esiste.
     "alert_competitor_overtake": False,
-    # ⚠️ Nasce SPENTO, a differenza degli altri due. Gli avvisi sul punteggio
-    # partono dopo un audit, che e' un evento raro e deliberato; questo guarda
-    # il traffico, che oscilla da solo. Acceso di default manderebbe email a
-    # chi non le ha chieste, e dopo tre nessuno legge piu' nemmeno quelle che
-    # contano.
-    "alert_traffico_ai": False,
+    # Acceso per tutti su decisione di Francesco (24/09). Nasceva SPENTO per
+    # una ragione che resta valida — gli altri avvisi scattano dopo un audit,
+    # che e' un evento voluto e raro, mentre il traffico oscilla da solo, e
+    # dopo tre email inutili non si legge piu' nemmeno quella che conta.
+    #
+    # Cio' che rende accettabile accenderlo sono le due condizioni sotto, non
+    # il fatto che sia acceso: serve un RADDOPPIO (o un dimezzamento) E almeno
+    # 20 passaggi nella settimana. Senza il minimo, «da 3 visite a 6» sarebbe
+    # un +100% e partirebbe un allarme su niente. Chi alza il default senza
+    # guardare quelle due soglie riapre esattamente il problema di prima.
+    "alert_traffico_ai": True,
     # ⚠️ La volonta' del cliente, e sta APPOSTA in un campo suo invece che nella
     # frequenza. Se il «disiscriviti» dell'email scrivesse `frequency = off`,
     # basterebbe che qualcuno dal pannello rimettesse «Mensile» — in buona fede,
@@ -1203,6 +1208,37 @@ def _sb_report_log_scrivi(project_id: str, tipo: str, destinatario: str) -> None
                        "properties": {"report_type": tipo, "sent_to": destinatario}})
     except Exception:
         pass
+
+
+def _sb_log_globale_scrivi(tipo: str, a_chi: str) -> None:
+    """Registra un invio che NON riguarda un progetto solo.
+
+    ⚠️ Esiste perché `_sb_report_log_scrivi` vuole un `project_id`, e il
+    riepilogo delle approvazioni è uno per tutti. Passandogli stringa vuota la
+    guardia anti-doppione rispondeva `400 invalid input syntax for type uuid`,
+    quindi non funzionava mai e l'email poteva ripartire a ogni invocazione —
+    difetto trovato collaudando, non in teoria. La colonna accetta NULL.
+    """
+    try:
+        if _report_tabella_c_e("report_log"):
+            req.post(f"{SUPABASE_URL}/rest/v1/report_log", headers=_SB_H, timeout=10,
+                     json={"project_id": None, "report_type": tipo, "sent_to": a_chi})
+    except Exception:
+        pass
+
+
+def _sb_log_globale_ultimo(tipo: str) -> str | None:
+    """Quando è partito l'ultimo invio globale di questo tipo."""
+    try:
+        if not _report_tabella_c_e("report_log"):
+            return None
+        r = req.get(f"{SUPABASE_URL}/rest/v1/report_log", headers=_SB_H, timeout=10,
+                    params={"project_id": "is.null", "report_type": f"eq.{tipo}",
+                            "select": "sent_at", "order": "sent_at.desc", "limit": "1"})
+        righe = r.json() if r.ok else []
+        return righe[0].get("sent_at") if righe else None
+    except Exception:
+        return None
 
 
 def _sb_report_log_ultimo(project_id: str, tipo: str) -> str | None:
@@ -1679,6 +1715,64 @@ def _sb_ai_domande_da_approvare(project_id: str) -> list:
                             "select": "id,topic_id,prompt_text,intent,source,created_at",
                             "order": "created_at"})
         return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_ai_da_approvare_per_progetto() -> list:
+    """Quante domande aspettano il via libera, progetto per progetto.
+
+    Serve al riepilogo settimanale chiesto da Francesco (24/09). Torna solo i
+    progetti che ne hanno almeno una, con dominio e conteggio, ordinati dal
+    più arretrato.
+
+    ⚠️ Tre query in tutto, non una per progetto. Con trenta progetti la
+    versione ingenua ne farebbe sessanta e il cron di Vercel non ci sta
+    dentro; e il numero di query non deve crescere col parco, altrimenti
+    funziona adesso e smette di funzionare quando i clienti aumentano.
+    """
+    if not _fase_g_c_e():
+        return []
+    try:
+        arg = req.get(f"{SUPABASE_URL}/rest/v1/monitored_topics", headers=_SB_H,
+                      timeout=20, params={"select": "id,project_id", "limit": "2000"})
+        if not arg.ok:
+            return []
+        di_chi = {a["id"]: a.get("project_id") for a in arg.json()}
+        if not di_chi:
+            return []
+
+        dom = req.get(f"{SUPABASE_URL}/rest/v1/monitored_prompts", headers=_SB_H,
+                      timeout=20,
+                      params={"select": "id,topic_id,created_at",
+                              "approved": "is.false", "active": "is.true",
+                              "limit": "5000"})
+        if not dom.ok:
+            return []
+        conteggio: dict = {}
+        for d in dom.json():
+            pid = di_chi.get(d.get("topic_id"))
+            if not pid:
+                continue
+            v = conteggio.setdefault(pid, {"project_id": pid, "quante": 0,
+                                           "piu_vecchia": d.get("created_at") or ""})
+            v["quante"] += 1
+            se = d.get("created_at") or ""
+            if se and (not v["piu_vecchia"] or se < v["piu_vecchia"]):
+                v["piu_vecchia"] = se
+        if not conteggio:
+            return []
+
+        pr = req.get(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=20,
+                     params={"select": "id,domain,name",
+                             "id": f"in.({','.join(conteggio)})"})
+        nomi = {p["id"]: (p.get("domain") or p.get("name") or "")
+                for p in (pr.json() if pr.ok else [])}
+        fuori = []
+        for pid, v in conteggio.items():
+            fuori.append({**v, "dominio": nomi.get(pid, "")})
+        fuori.sort(key=lambda x: (x["piu_vecchia"] or "9999"))
+        return fuori
     except Exception:
         return []
 

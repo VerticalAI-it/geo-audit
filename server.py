@@ -39,11 +39,13 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _e_admin, _sb_admin_azioni, _sb_admin_traccia, _sb_auth_create_user, _sb_auth_set_attivo, \
     _sb_auth_get_user, _sb_report_prefs, _sb_report_prefs_salva, _sb_report_log_scrivi, \
     _sb_report_log_ultimo, _sb_report_invii, \
+    _sb_log_globale_ultimo, _sb_log_globale_scrivi, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
     _sb_audit_fallito, _sb_peso_archivio, _sb_traffic_ricalcola, _sb_traffic_riepilogo, \
     _sb_tracking_events, \
     _sb_projects_with_tracking, \
     _sb_ai_impostazioni, _sb_ai_impostazioni_salva, _sb_ai_domande, _sb_ai_domande_da_approvare, \
+    _sb_ai_da_approvare_per_progetto, \
     _sb_ai_domanda_approva, _sb_ai_domanda_crea, _sb_ai_domanda_modifica, _sb_ai_domanda_elimina, \
     _sb_ai_argomenti, _sb_ai_argomento_crea, _sb_ai_concorrenti, _sb_ai_concorrente_aggiungi, \
     _sb_ai_concorrente_escludi, _sb_ai_progetti_da_girare, _sb_project_piano, \
@@ -309,6 +311,11 @@ def _apply_refresh(response: Response, refreshed: dict | None) -> Response:
 # ── Email helpers ─────────────────────────────────────────────────────────────
 
 _NOTIFY_TO = ["geo@verticalai.it", "info@verticalai.it"]
+
+# Dove Vertical AI vuole vedere in copia gli avvisi che arrivano ai clienti, e
+# i riepiloghi interni. Decisione di Francesco del 24/09.
+EMAIL_VERTICALAI = "info@verticalai.it"
+EMAIL_APPROVAZIONI = ["fdangelo8@gmail.com", "info@verticalai.it"]
 
 _EMAIL_FONTS = (
     'https://fonts.googleapis.com/css2?'
@@ -1143,6 +1150,10 @@ async def richiedi_accesso(request: Request, background: BackgroundTasks,
     if lead:
         background.add_task(_audit_preliminare, lead["id"], sito_ok)
     _send_lead_notif(email, telefono, sito_ok, (lead or {}).get("id", ""))
+    # ⚠️ In coda, non prima: la conferma a chi ha compilato non deve poter
+    # ritardare la risposta della pagina, e se Resend è lento o giù la
+    # richiesta resta comunque registrata e l'audit parte lo stesso.
+    background.add_task(_send_conferma_analisi, email, sito_ok)
 
     return RedirectResponse(
         f"/richiesta-ricevuta?email={quote(email)}&sito={quote(sito_ok)}",
@@ -1594,7 +1605,8 @@ def _send_avviso_calo(to: str, dominio: str, project_id: str, prima: int, dopo: 
                  _guscio_email(f"Calo del punteggio · {dominio}", corpo, project_id))
 
 
-def _send_avviso_traffico(to: str, dominio: str, project_id: str, fatto: dict) -> None:
+def _send_avviso_traffico(to: str, dominio: str, project_id: str, fatto: dict,
+                          copia: str = "") -> None:
     """Gli assistenti AI hanno cambiato passo su questo sito.
 
     ⚠️ Il testo NON promette una causa. Un aumento di passaggi puo' essere una
@@ -1651,8 +1663,126 @@ def _send_avviso_traffico(to: str, dominio: str, project_id: str, fatto: dict) -
            f'font-weight:600;font-family:Inter,Arial,sans-serif">Vedi il traffico AI</a>'
            if link else ''}
         </td></tr>"""
-    _resend_post([to], oggetto,
-                 _guscio_email(f"Traffico AI · {dominio}", corpo, project_id))
+    # ⚠️ Vertical AI in copia come DESTINATARIO SEPARATO, non in Cc. Il guscio
+    # dell'email porta in fondo il link per disiscriversi, legato al progetto:
+    # in Cc, un clic distratto di chi sta in copia spegnerebbe gli avvisi al
+    # cliente. Due invii costano una chiamata in piu' e togliono il rischio.
+    destinatari = [to] + ([copia] if copia and copia != to else [])
+    for indirizzo in destinatari:
+        _resend_post([indirizzo], oggetto,
+                     _guscio_email(f"Traffico AI · {dominio}", corpo, project_id))
+
+
+def _send_conferma_analisi(to: str, dominio: str) -> None:
+    """3.1 · «Abbiamo ricevuto la tua richiesta, l'analisi è partita.»
+
+    Testo di Francesco, 24/09. Destinatario: chi ha appena compilato il form
+    pubblico, spesso uno sconosciuto al primo contatto.
+
+    ⚠️ Serve perché fino a oggi quella persona non riceveva NIENTE: la mail
+    partiva solo al team. Restava a guardare una pagina di conferma chiedendosi
+    se avesse sbagliato indirizzo, e nel frattempo il report arrivava ore dopo.
+
+    ⚠️ Non promette tempi. Il testo dice «a breve» e non «entro N minuti»,
+    perché l'audit gira in coda e un sito lento lo fa slittare: una promessa
+    oraria che non si rispetta fa più danno del silenzio.
+    """
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    dom = geo_audit.esc(dominio)
+    corpo = f"""
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <p style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#6C5CE7;
+                    margin:0 0 8px;font-family:'Inter',Arial,sans-serif;font-weight:700">Richiesta ricevuta</p>
+          <h1 style="font-size:22px;line-height:1.3;color:#14141C;margin:0 0 14px;
+                     font-family:'Inter',Arial,sans-serif;font-weight:700">L’analisi di
+                     {dom} è partita</h1>
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:0 0 14px;
+                    font-family:'Inter',Arial,sans-serif">Ciao,</p>
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:0 0 14px;
+                    font-family:'Inter',Arial,sans-serif">abbiamo ricevuto la tua richiesta e
+                    stiamo analizzando il tuo sito. Verifichiamo quanto il sito è visibile e
+                    citato nelle risposte degli assistenti AI come ChatGPT, Gemini e
+                    Perplexity.</p>
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:0 0 14px;
+                    font-family:'Inter',Arial,sans-serif">Non devi fare altro. A breve riceverai
+                    il report a questo indirizzo. Se non lo trovi, controlla anche nella cartella
+                    spam o promozioni.</p>
+        </td></tr>
+        <tr><td class="px" style="padding:0 36px 34px">
+          <p class="t-3" style="font-size:13px;line-height:1.7;color:#76768A;margin:0;
+                    font-family:'Inter',Arial,sans-serif">Se non sei stato tu a richiedere questa
+                    analisi, puoi ignorare questa email.</p>
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:18px 0 0;
+                    font-family:'Inter',Arial,sans-serif">A presto,<br>Il team di Vertical AI</p>
+        </td></tr>"""
+    _resend_post([to], f"Abbiamo ricevuto la tua richiesta: l'analisi di {dominio} è partita",
+                 _guscio_email("Richiesta ricevuta", corpo))
+
+
+def _send_riepilogo_approvazioni(righe: list) -> bool:
+    """1.1 · Il riepilogo settimanale delle domande che aspettano il via libera.
+
+    Chiesto da Francesco il 24/09: le domande generate NON si approvano da
+    sole, quindi serve qualcosa che ricordi a qualcuno di guardarle. Senza
+    questa email il meccanismo si ferma in silenzio — è esattamente quello che
+    è successo fra l'8 e il 24 settembre, con trenta domande ferme e
+    ventisette progetti mai monitorati.
+
+    ⚠️ Se non c'è niente da approvare NON manda niente e torna `False`. Un
+    riepilogo settimanale che arriva anche quando dice «zero» diventa rumore, e
+    dopo un mese non lo apre più nessuno: allora tanto valeva non averlo.
+    """
+    if not RESEND_KEY or not FROM_EMAIL or not righe:
+        return False
+    totale = sum(r["quante"] for r in righe)
+    oggi = datetime.now(timezone.utc).date()
+
+    voci = ""
+    for r in righe:
+        dominio = geo_audit.esc(r.get("dominio") or "progetto senza dominio")
+        link = f"{SITE_URL}/admin/progetti/{r['project_id']}/ai" if SITE_URL else ""
+        atteso = ""
+        try:
+            giorni = (oggi - datetime.fromisoformat(
+                str(r["piu_vecchia"]).replace("Z", "+00:00")).date()).days
+            # ⚠️ L'attesa è il dato che fa agire, più del conteggio: «dieci
+            # domande» non dice niente, «dieci da sedici giorni» sì.
+            if giorni >= 1:
+                atteso = (f' · in attesa da <b>{giorni} giorn{"o" if giorni == 1 else "i"}</b>')
+        except Exception:
+            pass
+        voci += (
+            '<tr><td style="padding:12px 0;border-bottom:1px solid #EDEDF2">'
+            f'<div style="font-size:15px;font-weight:600;color:#14141C;'
+            f'font-family:Inter,Arial,sans-serif">{dominio}</div>'
+            f'<div style="font-size:13px;color:#76768A;margin-top:3px;'
+            f'font-family:Inter,Arial,sans-serif">{r["quante"]} domande da '
+            f'approvare{atteso}</div>'
+            + (f'<a href="{link}" style="display:inline-block;margin-top:8px;'
+               f'font-size:13px;color:#6C5CE7;text-decoration:none;font-weight:600;'
+               f'font-family:Inter,Arial,sans-serif">Apri e approva →</a>'
+               if link else '')
+            + '</td></tr>')
+
+    corpo = f"""
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <p style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#B4530A;
+                    margin:0 0 8px;font-family:'Inter',Arial,sans-serif;font-weight:700">Da approvare</p>
+          <h1 style="font-size:22px;line-height:1.3;color:#14141C;margin:0 0 10px;
+                     font-family:'Inter',Arial,sans-serif;font-weight:700">{totale} domande
+                     aspettano il via libera</h1>
+          <p class="t-2" style="font-size:15px;line-height:1.6;color:#4A4A5A;margin:0;
+                    font-family:'Inter',Arial,sans-serif">Su
+                    <b>{len(righe)} {"progetto" if len(righe) == 1 else "progetti"}</b>. Finché non sono approvate, quei siti non vengono interrogati e il loro
+                    pannello resta vuoto.</p>
+        </td></tr>
+        <tr><td class="px" style="padding:18px 36px 34px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">{voci}</table>
+        </td></tr>"""
+    _resend_post(EMAIL_APPROVAZIONI, f"GEO Audit · {totale} domande da approvare",
+                 _guscio_email("Domande da approvare", corpo))
+    return True
 
 
 def _send_avviso_critica(to: str, dominio: str, project_id: str,
@@ -2626,7 +2756,11 @@ def _forse_avvisa_traffico(project: dict, prefs: dict, inviati: list) -> None:
         destinatario = _email_del_progetto(project)
         if not destinatario:
             return
-        _send_avviso_traffico(destinatario, project.get("domain") or "", pid, fatto)
+        # ⚠️ In copia anche Vertical AI, per decisione del 24/09: vogliono
+        # vedere gli avvisi che arrivano ai loro clienti, cosi' se un cliente
+        # chiama sanno gia' di cosa parla.
+        _send_avviso_traffico(destinatario, project.get("domain") or "", pid, fatto,
+                              copia=EMAIL_VERTICALAI)
         _sb_report_log_scrivi(pid, "alert_traffico_ai", destinatario)
         inviati.append({"progetto": project.get("domain"), "tipo": "alert_traffico_ai",
                         "verso": fatto["verso"]})
@@ -2664,6 +2798,41 @@ def _manda_i_digest_scaduti(iniziato_a: float) -> list:
 
 _FREQUENZA_GIORNI = {"weekly": 7, "monthly": 30, "custom": 7}
 _CRON_AI_BUDGET = float(os.environ.get("CRON_AI_BUDGET", "50"))
+
+
+@app.get("/api/cron-approvazioni")
+async def api_cron_approvazioni(request: Request):
+    """1.1 · Il riepilogo settimanale delle domande da approvare.
+
+    Un cron a parte, il lunedì mattina. Non sta in coda a `/api/cron` perché
+    quello gira ogni ora: appenderlo lì vorrebbe dire una guardia sulla data
+    dentro una funzione che non c'entra, e la guardia prima o poi si sposta.
+
+    ⚠️ Idempotente: se qualcuno lo richiama a mano nello stesso giorno non
+    manda una seconda email. Vercel può ripetere un'invocazione, e due
+    riepiloghi identici nella stessa mattina fanno sembrare rotto ciò che
+    funziona.
+    """
+    if _CRON_SECRET and request.headers.get("Authorization") != f"Bearer {_CRON_SECRET}":
+        return Response(json.dumps({"error": "unauthorized"}),
+                        status_code=401, media_type="application/json")
+    oggi = datetime.now(timezone.utc).date().isoformat()
+    ultimo = _sb_log_globale_ultimo("riepilogo_approvazioni")
+    if ultimo and str(ultimo)[:10] == oggi:
+        return {"esito": "gia_mandato_oggi"}
+
+    righe = _sb_ai_da_approvare_per_progetto()
+    if not righe:
+        # ⚠️ Niente email quando non c'è niente da approvare, e nemmeno una
+        # riga nel registro: così se domani ce n'è, l'email parte.
+        return {"esito": "niente_da_approvare"}
+
+    mandata = await run_in_threadpool(_send_riepilogo_approvazioni, righe)
+    if mandata:
+        _sb_log_globale_scrivi("riepilogo_approvazioni", ", ".join(EMAIL_APPROVAZIONI))
+    return {"esito": "mandato" if mandata else "invio_non_configurato",
+            "progetti": len(righe),
+            "domande": sum(r["quante"] for r in righe)}
 
 
 @app.get("/api/cron-ai")
