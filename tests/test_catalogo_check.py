@@ -148,7 +148,11 @@ class CatalogoDeiCheckDiPagina(unittest.TestCase):
         spa = ('<!doctype html><html><body><div id="root"></div>'
                '<script src="/bundle.js"></script></body></html>')
         parity = next(c for c in _pagina(spa).checks if c.id == "render.parity")
-        self.assertEqual(parity.status, g.FAIL)
+        # ⚠️ Era FAIL fino alla 1.3.0. Dalla 1.4.0 la STIMA non può fallire
+        # (specifica del 24/09): guarda il rapporto fra codice e testo, che è
+        # un indizio, non una misura della parità. Il FAIL resta possibile
+        # sull'altro percorso, quello con il rendering vero.
+        self.assertEqual(parity.status, g.WARN)
         self.assertIn("root", parity.detail)
 
     def test_nella_zona_grigia_il_check_tace(self):

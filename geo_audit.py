@@ -36,7 +36,7 @@ import presenza_offsite
 from bs4 import BeautifulSoup
 
 # ============================================================ CONFIG
-ENGINE_VERSION = "1.3.0"
+ENGINE_VERSION = "1.4.0"
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 VerticalAI-GEOAudit/1.1")
 HEADERS = {"User-Agent": BROWSER_UA,
@@ -68,9 +68,58 @@ SKIP_EXT = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp", ".ico", ".
 SKIP_PATH = ("/wp-content/", "/wp-admin/", "/wp-json/", "/wp-includes/", "/feed",
     "/cdn-cgi/", "/xmlrpc.php", "/comments/feed")
 SKIP_QUERY = ("add-to-cart", "replytocom", "?share=", "?attachment_id")
-UTILITY_RE = re.compile(r"(privacy|cookie|termini|terms|condizioni|legal|informativa|"
-    r"disclaimer|login|accedi|registr|carrello|cart|checkout|wishlist|account|"
-    r"thank|grazie|404|cerca|/search)", re.I)
+# Le pagine su cui un `noindex` è VOLUTO, non un errore.
+#
+# ⚠️ Criterio, non elenco chiuso (specifica del 24/09): ci sta qualunque
+# pagina messa a noindex per evitare contenuto duplicato o povero. Da qui
+# paginazione, tag, categorie, filtri e ricerca interna, che prima mancavano.
+#
+# ⚠️ E si cerca per PAROLA INTERA, non per sottostringa. Prima `informativa`
+# matchava dentro parole più lunghe e `cart` dentro `cartoleria`,
+# `cartografia`, `Cartagine`: un `noindex` sbagliato su /cartoleria passava
+# per voluto. Con `page.noindex` che ora vale FAIL questo conta il doppio,
+# perché un falso riconoscimento non nasconde più un avviso ma un errore.
+#
+# ⚠️ L'ORDINE dei due interventi non è indifferente: estendere il regex PRIMA
+# di alzare la gravità. Al contrario si generano falsi positivi di massa su
+# ogni WordPress con paginazione, tag e categorie — centinaia di URL per sito.
+# Le pagine su cui un `noindex` è VOLUTO. Tre famiglie, con regole diverse,
+# perché trattarle uguale sbaglia in entrambi i versi.
+#
+# ⚠️ 1. PAROLE INTERE. Prima si cercava per sottostringa: `cart` matchava
+# dentro `cartoleria`, `cartografia`, `Cartagine`, e un `noindex` sbagliato su
+# /cartoleria passava per voluto.
+_UTILITY_PAROLE = (
+    "privacy", "cookies?", "termini", "terms", "condizioni", "legal",
+    "informativa", "disclaimer", "note-legali",
+    "login", "log-in", "signin", "accedi", r"registr\w*", "carrello", "cart",
+    "checkout", "wishlist", "account", "profilo", "password",
+    r"thank\w*", "grazie", "404", "not-found",
+    "cerca", "search", "ricerca",
+)
+
+# ⚠️ 2. TASSONOMIE: solo come SEGMENTO di percorso, con la barra. Il confine
+# di parola da solo non basta — `/tag-heuer-orologi` di un negozio di orologi
+# ha `tag` come token isolato, e verrebbe scambiato per un archivio di tag.
+_UTILITY_TASSONOMIE = (
+    "tags?", "categori[ae]", "categor(?:y|ies)", "argomenti", "archivio",
+    "archive", "autore", "author", "filtri?", "filter",
+)
+
+# ⚠️ 3. PAGINAZIONE: solo se SEGUITA DA UN NUMERO. `/pagina/2` è paginazione,
+# `/pagina-bianca-del-museo` è una pagina vera che parla di una pagina bianca.
+_UTILITY_PAGINAZIONE = r"/(?:page|pagina)[/-]\d+"
+
+# ⚠️ La ricerca interna di WordPress non ha una parola nell'URL: è `?s=`.
+# Senza questo, ogni pagina di risultati risultava una pagina vera messa a
+# noindex per errore — e ora quell'errore vale FAIL.
+_UTILITY_QUERY = r"[?&](?:s|q|search|keyword)="
+
+UTILITY_RE = re.compile(
+    r"(?:(?<![a-z0-9])(?:" + "|".join(_UTILITY_PAROLE) + r")(?![a-z0-9]))"
+    r"|(?:/(?:" + "|".join(_UTILITY_TASSONOMIE) + r")/)"
+    r"|(?:" + _UTILITY_PAGINAZIONE + r")"
+    r"|(?:" + _UTILITY_QUERY + r")", re.I)
 
 OK, WARN, FAIL, UNK = "ok", "warn", "fail", "unknown"
 SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -239,6 +288,9 @@ def jsonld(soup):
 # nel testo non e' un cambio di significato, cambiare la soglia si'. Se questa
 # mappa diventa «tutti all'ultima versione» smette di servire a qualcosa.
 CHECK_VERSIONE = {
+    # 1.4.0 — revisione del punteggio (tre blocchi) del 24 settembre 2026
+    "page.noindex": "1.4.0",      # da unknown a fail: ora penalizza
+    "render.parity": "1.4.0",     # peso 8 -> 2, e la stima non fallisce mai
     # 1.3.0 — presenza off-site (blocco 5, solo le fonti gratuite)
     "entity.wikidata": "1.3.0",
     "entity.sameas.fonti": "1.3.0",
@@ -420,15 +472,22 @@ def checks_indexing(soup, checks, status_code, redirects, url):
            status=OK, weight=6, severity="info",
            detail="noindex presente — atteso per pagina di servizio (corretto).")
     else:
+        # ⚠️ FAIL, non UNKNOWN. Era il caso più grave del catalogo — una pagina
+        # invisibile ai motori e agli assistenti — e restando `unknown` usciva
+        # dal denominatore: non veniva penalizzato, veniva ignorato.
         ck(checks, id="page.noindex", category="Rendering & accesso", title="Indicizzabilità",
-           status=UNK, weight=6, severity="high",
-           detail="meta robots NOINDEX: verifica se intenzionale.",
+           status=FAIL, weight=6, severity="high",
+           detail="meta robots NOINDEX su una pagina che non sembra di servizio.",
            recommendation="Se la pagina deve essere trovata, rimuovi il noindex.")
 
 # Indizi, nel solo HTML statico, che il contenuto vero arrivi dal JavaScript.
 # Sono i contenitori vuoti che i framework lasciano in pagina prima di
 # riempirli: se il testo del documento e' poco e uno di questi c'e', la pagina
 # quasi certamente si costruisce nel browser.
+# Peso di `render.parity`: era 8, scende a 2 per specifica. In produzione il
+# check è una stima indiretta, e un indizio non può pesare come una misura.
+_PESO_PARITA = 2
+
 _RADICI_SPA = ("root", "app", "__next", "__nuxt", "q-app", "svelte")
 
 
@@ -491,14 +550,20 @@ def check_js_parity(checks, static_html, rendered_used, rendered_soup):
         stima = stima_parita_statica(BeautifulSoup(static_html, "lxml"))
         if stima is None:
             ck(checks, id="render.parity", category="Rendering & accesso",
-               title="Parità contenuto senza JS", status=UNK, weight=8, severity="high",
+               title="Parità contenuto senza JS", status=UNK, weight=_PESO_PARITA, severity="high",
                detail="Rendering headless non eseguito, e l'HTML statico non dà "
                       "indizi chiari in un senso o nell'altro.",
                recommendation="Esegui con Playwright per il confronto esatto.")
             return
         st, det, rec = stima
+        # ⚠️ La stima non può produrre FAIL, per specifica: è un indizio
+        # indiretto — quanto codice c'è rispetto al testo — non una misura
+        # della parità. Un sospetto non deve diventare un giudizio netto, e
+        # la nostra euristica invece sa restituire FAIL. Qui si ammorbidisce.
+        if st == FAIL:
+            st = WARN
         ck(checks, id="render.parity", category="Rendering & accesso",
-           title="Parità contenuto senza JS (stima)", status=st, weight=8,
+           title="Parità contenuto senza JS (stima)", status=st, weight=_PESO_PARITA,
            severity="high", detail=det, recommendation=rec)
         return
     sw = len(BeautifulSoup(static_html, "lxml").get_text(" ", strip=True).split())
@@ -510,8 +575,11 @@ def check_js_parity(checks, static_html, rendered_used, rendered_soup):
         st, det, rec = WARN, f"Parte del contenuto dipende dal JS ({int(ratio*100)}% nello statico).", "Valuta SSR per le sezioni chiave."
     else:
         st, det, rec = OK, f"Contenuto presente nell'HTML statico ({int(ratio*100)}%).", ""
+    # Qui il rendering vero è stato eseguito (CLI/Docker): è una MISURA, non
+    # una stima, quindi mantiene FAIL fra gli esiti possibili. La specifica
+    # chiede espressamente di non toccare questo percorso.
     ck(checks, id="render.parity", category="Rendering & accesso", title="Parità contenuto senza JS",
-       status=st, weight=8, severity="high", detail=det, recommendation=rec)
+       status=st, weight=_PESO_PARITA, severity="high", detail=det, recommendation=rec)
 
 
 
@@ -873,28 +941,22 @@ def peso_misurabile(checks):
 # Ora sono due punteggi separati e poi mescolati. Con 30/70, un sito che
 # blocca tutti i crawler AI perde 12/21 del 30%, cioe' circa 17 punti: una
 # cifra che si vede e che corrisponde alla gravita' del fatto.
-PESO_SITO = 0.30
+# ⚠️ `PESO_SITO` e la formula a due blocchi sono stati SOSTITUITI il 24/09
+# dalla formula a tre blocchi di `blocchi_punteggio.py`. Il problema che
+# risolvevano era lo stesso — i check di sito diluiti fra le pagine — ma il
+# taglio ora è per natura dell'intervento, non per sito/pagina.
+PESO_SITO = 0.30            # non più usato nel punteggio: resta per lo storico
 
 
 def score_complessivo(site_checks, page_checks):
-    """Il punteggio del report: infrastruttura di sito e qualita' delle
-    pagine pesate separatamente, poi combinate.
+    """Il punteggio del report, nei tre blocchi a quota fissa 30/52/18.
 
-    ⚠️ Se uno dei due insiemi non ha niente di misurabile, l'altro vale per
-    intero. Un sito senza pagine analizzabili non deve prendere 30 su 100
-    solo perche' il pezzo «pagine» e' mancante: sarebbe una penalita' per un
-    limite del crawler, non per un difetto del sito.
+    La logica di calcolo è quella di `score_checks`, invariata. Cambia solo
+    quali check entrano in quale dei tre conti: vedi `blocchi_punteggio`.
     """
-    peso_s = peso_misurabile(site_checks)
-    peso_p = peso_misurabile(page_checks)
-    if not peso_s and not peso_p:
-        return 0
-    if not peso_p:
-        return score_checks(site_checks)
-    if not peso_s:
-        return score_checks(page_checks)
-    return round(PESO_SITO * score_checks(site_checks)
-                 + (1 - PESO_SITO) * score_checks(page_checks))
+    import blocchi_punteggio
+    return blocchi_punteggio.complessivo(site_checks, page_checks)
+
 
 def grade(s): return "A" if s>=90 else "B" if s>=75 else "C" if s>=60 else "D" if s>=45 else "E" if s>=30 else "F"
 def band(s): return "Eccellente" if s>=90 else "Buono" if s>=75 else "Discreto" if s>=60 else "Da rafforzare" if s>=45 else "Critico"

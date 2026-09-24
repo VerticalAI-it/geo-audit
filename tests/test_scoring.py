@@ -76,18 +76,31 @@ class PunteggioComplessivo(unittest.TestCase):
         non per un difetto suo."""
         self.assertEqual(g.score_complessivo(self.SITO_OK, []), 100)
 
-    def test_senza_check_di_sito_contano_solo_le_pagine(self):
-        self.assertEqual(g.score_complessivo([], self.PAGINE_PERFETTE), 100)
-
     def test_niente_di_misurabile_fa_zero(self):
         self.assertEqual(g.score_complessivo([], []), 0)
         self.assertEqual(g.score_complessivo([ck(g.UNK, 5)], [ck(g.UNK, 5)]), 0)
 
-    def test_i_pesi_sono_quelli_dichiarati(self):
-        """Sito al 30%, pagine al 70%: sito perfetto e pagine a zero fa 30."""
-        self.assertEqual(g.PESO_SITO, 0.30)
-        self.assertEqual(g.score_complessivo(self.SITO_OK, [ck(g.FAIL, 3)]), 30)
-        self.assertEqual(g.score_complessivo([ck(g.FAIL, 3)], self.PAGINE_PERFETTE), 70)
+    # ⚠️ I test sui PESI del punteggio complessivo sono stati spostati in
+    # `test_scoring_blocchi.py` il 24/09/2026, e non è un trasloco per ordine.
+    # Nella formula a due blocchi bastava lo stato di un check per sapere
+    # quanto pesava; in quella a tre è l'ID a decidere in quale blocco cade,
+    # e gli aiuti di questo file costruiscono check con un id finto («x»).
+    # Riscriverli qui vorrebbe dire duplicare l'elenco dei blocchi in due
+    # posti, che è il modo migliore per farli divergere.
+    #
+    # `score_checks` — la media pesata vera e propria — resta collaudata qui
+    # sopra, perché quella logica la formula nuova la usa identica.
+
+    def test_un_check_con_id_ignoto_non_sposta_il_punteggio(self):
+        """⚠️ Conseguenza da conoscere: se un check ha un id che nessun blocco
+        rivendica, esce dal punteggio in silenzio. In produzione lo impedisce
+        `test_nessun_check_del_catalogo_resta_orfano`, che confronta il
+        catalogo emesso coi tre elenchi. Qui si fissa il comportamento, per
+        non scoprirlo un giorno leggendo un numero sbagliato."""
+        import blocchi_punteggio as bp
+        self.assertEqual(bp.complessivo([ck(g.FAIL, 9, id_="mai.visto")], []), 0)
+        self.assertEqual(bp.per_blocco([ck(g.FAIL, 9, id_="mai.visto")], [])["orfani"],
+                         ["mai.visto"])
 
 
 class LettereEBande(unittest.TestCase):
