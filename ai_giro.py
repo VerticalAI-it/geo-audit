@@ -413,14 +413,20 @@ _ELENCHI = (
 # Quante risposte DIVERSE deve toccare un dominio per essere proposto. Contare
 # le citazioni grezze non andrebbe: un sito linkato dodici volte dentro la
 # stessa risposta è un segnale solo, non dodici.
-_SOGLIA_RISPOSTE = 3
+#
+# Da 3 a 5 su decisione di Francesco (24/09): tre apparizioni lasciavano
+# passare nomi capitati per caso.
+_SOGLIA_RISPOSTE = 5
 
 # Quanti concorrenti proposti dal motore possono stare in elenco. Senza un
 # tetto ogni giro ne aggiungeva fino a dieci e l'elenco cresceva finche' i
 # dati lo permettevano: su amahorse era arrivato a 25 dopo tre giri. Un
 # elenco cosi' lungo non e' una lista di concorrenti, e' la lista di chi
 # viene citato — che e' un'altra scheda.
-_MAX_PROPOSTI = 12
+#
+# Da 12 a 5 su decisione di Francesco (24/09): dodici nomi non si leggono, e
+# un cliente guarda i primi cinque.
+_MAX_PROPOSTI = 5
 
 
 def scopri_concorrenti(project_id: str, dominio_progetto: str,

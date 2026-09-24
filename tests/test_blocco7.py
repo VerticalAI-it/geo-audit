@@ -136,12 +136,39 @@ class AnomaliaDelTrafficoAI(unittest.TestCase):
         self.assertEqual(r["verso"], "comparso")
         self.assertIsNone(r["rapporto"])
 
-    def test_nasce_spento(self):
-        """⚠️ A differenza degli altri due avvisi. Quelli partono dopo un
-        audit, che è un evento raro e voluto; questo guarda il traffico, che
-        oscilla da solo."""
+    def test_nasce_acceso_per_tutti(self):
+        """Decisione di Francesco del 24/09. Nasceva spento, e la ragione di
+        allora resta valida: il traffico oscilla da solo, e dopo tre email
+        inutili non si legge più nemmeno quella che conta."""
         from db import _REPORT_PREF_DEFAULT
-        self.assertIs(_REPORT_PREF_DEFAULT["alert_traffico_ai"], False)
+        self.assertIs(_REPORT_PREF_DEFAULT["alert_traffico_ai"], True)
+
+    def test_accenderlo_e_accettabile_solo_grazie_alle_due_soglie(self):
+        """⚠️ Il test che conta ora che l'avviso parte per tutti. Non è il
+        default a renderlo accettabile, sono le due condizioni: raddoppio E
+        almeno 20 passaggi. Chi allenta una delle due riapre il problema per
+        cui l'avviso era nato spento, e lo fa su tutto il parco insieme."""
+        import server
+        self.assertEqual(server._SOGLIA_ANOMALIA, 2.0)
+        self.assertGreaterEqual(server._MINIMO_PER_PARLARE, 20)
+        # E la conseguenza misurata: sui numeri piccoli tace comunque.
+        # ⚠️ Il minimo è sul TOTALE della settimana, non sul giorno: `_valuta`
+        # prende passaggi al giorno, quindi 2 al giorno fanno 14 a settimana e
+        # restano sotto i 20. Con 6 al giorno sarebbero 42 e l'avviso parte,
+        # giustamente.
+        self.assertIsNone(self._valuta(2, 1))
+        self.assertIsNotNone(self._valuta(6, 3))
+
+    def test_vertical_ai_riceve_in_copia(self):
+        """⚠️ Come destinatario separato, non in Cc: il link «disiscriviti» in
+        fondo all'email è legato al progetto, e un clic distratto di chi sta in
+        copia spegnerebbe gli avvisi al cliente."""
+        import inspect
+        import server
+        self.assertEqual(server.EMAIL_VERTICALAI, "info@verticalai.it")
+        sorgente = inspect.getsource(server._send_avviso_traffico)
+        self.assertIn("copia", inspect.signature(server._send_avviso_traffico).parameters)
+        self.assertNotIn('"cc"', sorgente)
 
 
 if __name__ == "__main__":
