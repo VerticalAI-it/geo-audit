@@ -2315,13 +2315,41 @@ def _riepilogo_periodo(project: dict, giorni: int = 30) -> dict:
     for i in aperte:
         k = (i.get("check_id"), i.get("title"), i.get("severity") or "info")
         per_check[k] = per_check.get(k, 0) + 1
+    def peso(v):
+        (_, _, sev), n = v
+        return (_SEV_ORDINE.index(sev) if sev in _SEV_ORDINE else 9, -n)
+
     prioritaria = None
-    if per_check:
-        def peso(v):
-            (_, _, sev), n = v
-            return (_SEV_ORDINE.index(sev) if sev in _SEV_ORDINE else 9, -n)
-        (check_id, titolo, sev), quante = sorted(per_check.items(), key=peso)[0]
+    ordinate = sorted(per_check.items(), key=peso) if per_check else []
+    if ordinate:
+        (check_id, titolo, sev), quante = ordinate[0]
         prioritaria = {"titolo": titolo or check_id, "severita": sev, "pagine": quante}
+
+    # Le prime DUE cose da fare, non una: il rapporto mensile chiede due
+    # priorità (decisione del 24/09), e prenderle da qui invece che
+    # ricalcolarle nell'email evita due classifiche che col tempo divergono.
+    priorita = [{"check_id": cid, "titolo": tit or cid, "severita": sev, "pagine": n}
+                for (cid, tit, sev), n in ordinate[:2]]
+
+    # I titoli di ciò che è stato sistemato, non solo quanti. «Due criticità
+    # risolte» non dice niente al cliente; «sistemata la meta description su
+    # 14 pagine» sì.
+    # ⚠️ Si escludono i controlli ANCORA APERTI altrove. Un check risolto su una
+    # pagina e aperto su altre ventisei è vero due volte, ma in un'email che
+    # elenca «cosa è stato sistemato» e subito sotto «cosa fare adesso» la
+    # stessa voce nei due elenchi si legge come una contraddizione. Visto sul
+    # rapporto di amahorse: «Contatti presenti» compariva in entrambi.
+    ancora_aperti = {i.get("check_id") for i in aperte}
+    risolte_per_check: dict = {}
+    for i in risolte:
+        if i.get("check_id") in ancora_aperti:
+            continue
+        k = i.get("title") or i.get("check_id") or ""
+        if k:
+            risolte_per_check[k] = risolte_per_check.get(k, 0) + 1
+    risolte_voci = [{"titolo": t, "pagine": q}
+                    for t, q in sorted(risolte_per_check.items(),
+                                       key=lambda x: -x[1])[:3]]
 
     eventi = _sb_tracking_events(project["id"], days=giorni)
     crawler = [e for e in eventi if e.get("event_name") == "crawler"]
@@ -2344,6 +2372,8 @@ def _riepilogo_periodo(project: dict, giorni: int = 30) -> dict:
         "risolte": len(risolte),
         "nuove": len(nuove),
         "prioritaria": prioritaria,
+        "priorita": priorita,
+        "risolte_voci": risolte_voci,
         # None, non 0: «nessun evento registrato» e «il tracking non e'
         # installato» sono due cose diverse e non vanno confuse in uno zero.
         "tracking": bool(eventi),
