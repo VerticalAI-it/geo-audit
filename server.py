@@ -40,6 +40,7 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_auth_get_user, _sb_report_prefs, _sb_report_prefs_salva, _sb_report_log_scrivi, \
     _sb_report_log_ultimo, _sb_report_invii, \
     _sb_log_globale_ultimo, _sb_log_globale_scrivi, \
+    _sb_report_da_seguire, _sb_followup_gia_mandati, \
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
     _sb_audit_fallito, _sb_peso_archivio, _sb_traffic_ricalcola, _sb_traffic_riepilogo, \
     _sb_tracking_events, \
@@ -1720,6 +1721,218 @@ def _send_conferma_analisi(to: str, dominio: str) -> None:
                  _guscio_email("Richiesta ricevuta", corpo))
 
 
+def _riga_monitoraggio(project_id: str) -> str:
+    """Una riga sul dato di citazione, o stringa vuota.
+
+    ⚠️ Vuota quando il monitoraggio non ha dati, e la sezione che la contiene
+    va OMESSA — decisione di Francesco del 24/09. Il suo esempio («il tuo sito
+    non viene citato, mentre il concorrente sì») si regge su dati che oggi
+    esistono su pochi progetti: scriverla comunque vorrebbe dire inventare un
+    rilievo, che è peggio di non averne uno.
+    """
+    try:
+        import ai_dati
+        if ai_dati.stato(project_id) != "dati":
+            return ""
+        b = ai_dati._base(project_id, 30)
+        quante = len(b["domande"])
+        if not quante:
+            return ""
+        c = ai_dati.citazioni(project_id, 30)
+        dirette = c.get("dirette") or 0
+        if dirette:
+            return (f"il sito viene citato in {dirette} delle {quante} domande "
+                    f"che monitoriamo sugli assistenti AI")
+        return (f"su {quante} domande che monitoriamo sugli assistenti AI, il sito "
+                f"non viene mai citato")
+    except Exception:
+        return ""
+
+
+def _send_followup_analisi(to: str, dominio: str, punteggio, riga: str) -> None:
+    """3.2 · Tre giorni dopo il report: la proposta di approfondimento.
+
+    Testo di Francesco, 24/09. È l'email commerciale del prodotto.
+
+    ⚠️ Niente link al calendario, per sua indicazione: si risponde all'email.
+    Funziona perché il mittente è un indirizzo vero che riceve, non un
+    no-reply — se un giorno cambia, questa email perde la sua unica via di
+    risposta e va rivista.
+
+    ⚠️ La sezione «il dato che ci ha colpito di più» c'è solo se il dato c'è.
+    """
+    if not RESEND_KEY or not FROM_EMAIL:
+        return
+    dom = geo_audit.esc(dominio)
+    _P = ('<p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;'
+          "margin:0 0 14px;font-family:'Inter',Arial,sans-serif\">")
+    coda = (f", con un punteggio di <b>{punteggio}/100</b>."
+            if punteggio is not None else ".")
+    punti = (_P + "qualche giorno fa ti abbiamo inviato il report automatico di "
+             f"<b>{dom}</b>{coda}</p>")
+    rilievo = ""
+    if riga:
+        rilievo = (_P + "Il dato che ci ha colpito di più: "
+                   f"{geo_audit.esc(riga)}.</p>")
+    corpo = f"""
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <h1 style="font-size:21px;line-height:1.35;color:#14141C;margin:0 0 16px;
+                     font-family:'Inter',Arial,sans-serif;font-weight:700">{dom}: il report ti
+                     dice dove sei, non da dove partire</h1>
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:0 0 14px;
+                    font-family:'Inter',Arial,sans-serif">Ciao,</p>
+          {punti}
+          {rilievo}
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:0 0 12px;
+                    font-family:'Inter',Arial,sans-serif">Il report automatico è una fotografia
+                    del sito vista dall’esterno. Non può dirti <i>perché</i> sei in quella
+                    posizione né quali interventi sposterebbero davvero il risultato. Con
+                    l’analisi completa lavoriamo direttamente con te per:</p>
+          <ul style="margin:0 0 14px;padding-left:18px;font-size:15px;line-height:1.7;
+                     color:#4A4A5A;font-family:'Inter',Arial,sans-serif">
+            <li>capire quali domande fanno i tuoi clienti agli assistenti AI e chi viene
+                citato al posto tuo</li>
+            <li>individuare le cause, sia tecniche sia di contenuto</li>
+            <li>darti un piano di interventi in ordine di priorità, con quelli ad alto
+                impatto e basso sforzo in cima</li>
+          </ul>
+        </td></tr>
+        <tr><td class="px" style="padding:0 36px 34px">
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:0 0 18px;
+                    font-family:'Inter',Arial,sans-serif">Se ti interessa, rispondi a questa
+                    email. In 20 minuti ti mostriamo il report nel dettaglio e ti diciamo con
+                    franchezza se l’analisi completa ha senso per il tuo caso.</p>
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:0;
+                    font-family:'Inter',Arial,sans-serif">Marco<br>Vertical AI</p>
+        </td></tr>"""
+    _resend_post([to], f"{dominio}: il report ti dice dove sei, non da dove partire",
+                 _guscio_email("Analisi completa", corpo))
+
+
+_MESI = ("gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio",
+         "agosto", "settembre", "ottobre", "novembre", "dicembre")
+
+
+def _send_report_mensile_cliente(to: str, project: dict, r: dict) -> bool:
+    """3.3 · Il rapporto mensile al cliente attivo.
+
+    Testo di Francesco, 24/09. È l'email che giustifica il rinnovo, quindi non
+    è un elenco di numeri: dice com'è andato il mese, cosa è stato sistemato e
+    quali sono le DUE cose da fare adesso.
+
+    ⚠️ Ogni sezione compare solo se ha dati veri dietro. Niente «nessun
+    intervento» scritto per riempire: una riga assente e una riga che dice zero
+    si distinguono, e il cliente capisce la differenza al secondo mese.
+
+    ⚠️ La riga sul dato di citazione segue la regola della 3.2 — c'è solo se il
+    monitoraggio ha risposte, altrimenti si omette.
+    """
+    if not RESEND_KEY or not FROM_EMAIL:
+        return False
+    dominio = project.get("domain") or project.get("name") or "il sito"
+    dom = geo_audit.esc(dominio)
+    punteggio = r.get("punteggio")
+    if punteggio is None:
+        # Senza un punteggio non c'è un rapporto da mandare: l'oggetto stesso
+        # dell'email lo contiene.
+        return False
+    delta = r.get("delta")
+    adesso = datetime.now(timezone.utc)
+    mese = _MESI[adesso.month - 1]
+    mese_prec = _MESI[adesso.month - 2]
+
+    if delta is None:
+        delta_txt, delta_col = "primo mese di misura", "#76768A"
+    elif delta > 0:
+        delta_txt, delta_col = f"+{delta} rispetto a {mese_prec}", "#0E9F6E"
+    elif delta < 0:
+        delta_txt, delta_col = f"{delta} rispetto a {mese_prec}", "#D92D34"
+    else:
+        delta_txt, delta_col = f"stabile rispetto a {mese_prec}", "#76768A"
+
+    riga_ai = _riga_monitoraggio(project["id"])
+    significativo = ""
+    if riga_ai:
+        significativo = (f'<p class="t-2" style="font-size:15px;line-height:1.65;'
+                         f"color:#4A4A5A;margin:10px 0 0;font-family:'Inter',Arial,"
+                         f'sans-serif">{geo_audit.esc(riga_ai[0].upper() + riga_ai[1:])}.</p>')
+
+    sistemato = ""
+    if r.get("risolte_voci"):
+        voci = "".join(
+            f'<li>{geo_audit.esc(v["titolo"])}'
+            + (f' — su {v["pagine"]} pagine' if v["pagine"] > 1 else "") + "</li>"
+            for v in r["risolte_voci"])
+        sistemato = (
+            '<p style="font-size:13px;letter-spacing:.06em;text-transform:uppercase;'
+            "color:#76768A;margin:24px 0 8px;font-family:'Inter',Arial,sans-serif;"
+            'font-weight:700">Cosa è stato sistemato</p>'
+            f'<ul style="margin:0;padding-left:18px;font-size:15px;line-height:1.7;'
+            f"""color:#4A4A5A;font-family:'Inter',Arial,sans-serif">{voci}</ul>""")
+
+    da_fare = ""
+    if r.get("priorita"):
+        righe = ""
+        for i, v in enumerate(r["priorita"], 1):
+            quante = v.get("pagine") or 1
+            perche = (f"tocca {quante} pagine" if quante > 1 else "su una pagina")
+            gravita = {"critical": "è la criticità più grave rimasta",
+                       "high": "è fra le più gravi rimaste"}.get(v.get("severita"))
+            motivo = f"{gravita}, {perche}" if gravita else perche
+            righe += (f'<li style="margin-bottom:6px"><b>{geo_audit.esc(v["titolo"])}</b>: '
+                      f"{motivo}</li>")
+        da_fare = (
+            '<p style="font-size:13px;letter-spacing:.06em;text-transform:uppercase;'
+            "color:#76768A;margin:24px 0 8px;font-family:'Inter',Arial,sans-serif;"
+            'font-weight:700">Le 2 cose da fare adesso</p>'
+            f'<ol style="margin:0;padding-left:18px;font-size:15px;line-height:1.7;'
+            f"""color:#4A4A5A;font-family:'Inter',Arial,sans-serif">{righe}</ol>""")
+
+    resta = ""
+    aperte = r.get("aperte") or 0
+    if aperte:
+        gravi = sum(r.get("per_sev", {}).get(s, 0) for s in ("critical", "high"))
+        testo = (f"{aperte} criticità ancora aperte"
+                 + (f", di cui {gravi} gravi" if gravi else ""))
+        resta = (f'<p class="t-3" style="font-size:14px;line-height:1.7;color:#76768A;'
+                 f"""margin:20px 0 0;font-family:'Inter',Arial,sans-serif">"""
+                 f"<b>Cosa resta aperto:</b> {testo}.</p>")
+
+    link = f"{SITE_URL}/project/{project['id']}" if SITE_URL else ""
+    corpo = f"""
+        <tr><td class="px" style="padding:32px 36px 8px">
+          <h1 style="font-size:21px;line-height:1.35;color:#14141C;margin:0 0 16px;
+                     font-family:'Inter',Arial,sans-serif;font-weight:700">Ecco com’è andato
+                     {mese} per {dom}</h1>
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:0 0 14px;
+                    font-family:'Inter',Arial,sans-serif">Ciao,</p>
+          <p style="font-size:17px;margin:0;font-family:'Inter',Arial,sans-serif;
+                    font-weight:700;color:#14141C">Punteggio: {punteggio}/100
+             <span style="font-size:14px;font-weight:600;color:{delta_col}">({delta_txt})</span></p>
+          {significativo}
+          {sistemato}
+          {da_fare}
+          {resta}
+        </td></tr>
+        <tr><td class="px" style="padding:22px 36px 34px">
+          {f'<a href="{link}" style="display:inline-block;background:#6C5CE7;color:#fff;'
+           f'text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;'
+           f'font-weight:600;font-family:Inter,Arial,sans-serif">Apri il report completo</a>'
+           if link else ''}
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:18px 0 0;
+                    font-family:'Inter',Arial,sans-serif">Se vuoi ne parliamo in una breve
+                    call.</p>
+          <p class="t-2" style="font-size:15px;line-height:1.65;color:#4A4A5A;margin:14px 0 0;
+                    font-family:'Inter',Arial,sans-serif">Marco<br>Vertical AI</p>
+        </td></tr>"""
+    segno = f" ({'+' if (delta or 0) > 0 else ''}{delta})" if delta is not None else ""
+    quante_prio = len(r.get("priorita") or [])
+    coda_ogg = (f" e le {quante_prio} priorità del mese" if quante_prio else "")
+    _resend_post([to], f"{dominio} · {mese}: punteggio {punteggio}{segno}{coda_ogg}",
+                 _guscio_email(f"Rapporto di {mese}", corpo, project["id"]))
+    return True
+
+
 def _send_riepilogo_approvazioni(righe: list) -> bool:
     """1.1 · Il riepilogo settimanale delle domande che aspettano il via libera.
 
@@ -2130,7 +2343,14 @@ def _manda_digest(project: dict, tipo: str) -> bool:
         destinatario = FROM_EMAIL
     if not destinatario:
         return False
-    if not _send_digest(destinatario, project, r, tipo):
+    # ⚠️ Il rapporto al CLIENTE usa il testo deciso da Francesco il 24/09
+    # (3.3): punteggio, variazione, cosa è stato sistemato, le due cose da
+    # fare. Il riepilogo interno al team resta quello di prima — sono due
+    # pubblici diversi e unificarli li peggiorerebbe entrambi.
+    if tipo == "client_digest":
+        if not _send_report_mensile_cliente(destinatario, project, r):
+            return False
+    elif not _send_digest(destinatario, project, r, tipo):
         return False
     _sb_report_log_scrivi(project["id"], tipo, destinatario)
     return True
@@ -2798,6 +3018,47 @@ def _manda_i_digest_scaduti(iniziato_a: float) -> list:
 
 _FREQUENZA_GIORNI = {"weekly": 7, "monthly": 30, "custom": 7}
 _CRON_AI_BUDGET = float(os.environ.get("CRON_AI_BUDGET", "50"))
+
+
+@app.get("/api/cron-followup")
+async def api_cron_followup(request: Request):
+    """3.2 · La proposta di approfondimento, tre giorni dopo il report.
+
+    ⚠️ Una sola volta per indirizzo, MAI due. Il registro traccia l'email e
+    non il progetto: chi sblocca tre report non deve ricevere tre volte la
+    stessa proposta commerciale, che è il modo più rapido di finire nello
+    spam.
+
+    ⚠️ Popolazione: chi ha ricevuto davvero un report per email, cioè chi l'ha
+    sbloccato (`audits.pending_email`). Non i lead del form pubblico: a loro
+    nessun report è mai stato spedito, e scrivere «qualche giorno fa ti abbiamo
+    inviato il report» sarebbe falso.
+    """
+    if _CRON_SECRET and request.headers.get("Authorization") != f"Bearer {_CRON_SECRET}":
+        return Response(json.dumps({"error": "unauthorized"}),
+                        status_code=401, media_type="application/json")
+    candidati = _sb_report_da_seguire(giorni=3)
+    if not candidati:
+        return {"esito": "nessun_candidato"}
+
+    gia_scritti = _sb_followup_gia_mandati()
+    mandate = 0
+    for a in candidati:
+        email = (a.get("pending_email") or "").strip().lower()
+        if not email or email in gia_scritti:
+            continue
+        riga = _riga_monitoraggio(a.get("project_id") or "") if a.get("project_id") else ""
+        await run_in_threadpool(_send_followup_analisi, email,
+                               a.get("domain") or "il tuo sito", a.get("overall"), riga)
+        _sb_log_globale_scrivi("followup_analisi", email)
+        gia_scritti.add(email)
+        mandate += 1
+        # ⚠️ Una per invocazione non basterebbe (ne resterebbero in coda per
+        # giorni) e tutte insieme rischiano il tempo della funzione: cinque è
+        # il compromesso, e il cron gira ogni giorno.
+        if mandate >= 5:
+            break
+    return {"esito": "fatto", "mandate": mandate, "candidati": len(candidati)}
 
 
 @app.get("/api/cron-approvazioni")

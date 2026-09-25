@@ -1210,6 +1210,48 @@ def _sb_report_log_scrivi(project_id: str, tipo: str, destinatario: str) -> None
         pass
 
 
+def _sb_report_da_seguire(giorni: int = 3) -> list:
+    """I report spediti per email esattamente `giorni` giorni fa.
+
+    ⚠️ Una FINESTRA di un giorno, non «più vecchi di tre giorni». Senza il
+    limite superiore, il primo giro del cron scriverebbe a tutto lo storico in
+    una volta — quattordici persone che non sentono parlare di noi da mesi si
+    vedrebbero arrivare una proposta commerciale lo stesso giorno.
+    """
+    try:
+        oggi = datetime.now(timezone.utc).date()
+        da = (oggi - timedelta(days=giorni)).isoformat()
+        a = (oggi - timedelta(days=giorni - 1)).isoformat()
+        r = req.get(f"{SUPABASE_URL}/rest/v1/audits", headers=_SB_H, timeout=20,
+                    params={"select": "id,project_id,domain,overall,pending_email,created_at",
+                            "pending_email": "not.is.null",
+                            "created_at": f"gte.{da}",
+                            "and": f"(created_at.lt.{a})",
+                            "order": "created_at.desc", "limit": "200"})
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
+def _sb_followup_gia_mandati() -> set:
+    """Gli indirizzi che hanno già ricevuto la proposta. Mai due volte."""
+    try:
+        if not _report_tabella_c_e("report_log"):
+            return set()
+        r = req.get(f"{SUPABASE_URL}/rest/v1/report_log", headers=_SB_H, timeout=20,
+                    params={"report_type": "eq.followup_analisi",
+                            "select": "sent_to", "limit": "5000"})
+        return {(x.get("sent_to") or "").strip().lower()
+                for x in (r.json() if r.ok else []) if x.get("sent_to")}
+    except Exception:
+        # ⚠️ In caso di errore torna un insieme VUOTO, che fa mandare. È la
+        # scelta sbagliata solo in apparenza: il chiamante aggiunge comunque
+        # ogni indirizzo mentre procede, quindi il rischio è un doppione
+        # isolato, non una raffica. L'alternativa — trattare l'errore come
+        # «già mandati tutti» — spegnerebbe la funzione in silenzio per sempre.
+        return set()
+
+
 def _sb_log_globale_scrivi(tipo: str, a_chi: str) -> None:
     """Registra un invio che NON riguarda un progetto solo.
 

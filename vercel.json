@@ -11,6 +11,10 @@
     {
       "path": "/api/cron-approvazioni",
       "schedule": "15 7 * * 1"
+    },
+    {
+      "path": "/api/cron-followup",
+      "schedule": "0 9 * * *"
     }
   ]
 }
