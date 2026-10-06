@@ -41,7 +41,10 @@ if gia:
     print(f"    ce ne sono già {len(gia)}: non ne genero altre")
 else:
     t0 = time.time()
-    quante = ai_giro.prepara_progetto(PID, prog["domain"], prog.get("sector") or "", CHIAVI)
+    try:
+        quante = ai_giro.prepara_progetto(PID, prog["domain"], prog.get("sector") or "", CHIAVI)
+    except ai_giro.GenerazioneFallita as e:
+        sys.exit(f"    generazione fallita: {e.motivo}")
     print(f"    generate {quante} domande in {time.time()-t0:.0f}s")
     gia = db._sb_ai_domande(PID)
 

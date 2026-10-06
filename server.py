@@ -3135,13 +3135,18 @@ async def api_cron_ai(request: Request):
                 quante = await run_in_threadpool(
                     ai_giro.prepara_progetto, project["id"], project["domain"],
                     project.get("sector") or "", conf["chiavi"])
-            except Exception as e:
-                print(f"[cron-ai] {project.get('domain')}: generazione fallita {e!r}")
-                continue
-            if not quante:
+            except ai_giro.SenzaAudit:
                 # nessun audit ancora: le domande si scrivono leggendo le
                 # pagine vere, non indovinando dal nome del dominio
                 continue
+            except Exception as e:
+                # ⚠️ Prima un credito esaurito tornava 0 e finiva qui sopra,
+                # scambiato per «manca l'audit»: nessuna riga nel log.
+                print(f"[cron-ai] {project.get('domain')}: generazione fallita "
+                      f"{getattr(e, 'motivo', None) or repr(e)}")
+                continue
+            if not quante:
+                continue                   # ce le ha gia'
             return {"progetto": project["domain"], "esito": "domande_generate",
                     "domande": quante, "nota": "in attesa di approvazione dal team"}
 
@@ -3399,18 +3404,32 @@ async def admin_progetto_ai_prompt_approva(request: Request, project_id: str):
 async def admin_progetto_ai_prompt_rigenera(request: Request, project_id: str):
     """Aggiunge proposte nuove; NON tocca quelle esistenti (punto aperto §10.1
     del documento: si e' scelto «aggiunta», perche' sostituire cancellerebbe
-    domande con uno storico di risposte)."""
+    domande con uno storico di risposte).
+
+    ⚠️ Mai `esito: ok` con zero domande: il 05/10 un credito OpenAI esaurito
+    rispondeva `{"esito":"ok","generate":0}` e il bottone sembrava non fare
+    nulla. Ogni fallimento torna `esito: errore` con un `motivo` leggibile,
+    che la pagina mostra nel banner."""
     user, project, body, err = await _admin_ai_azione(request, project_id)
     if err: return err
     conf = ai_giro.chiavi_configurate()
     if not conf["chiavi"]:
-        return JSONResponse({"esito": "nessuna chiave configurata"}, status_code=503)
+        return JSONResponse({"esito": "errore", "motivo": "nessuna chiave configurata in "
+                             "Configurazione AI"}, status_code=503)
     try:
         n = await run_in_threadpool(ai_giro.prepara_progetto, project_id,
                                     project.get("domain") or "", project.get("sector") or "",
-                                    conf["chiavi"])
+                                    conf["chiavi"], aggiungi=True)
+    except ai_giro.GenerazioneFallita as e:
+        _admin_traccia(user, "ai_prompt_generazione_fallita", f"{project.get('domain')}:{e.motivo[:120]}")
+        return JSONResponse({"esito": "errore", "motivo": e.motivo}, status_code=e.stato_http)
     except Exception as e:
-        return JSONResponse({"esito": f"generazione fallita ({str(e)[:80]})"}, status_code=502)
+        print(f"[ai-domande] {project.get('domain')}: errore imprevisto {e!r}")
+        return JSONResponse({"esito": "errore", "motivo": f"errore imprevisto ({str(e)[:80]})"},
+                            status_code=500)
+    if not n:                              # non dovrebbe succedere: prepara_progetto solleva
+        return JSONResponse({"esito": "errore", "motivo": "nessuna domanda generata"},
+                            status_code=502)
     _admin_traccia(user, "ai_prompt_generati", f"{project.get('domain')}:{n}")
     return JSONResponse({"esito": "ok", "generate": n})
 

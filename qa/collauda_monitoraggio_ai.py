@@ -274,10 +274,14 @@ _senza_audit = next((p for p in progetti
                      and not db._sb_ai_domande(p["id"])), None)
 if _senza_audit:
     n_prima = len(db._sb_ai_domande(_senza_audit["id"]))
-    ai_giro.prepara_progetto(_senza_audit["id"], _senza_audit.get("domain") or "",
-                             "", ai_giro.chiavi_configurate()["chiavi"])
-    controlla("senza audit non si generano domande",
-              len(db._sb_ai_domande(_senza_audit["id"])) == n_prima,
+    try:
+        ai_giro.prepara_progetto(_senza_audit["id"], _senza_audit.get("domain") or "",
+                                 "", ai_giro.chiavi_configurate()["chiavi"])
+        _motivo = ""
+    except ai_giro.SenzaAudit as e:
+        _motivo = e.motivo
+    controlla("senza audit non si generano domande, e lo si dice",
+              len(db._sb_ai_domande(_senza_audit["id"])) == n_prima and bool(_motivo),
               _senza_audit.get("domain"))
 else:
     print("   -- nessun progetto senza audit: salto")
