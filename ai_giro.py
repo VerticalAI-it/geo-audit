@@ -112,65 +112,163 @@ def genera_domande(dominio: str, settore: str, chiave: str,
         ' "argomento": "...", "intento": "informativo|commerciale|comparativo"}.'
         " Niente altro testo.")
 
-    try:
-        risposta = _chiedi_senza_cercare(provider, richiesta, chiave)
-    except Exception:
-        return []
+    # ⚠️ Ogni strada che non produce domande solleva `GenerazioneFallita` con il
+    # motivo. Prima tornava una lista vuota, e il 05/10 «Genera proposte» ha
+    # risposto `esito: ok, generate: 0` per un credito OpenAI esaurito: il 429
+    # finiva in una stringa vuota e la stringa vuota in «zero domande».
+    risposta = _chiedi_senza_cercare(provider, richiesta, chiave)
 
     grezzo = (risposta or "").strip()
+    if not grezzo:
+        raise GenerazioneFallita(f"{_NOME_PROVIDER.get(provider, provider)} ha risposto senza testo")
     m = re.search(r"\[.*\]", grezzo, re.S)
     if not m:
-        return []
+        raise GenerazioneFallita("il modello non ha risposto con un elenco JSON di domande")
     try:
         voci = json.loads(m.group(0))
     except Exception:
-        return []
+        raise GenerazioneFallita("il modello ha risposto con un JSON non valido")
 
-    fuori = []
+    fuori, col_nome = [], 0
+    radice = ai_monitor.dominio_di(dominio).split(".")[0]
     for v in voci:
+        if not isinstance(v, dict):
+            continue
         testo = (v.get("domanda") or "").strip()
         if not testo:
             continue
         # ⚠️ Se il nome del sito è finito nella domanda, quella domanda non
         # misura niente: si scarta invece di tenerla e falsare la media.
-        radice = ai_monitor.dominio_di(dominio).split(".")[0]
         if radice and radice.lower() in testo.lower():
+            col_nome += 1
             continue
         fuori.append({"domanda": testo,
                       "argomento": (v.get("argomento") or "Generale").strip(),
                       "intento": (v.get("intento") or "").strip()})
+    if not fuori:
+        raise GenerazioneFallita(
+            f"tutte le proposte del modello sono state scartate ({col_nome} contenevano "
+            "il nome del sito)" if col_nome else
+            "il modello ha risposto con un elenco senza domande utilizzabili")
     return fuori[:QUANTE_DOMANDE]
 
 
+class GenerazioneFallita(Exception):
+    """La generazione delle domande non ha prodotto niente, e `motivo` dice perché.
+
+    `motivo` è scritto per chi lo legge nel pannello admin, non per un log:
+    è il testo che compare nel banner sotto «Genera proposte».
+    """
+    stato_http = 502
+
+    def __init__(self, motivo: str):
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
+class SenzaAudit(GenerazioneFallita):
+    """Il progetto non ha ancora un audit: non è un guasto, è un'attesa.
+
+    Separata perché il cron la tratta come normale (passa al progetto dopo
+    senza scrivere niente nel log), mentre l'admin che preme il bottone deve
+    leggere il motivo.
+    """
+    stato_http = 409
+
+
+# Il modello economico usato per i compiti accessori: non configurabile da
+# admin, come chiede il documento. Sta qui perché il log e il messaggio
+# d'errore dicano quale modello ha risposto.
+_MODELLO_ECONOMICO = {"anthropic": "claude-haiku-4-5", "openai": "gpt-4o-mini",
+                      "gemini": "gemini-flash-latest"}
+_NOME_PROVIDER = {"anthropic": "Anthropic", "openai": "OpenAI", "gemini": "Gemini"}
+
+
+def _motivo_http(provider: str, r) -> str:
+    """Il motivo leggibile di una risposta d'errore del provider.
+
+    ⚠️ Il credito esaurito va riconosciuto per nome: è il caso che ha prodotto
+    il bug del 05/10, e «HTTP 429» da solo fa pensare a un limite di frequenza
+    che passa aspettando — il credito invece va ricaricato.
+    """
+    nome = _NOME_PROVIDER.get(provider, provider)
+    try:
+        errore = (r.json() or {}).get("error") or {}
+    except Exception:
+        errore = {}
+    if isinstance(errore, str):
+        errore = {"message": errore}
+    messaggio = str(errore.get("message") or r.text or "")[:200]
+    codici = f"{errore.get('code') or ''} {errore.get('type') or ''} {errore.get('status') or ''} {messaggio}".lower()
+    if any(s in codici for s in ("insufficient_quota", "credit_balance", "credit balance",
+                                 "billing", "no credits")):
+        return f"credito esaurito sull'account {nome}: va ricaricato"
+    if r.status_code in (401, 403):
+        return f"chiave {nome} non valida o revocata"
+    if r.status_code == 429 or "resource_exhausted" in codici:
+        return f"troppe richieste a {nome}: riprova fra qualche minuto"
+    if r.status_code == 404:
+        return f"modello {_MODELLO_ECONOMICO.get(provider, '')} non disponibile con questa chiave {nome}"
+    return f"{nome} ha risposto HTTP {r.status_code}: {messaggio}"
+
+
 def _chiedi_senza_cercare(provider: str, richiesta: str, chiave: str) -> str:
-    """Una domanda semplice al modello economico, senza ricerca web."""
+    """Una domanda semplice al modello economico, senza ricerca web.
+
+    Solleva `GenerazioneFallita` se il provider non risponde o risponde con un
+    errore: mai una stringa vuota al posto dell'errore.
+    """
     import requests as req
+    modello = _MODELLO_ECONOMICO.get(provider)
+    if not modello:
+        raise GenerazioneFallita(f"provider {provider} non gestito per la generazione")
+    try:
+        if provider == "anthropic":
+            r = req.post("https://api.anthropic.com/v1/messages", timeout=60,
+                         headers={"x-api-key": chiave, "anthropic-version": "2023-06-01",
+                                  "Content-Type": "application/json"},
+                         json={"model": modello, "max_tokens": 2000,
+                               "messages": [{"role": "user", "content": richiesta}]})
+        elif provider == "openai":
+            r = req.post("https://api.openai.com/v1/chat/completions", timeout=60,
+                         headers={"Authorization": f"Bearer {chiave}",
+                                  "Content-Type": "application/json"},
+                         json={"model": modello, "max_tokens": 2000,
+                               "messages": [{"role": "user", "content": richiesta}]})
+        else:
+            r = req.post("https://generativelanguage.googleapis.com/v1beta/models/"
+                         f"{modello}:generateContent",
+                         params={"key": chiave}, timeout=60,
+                         json={"contents": [{"parts": [{"text": richiesta}]}]})
+    except Exception as e:
+        raise GenerazioneFallita(f"{_NOME_PROVIDER[provider]} non risponde ({type(e).__name__})")
+
+    if r.status_code >= 300:
+        raise GenerazioneFallita(_motivo_http(provider, r))
+    try:
+        dati = r.json()
+    except Exception:
+        raise GenerazioneFallita(f"{_NOME_PROVIDER[provider]} ha risposto con un corpo non JSON")
     if provider == "anthropic":
-        r = req.post("https://api.anthropic.com/v1/messages", timeout=60,
-                     headers={"x-api-key": chiave, "anthropic-version": "2023-06-01",
-                              "Content-Type": "application/json"},
-                     json={"model": "claude-haiku-4-5", "max_tokens": 2000,
-                           "messages": [{"role": "user", "content": richiesta}]})
-        return "".join(b.get("text") or "" for b in (r.json().get("content") or []))
+        return "".join(b.get("text") or "" for b in (dati.get("content") or []))
     if provider == "openai":
-        r = req.post("https://api.openai.com/v1/chat/completions", timeout=60,
-                     headers={"Authorization": f"Bearer {chiave}",
-                              "Content-Type": "application/json"},
-                     json={"model": "gpt-4o-mini", "max_tokens": 2000,
-                           "messages": [{"role": "user", "content": richiesta}]})
-        return ((r.json().get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-    if provider == "gemini":
-        r = req.post("https://generativelanguage.googleapis.com/v1beta/models/"
-                     "gemini-flash-latest:generateContent",
-                     params={"key": chiave}, timeout=60,
-                     json={"contents": [{"parts": [{"text": richiesta}]}]})
-        parti = ((r.json().get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
-        return "".join(p.get("text") or "" for p in parti)
-    return ""
+        return ((dati.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+    parti = ((dati.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+    return "".join(p.get("text") or "" for p in parti)
 
 
-def prepara_progetto(project_id: str, dominio: str, settore: str, chiavi: dict) -> int:
-    """Crea le domande di un progetto che non ne ha. Torna quante ne ha create.
+def prepara_progetto(project_id: str, dominio: str, settore: str, chiavi: dict,
+                     aggiungi: bool = False) -> int:
+    """Crea le domande di un progetto. Torna quante ne ha create (sempre > 0).
+
+    Con `aggiungi=False` (il cron) lavora solo su un progetto che non ha
+    domande, e torna 0 se ne ha già. Con `aggiungi=True` («Genera proposte»
+    dell'admin) aggiunge proposte nuove accanto a quelle esistenti, scartando
+    i doppioni: è la scelta del punto aperto §10.1, rigenera = aggiunge.
+
+    Se non riesce a creare niente solleva `GenerazioneFallita` con il motivo
+    (`SenzaAudit` se manca l'audit). Mai 0 per un guasto: lo 0 del cron
+    significa solo «ce le ha già».
 
     ⚠️ Serve un audit gia' fatto: le domande si scrivono leggendo le pagine
     vere del sito (`com_e_fatto_il_sito`), e senza quelle il modello indovina
@@ -179,23 +277,48 @@ def prepara_progetto(project_id: str, dominio: str, settore: str, chiavi: dict) 
     quel sito non gioca. Meglio aspettare il primo audit che generare domande
     su cui poi si misurera' per mesi.
     """
-    if _sb_ai_domande(project_id):
+    esistenti = _sb_ai_domande(project_id, solo_attive=False) if aggiungi else _sb_ai_domande(project_id)
+    if esistenti and not aggiungi:
         return 0                       # ce le ha già: non si sovrascrive niente
-    if not com_e_fatto_il_sito(project_id):
-        return 0                       # nessun audit: non si indovina il mercato
+    com_e = com_e_fatto_il_sito(project_id)
+    if not com_e:
+        raise SenzaAudit("il progetto non ha ancora un audit completato: le domande si "
+                         "scrivono leggendo le pagine del sito, lancia prima un audit")
 
-    chiave = chiavi.get("anthropic") or chiavi.get("openai") or chiavi.get("gemini")
-    provider = ("anthropic" if chiavi.get("anthropic") else
-                "openai" if chiavi.get("openai") else "gemini")
-    if not chiave:
-        return 0
+    provider = next((p for p in ("anthropic", "openai", "gemini") if chiavi.get(p)), "")
+    if not provider:
+        raise GenerazioneFallita("nessuna chiave Anthropic, OpenAI o Gemini configurata "
+                                 "in Configurazione AI")
+    modello = _MODELLO_ECONOMICO[provider]
+
+    try:
+        proposte = genera_domande(dominio, settore, chiavi[provider], provider, com_e)
+    except GenerazioneFallita as e:
+        print(f"[ai-domande] {dominio}: provider={provider} modello={modello} "
+              f"esito=errore motivo={e.motivo!r}")
+        raise
+
+    # ⚠️ Si confronta anche con le domande disattivate: una domanda tolta dal
+    # monitoraggio non deve rientrare dalla porta di servizio alla rigenerazione.
+    gia = {(d.get("prompt_text") or "").strip().lower() for d in esistenti}
+    nuove = [v for v in proposte if v["domanda"].strip().lower() not in gia]
+    if not nuove:
+        print(f"[ai-domande] {dominio}: provider={provider} modello={modello} "
+              f"esito=nessuna_nuova proposte={len(proposte)}")
+        raise GenerazioneFallita(f"le {len(proposte)} proposte del modello coincidono con "
+                                 "domande già presenti")
 
     fatte = 0
-    com_e = com_e_fatto_il_sito(project_id)
-    for v in genera_domande(dominio, settore, chiave, provider, com_e):
+    for v in nuove:
         topic_id = _sb_ai_argomento_crea(project_id, v["argomento"])
         if topic_id and _sb_ai_domanda_crea(topic_id, v["domanda"], v["intento"]):
             fatte += 1
+    print(f"[ai-domande] {dominio}: provider={provider} modello={modello} "
+          f"esito={'ok' if fatte else 'salvataggio_fallito'} proposte={len(proposte)} "
+          f"nuove={len(nuove)} salvate={fatte}")
+    if not fatte:
+        raise GenerazioneFallita(f"il modello ha proposto {len(nuove)} domande ma il "
+                                 "database non ne ha salvata nessuna")
     return fatte
 
 

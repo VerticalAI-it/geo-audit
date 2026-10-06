@@ -526,12 +526,21 @@ def admin_configurazione_ai(config: dict, modelli: dict, cifratura_ok: bool,
                  else '<span class="pill bad">Non configurato</span>')
         if lista:
             opzioni = "".join(
-                f'<option value="{esc(m["model_id"])}"{" selected" if m["model_id"] == modello else ""}>'
+                f'<option value="{esc(m["model_id"])}" data-web="{1 if m.get("supports_web_search") else 0}"'
+                f'{" selected" if m["model_id"] == modello else ""}>'
                 f'{esc(m["model_id"])}{"" if m.get("supports_web_search") else " \u2014 senza ricerca web"}</option>'
                 for m in lista)
             select = f'<select class="ai-select" data-modello="{pid}" style="width:100%">{opzioni}</select>'
-            nota_web = ('<div class="ai-nota ok">\u2713 Un modello senza ricerca web risponde a memoria e '
-                        'non cita nessuno: darebbe zero per sempre. Scegli uno senza la nota.</div>')
+            # \u26a0\ufe0f Prima era un testo fisso con la spunta verde, mostrato anche
+            # sotto un modello CON ricerca web: un avviso vestito da conferma.
+            # Ora compare solo se il modello scelto (o il primo della lista, che
+            # il select mostra quando non c'\u00e8 una scelta salvata) non cerca.
+            scelto = next((m for m in lista if m["model_id"] == modello), lista[0])
+            nota_web = (f'<div class="ai-nota warn" data-nota-web="{pid}" role="note"'
+                        f'{"" if not scelto.get("supports_web_search") else " hidden"}>'
+                        '\u26a0 Il modello scelto non usa la ricerca web: risponde a memoria e '
+                        'non cita nessuno, quindi darebbe zero per sempre. Scegline uno senza la '
+                        'nota \u00absenza ricerca web\u00bb.</div>')
             ultimo = lista[0].get("fetched_at") or ""
             info_lista = f'Lista aggiornata il {esc(ultimo[:10])}' if ultimo else 'Lista disponibile'
         else:
@@ -580,7 +589,13 @@ def admin_configurazione_ai(config: dict, modelli: dict, cifratura_ok: bool,
     });
   });
   document.querySelectorAll('[data-modello]').forEach(function(s){
-    s.addEventListener('change', function(){ manda('/admin/ai/modello', {provider: s.dataset.modello, modello: s.value}, null, function(){}); });
+    s.addEventListener('change', function(){
+      // il select salva senza ricaricare: la nota va allineata qui
+      var nota = document.querySelector('[data-nota-web="' + s.dataset.modello + '"]');
+      var opz = s.options[s.selectedIndex];
+      if(nota && opz) nota.hidden = opz.getAttribute('data-web') === '1';
+      manda('/admin/ai/modello', {provider: s.dataset.modello, modello: s.value}, null, function(){});
+    });
   });
   document.querySelectorAll('[data-aggiorna-modelli]').forEach(function(b){
     b.addEventListener('click', function(){ manda('/admin/ai/modelli-aggiorna', {provider: b.dataset.aggiornaModelli}, b); });
@@ -648,6 +663,9 @@ def admin_monitoraggio_progetto(project: dict, cliente: dict, imp: dict, dati: d
         + (f'<button type="button" class="btn ai-btn-primary" data-approva-tutte="1">\u2713 Approva le {da_appr} in attesa</button>' if da_appr else '')
         + '<button type="button" class="btn" data-rigenera="prompt" title="Aggiunge nuove proposte lette dal sito; non tocca quelle esistenti">\u21bb Genera proposte</button>'
           '<button type="button" class="btn" data-aggiungi-prompt="1">+ Aggiungi domanda</button></div></div>'
+        # l'esito di «Genera proposte»: il numero di domande, o il motivo per
+        # cui non ne sono nate (prima il bottone sembrava non fare nulla)
+        '<div class="ai-esito" id="esito-domande" role="status" aria-live="polite" hidden style="margin:12px 20px"></div>'
         '<div class="ai-modulo" id="nuovo-prompt" hidden>'
         '<input class="ai-input" id="np-argomento" placeholder="Argomento (es. selle da dressage)" style="width:220px">'
         '<input class="ai-input" id="np-testo" placeholder="La domanda, come la farebbe un cliente" style="flex:1;min-width:240px">'
@@ -683,12 +701,50 @@ def admin_monitoraggio_progetto(project: dict, cliente: dict, imp: dict, dati: d
     js = """<script>
 (function(){
   var BASE = '/admin/progetti/' + %s + '/ai';
+  // Il motivo d'errore che il server manda nel corpo (`motivo`), non solo lo
+  // stato HTTP: «HTTP 502» non dice a nessuno che il credito è finito.
+  function leggi(r){
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      if(!r.ok || (j && j.esito === 'errore')) throw new Error((j && (j.motivo || j.esito)) || ('HTTP ' + r.status));
+      return j;
+    });
+  }
   function manda(url, corpo, bottone){
     var t = bottone ? bottone.textContent : '';
     if(bottone){ bottone.disabled = true; bottone.textContent = '…'; }
     return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo)})
-      .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); location.reload(); })
+      .then(leggi).then(function(){ location.reload(); })
       .catch(function(e){ alert('Non sono riuscito: ' + e.message); if(bottone){ bottone.disabled=false; bottone.textContent=t; } });
+  }
+  var esito = document.getElementById('esito-domande');
+  function mostraEsito(classe, testo){
+    if(!esito) return;
+    esito.className = 'ai-esito ' + classe; esito.textContent = testo; esito.hidden = false;
+  }
+  // L'esito positivo sopravvive al ricaricamento che porta in pagina le domande
+  // nuove. sessionStorage può mancare (finestra privata): allora si perde solo
+  // il messaggio, le domande si vedono comunque.
+  try {
+    var salvato = sessionStorage.getItem('geo-esito-domande');
+    if(salvato){ sessionStorage.removeItem('geo-esito-domande'); mostraEsito('ok', salvato); }
+  } catch(e){}
+  function generaProposte(b){
+    var t = b.innerHTML;
+    b.disabled = true; b.setAttribute('aria-busy', 'true');
+    b.innerHTML = '<span class="ai-spinner" aria-hidden="true"></span>Genero le proposte\\u2026';
+    if(esito) esito.hidden = true;
+    fetch(BASE + '/prompt/rigenera', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+      .then(leggi)
+      .then(function(j){
+        var n = j.generate || 0;
+        var msg = '\\u2713 ' + n + (n === 1 ? ' domanda generata' : ' domande generate') + ': sono da approvare prima del giro.';
+        try { sessionStorage.setItem('geo-esito-domande', msg); } catch(e){}
+        location.reload();
+      })
+      .catch(function(e){
+        mostraEsito('err', 'Nessuna domanda generata: ' + e.message + '.');
+        b.disabled = false; b.removeAttribute('aria-busy'); b.innerHTML = t;
+      });
   }
   document.querySelectorAll('.ai-toggle[data-imp]').forEach(function(b){
     b.addEventListener('click', function(){ manda(BASE + '/impostazioni', {campo: b.dataset.imp, valore: !b.classList.contains('on')}); });
@@ -713,7 +769,8 @@ def admin_monitoraggio_progetto(project: dict, cliente: dict, imp: dict, dati: d
     if(nuovo && nuovo.trim() && nuovo.trim() !== attuale) manda(BASE + '/prompt/modifica', {id: b.dataset.modifica, testo: nuovo.trim()}, b);
   }); });
   document.querySelectorAll('[data-rigenera]').forEach(function(b){ b.addEventListener('click', function(){
-    manda(BASE + (b.dataset.rigenera === 'prompt' ? '/prompt/rigenera' : '/competitor/rigenera'), {}, b);
+    if(b.dataset.rigenera === 'prompt') generaProposte(b);
+    else manda(BASE + '/competitor/rigenera', {}, b);
   }); });
   function mostra(id, campo){ var f = document.getElementById(id); f.hidden = !f.hidden; if(!f.hidden) document.getElementById(campo).focus(); }
   var ap = document.querySelector('[data-aggiungi-prompt]'); if(ap) ap.addEventListener('click', function(){ mostra('nuovo-prompt', 'np-argomento'); });
