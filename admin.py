@@ -570,6 +570,8 @@ def _attivita_recente(azioni: list) -> str:
         "promemoria_tracking": "ha mandato il promemoria tracking a",
         "magic_link_manuale": "ha rimandato il link di accesso a",
         "rilancia_job": "ha rilanciato",
+        "progetto_archiviato": "ha archiviato",
+        "progetto_ripristinato": "ha ripristinato",
     }
     righe = []
     for a in azioni[:5]:
@@ -745,6 +747,8 @@ def schermata_log(azioni: list) -> str:
         "nota_cliente": "ha scritto una nota su",
         "promemoria_tracking": "ha mandato il promemoria tracking a",
         "magic_link_manuale": "ha rimandato il link di accesso a",
+        "progetto_archiviato": "ha archiviato",
+        "progetto_ripristinato": "ha ripristinato",
     }
     righe = []
     for a in azioni:

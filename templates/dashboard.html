@@ -18,6 +18,9 @@
 </script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/static/favicon-180.png">
 <title>I tuoi progetti — GEO Audit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -225,6 +228,15 @@ function fmtDate(iso){
   return d.getDate() + ' ' + MESI[d.getMonth()];
 }
 
+// Tre stati, non due: il badge dice il fatto vero invece di scegliere fra due
+// mezze verita'. «attivo» vuol dire che un evento e' arrivato negli ultimi
+// giorni; «fermo da N giorni» che lo snippet c'e' ma non manda piu' niente —
+// il caso che prima veniva mostrato come attivo, e che era quasi ovunque.
+function trackingBadge(p){
+  const cls = {attivo: 'good', fermo: 'warn', assente: 'neutral'}[p.tracking_stato] || 'neutral';
+  return '<span class="badge ' + cls + '">' + esc(p.tracking || '') + '</span>';
+}
+
 function card(p){
   const cls = scoreClass(p.overall);
   const score = p.overall == null ? 'n.d.' : p.overall;
@@ -245,9 +257,7 @@ function card(p){
     + sparkline(p.history, cls)
     + '<div class="pc-badges">'
     +   statusBadge(p.status)
-    +   (p.tracking_active
-          ? '<span class="badge good">Tracking attivo</span>'
-          : '<span class="badge neutral">Tracking non attivo</span>')
+    +   trackingBadge(p)
     + '</div>'
     + '<div class="pc-meta">'
     +   '<span><b>' + crit + '</b> ' + (crit === 1 ? 'criticità' : 'criticità') + '</span>'
@@ -297,7 +307,8 @@ document.getElementById('kpiCriticalSub').textContent = SUMMARY.total
   ? Math.round(100 * SUMMARY.critical / SUMMARY.total) + '% del portfolio' : '';
 document.getElementById('kpiDueSub').textContent      = SUMMARY.oldest_due || 'tutti aggiornati';
 document.getElementById('kpiTrackingSub').textContent = 'su ' + SUMMARY.total +
-  (SUMMARY.total === 1 ? ' progetto' : ' progetti');
+  (SUMMARY.total === 1 ? ' progetto' : ' progetti')
+  + (SUMMARY.tracking_fermo ? ' · ' + SUMMARY.tracking_fermo + ' fermi' : '');
 
 // utente
 /* Email e iniziale ora le scrive il server dentro il menu utente. */

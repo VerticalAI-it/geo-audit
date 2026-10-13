@@ -37,6 +37,18 @@ from bs4 import BeautifulSoup
 
 # ============================================================ CONFIG
 ENGINE_VERSION = "1.4.0"
+
+# ⚠️ Un posto solo. Il prodotto ha quindici <head> diversi e nessuno condiviso:
+# scrivere i link a mano in ognuno vuol dire che il sedicesimo nascera' senza
+# icona e nessuno se ne accorgera'. `tests/test_favicon.py` controlla che ogni
+# pagina li porti, e diventa rosso su una pagina nuova che li dimentica.
+#
+# I file si rigenerano con `python qa/genera_favicon.py`.
+FAVICON_HEAD = (
+    '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">'
+    '<link rel="icon" href="/static/favicon.ico" sizes="any">'
+    '<link rel="apple-touch-icon" href="/static/favicon-180.png">'
+)
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 VerticalAI-GEOAudit/1.1")
 HEADERS = {"User-Agent": BROWSER_UA,
@@ -1256,6 +1268,7 @@ def render_report(domain, site, pages, render_used, respect_robots):
       "document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>")
     head = ('<!doctype html><html lang="it" data-theme="light"><head>'+theme_init+'<meta charset="utf-8">'
       '<meta name="viewport" content="width=device-width,initial-scale=1"><title>GEO Audit — '+esc(domain)+'</title>'
+      + FAVICON_HEAD +
       '<link rel="preconnect" href="https://fonts.googleapis.com">'
       '<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800'
       '&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">'
