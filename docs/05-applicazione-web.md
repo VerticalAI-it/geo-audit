@@ -576,7 +576,21 @@ gli utenti che hanno ricevuto un vecchio link.
 
 ### `POST /contact/{job_id}`
 
-Dal CTA in coda al report: salva su `contact_requests` e notifica il team.
+Dal CTA in coda al report: salva su `contact_requests`, notifica il team e
+(dal 14/10/2026) manda il **lead al CRM VerticalAI Ops** (`lead_ops.py`): in Ops
+nascono il cliente in stato Lead, il referente e un task di pre-vendita per
+Marco, con punteggio, voto e link al report già firmato (`?token=`), così si
+richiama col risultato in mano.
+
+- Parte **in coda** (`BackgroundTasks`) e non solleva mai: se Ops è lento o giù
+  la risposta all'utente non cambia, l'errore resta nel log (`[lead->ops]`).
+- Si accende con `OPS_LEAD_TOKEN` (il token dedicato di Ops, creato da Marco);
+  `OPS_LEAD_URL` di default punta a `verticalai-ops.vercel.app`. Senza token
+  l'invio è spento.
+- Senza dominio (report non trovato) il lead non parte: il dominio dell'email
+  (gmail.com…) creerebbe in Ops un cliente sbagliato.
+- Nessun ritentativo automatico: un secondo invio riusa cliente e persona ma
+  crea un secondo task.
 
 ### `/robots.txt`, `/sitemap.xml`, `/llms.txt`
 

@@ -312,6 +312,7 @@ ottiene solo da CLI. Il README alla radice afferma il contrario ed è obsoleto.
 geo-audit/
 ├── server.py                    ~1670 righe — route, auth, email, cron
 ├── config.py                    variabili d'ambiente condivise
+├── lead_ops.py                  richieste di contatto → lead nel CRM VerticalAI Ops
 ├── db.py                        ~314 righe — accesso Supabase (tutti gli _sb_*)
 ├── views.py                     ~926 righe — HTML di dashboard e tab di progetto
 ├── geo_audit.py                 1004 righe — motore di audit + report HTML/PDF
