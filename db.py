@@ -356,11 +356,20 @@ def _sb_audits_recenti(limit: int = 500) -> list:
     return r.json() if r.ok else []
 
 
-def _sb_progetti_tutti(limit: int = 1000) -> list:
-    """Tutti i progetti, di tutti gli utenti. Solo per il pannello del team."""
+def _sb_progetti_tutti(limit: int = 1000, includi_archiviati: bool = False) -> list:
+    """Tutti i progetti, di tutti gli utenti. Solo per il pannello del team.
+
+    ⚠️ Gli archiviati sono fuori per default, e il default conta: questa
+    funzione alimenta anche il giro che manda i riepiloghi e gli avvisi. Un
+    progetto archiviato che continuasse a mandare email al cliente sarebbe
+    l'opposto di quello che l'archiviazione promette.
+    """
+    params = {"select": "id,user_id,name,domain,scan_frequency,next_scan_at,created_at",
+              "order": "created_at.desc", "limit": str(limit)}
+    if not includi_archiviati:
+        params.update(_filtro_attivi())
     r = req.get(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=15,
-                params={"select": "id,user_id,name,domain,scan_frequency,next_scan_at,created_at",
-                        "order": "created_at.desc", "limit": str(limit)})
+                params=params)
     return r.json() if r.ok else []
 
 
@@ -403,6 +412,92 @@ def _next_scan_at(frequency: str) -> str:
     return (datetime.now(timezone.utc) + delta).isoformat()
 
 
+_ARCHIVIO_C_E = None
+
+
+def _archivio_c_e() -> bool:
+    """Se la colonna `archived_at` esiste gia' (fase M).
+
+    ⚠️ Stessa ragione delle fasi G, H e I: il codice esce prima della
+    migrazione, e nel frattempo il prodotto deve continuare a funzionare.
+    Senza la colonna nessun progetto risulta archiviato — cioe' il
+    comportamento di oggi — e il pulsante dice che la migrazione manca invece
+    di fallire con un 400 di PostgREST.
+    """
+    global _ARCHIVIO_C_E
+    if _ARCHIVIO_C_E is None:
+        try:
+            r = req.get(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=10,
+                        params={"select": "archived_at", "limit": "1"})
+            _ARCHIVIO_C_E = r.ok
+        except Exception:
+            return False
+    return bool(_ARCHIVIO_C_E)
+
+
+def _filtro_attivi() -> dict:
+    """Il filtro «non archiviato» da aggiungere ai parametri di una lettura.
+
+    Vuoto finche' la colonna non c'e': `archived_at=is.null` su una colonna
+    inesistente e' un 400, e un elenco di progetti che va in errore e' peggio
+    di un elenco che mostra anche gli archiviati.
+    """
+    return {"archived_at": "is.null"} if _archivio_c_e() else {}
+
+
+def _sb_project_archivia(project_id: str, chi: str = "") -> bool:
+    """Archivia un progetto. Torna False se la colonna non c'e' ancora."""
+    if not _archivio_c_e():
+        return False
+    try:
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=15,
+                      params={"id": f"eq.{project_id}"},
+                      json={"archived_at": datetime.now(timezone.utc).isoformat(),
+                            "archived_by": chi or None})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_project_ripristina(project_id: str, frequenza: str = "weekly") -> bool:
+    """Riporta in vita un progetto archiviato.
+
+    ⚠️ Azzera anche `next_scan_at`: senza, il progetto torna in home con una
+    data di prossimo audit vecchia di mesi e il cron lo rivendica subito,
+    mettendolo davanti a tutti gli altri in coda.
+    """
+    if not _archivio_c_e():
+        return False
+    try:
+        r = req.patch(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=15,
+                      params={"id": f"eq.{project_id}"},
+                      json={"archived_at": None, "archived_by": None,
+                            "next_scan_at": _next_scan_at(frequenza)})
+        return r.status_code < 300
+    except Exception:
+        return False
+
+
+def _sb_progetti_archiviati(user_id: str = "") -> list:
+    """I progetti archiviati, per poterli ritrovare e ripristinare.
+
+    Un archivio da cui non si rientra e' una cancellazione con un altro nome.
+    """
+    if not _archivio_c_e():
+        return []
+    params = {"select": "id,user_id,name,domain,archived_at,archived_by",
+              "archived_at": "not.is.null", "order": "archived_at.desc",
+              "limit": "200"}
+    if user_id:
+        params["user_id"] = f"eq.{user_id}"
+    try:
+        r = req.get(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=15,
+                    params=params)
+        return r.json() if r.ok else []
+    except Exception:
+        return []
+
+
 def _sb_project_find(user_id: str, domain: str) -> dict | None:
     r = req.get(f"{SUPABASE_URL}/rest/v1/project",
                 headers=_SB_H,
@@ -428,9 +523,12 @@ def _sb_project_upsert(user_id: str, domain: str) -> dict:
 
 
 def _sb_projects_by_user(user_id: str) -> list:
+    """I progetti attivi dell'utente: gli archiviati non compaiono in home.
+    Si ritrovano in impostazioni e si ripristinano da li'."""
     r = req.get(f"{SUPABASE_URL}/rest/v1/project",
                 headers=_SB_H,
-                params={"user_id": f"eq.{user_id}", "select": "*", "order": "updated_at.desc"},
+                params={"user_id": f"eq.{user_id}", "select": "*", "order": "updated_at.desc",
+                        **_filtro_attivi()},
                 timeout=10)
     return r.json() if r.ok else []
 
@@ -657,7 +755,10 @@ def _sb_project_claim_due() -> dict | None:
     r = req.get(f"{SUPABASE_URL}/rest/v1/project", headers=_SB_H, timeout=10,
                 params={"next_scan_at": f"lte.{now}",
                         "select": "id,user_id,domain,scan_frequency,next_scan_at",
-                        "order": "next_scan_at.asc", "limit": "1"})
+                        "order": "next_scan_at.asc", "limit": "1",
+                        # un progetto archiviato non si analizza piu': e' la
+                        # meta' della richiesta, non un effetto collaterale
+                        **_filtro_attivi()})
     rows = r.json() if r.ok else []
     if not rows:
         return None
@@ -1996,25 +2097,52 @@ def _sb_audits_by_user_grouped(user_id: str, per_progetto: int = 8) -> dict:
     return per_id
 
 
-def _sb_projects_with_tracking(project_ids: list) -> set:
-    """Quali progetti hanno almeno un evento di tracking.
+def _sb_projects_tracking_ultimo(project_ids: list) -> dict:
+    """Quando è arrivato l'ultimo evento di tracking, progetto per progetto.
+
+    Restituisce `{project_id: created_at}` solo per i progetti che hanno almeno
+    un evento: chi non c'è non ha mai mandato niente.
 
     Qui una richiesta sola non basta: gli eventi sono migliaia e PostgREST ne
     restituisce al massimo 1000, quindi un progetto con solo eventi vecchi
     sfuggirebbe. Si fanno tante richieste quanti i progetti, ma **in
     parallelo**: ognuna chiede una riga sola, e il tempo totale è quello della
     più lenta invece della somma.
+
+    ⚠️ Serve la **data**, non un sì/no, perché le due domande che il prodotto
+    pone su questo dato sono diverse: la dashboard chiede «sta tracciando
+    adesso?», il pannello chiede «l'ha installato?» per decidere a chi mandare
+    il promemoria. Con un insieme di id si poteva rispondere solo alla seconda,
+    e la dashboard scriveva «Tracking attivo» a chi aveva mandato un evento una
+    volta nella vita: 31 progetti su 41 marcati attivi, 6 vivi davvero.
     """
     if not project_ids:
-        return set()
+        return {}
 
-    def ha_eventi(pid):
+    def ultimo(pid):
         try:
             r = req.get(f"{SUPABASE_URL}/rest/v1/tracking_event", headers=_SB_H, timeout=10,
-                        params={"project_id": f"eq.{pid}", "select": "id", "limit": "1"})
-            return pid if r.status_code < 300 and r.json() else None
+                        params={"project_id": f"eq.{pid}", "select": "created_at",
+                                "order": "created_at.desc", "limit": "1"})
+            if r.status_code >= 300:
+                return pid, None
+            righe = r.json()
+            return pid, (righe[0].get("created_at") if righe else None)
         except Exception:
-            return None
+            return pid, None
 
     with ThreadPoolExecutor(max_workers=min(12, len(project_ids))) as pool:
-        return {pid for pid in pool.map(ha_eventi, project_ids) if pid}
+        return {pid: quando for pid, quando in pool.map(ultimo, project_ids) if quando}
+
+
+def _sb_projects_with_tracking(project_ids: list) -> set:
+    """Quali progetti hanno installato il tracking, cioè hanno mandato almeno
+    un evento *una volta*.
+
+    ⚠️ Non dice che stanno tracciando adesso. È la domanda giusta per il
+    promemoria «installa il tracking» — chi l'ha installato e poi si è fermato
+    non va sollecitato a installarlo — e quella **sbagliata** per una label che
+    promette attività: per quella serve `_sb_projects_tracking_ultimo` e una
+    finestra temporale.
+    """
+    return set(_sb_projects_tracking_ultimo(project_ids))

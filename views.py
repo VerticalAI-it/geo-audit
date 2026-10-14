@@ -17,7 +17,7 @@ from ai_sources import CRAWLER_CATEGORIE
 from config import SITE_URL
 from db import _REPORT_PREF_DEFAULT, _TETTO_EVENTI, _sb_audits_by_project, \
     _sb_has_tracking, _sb_issues_by_project, _sb_recent_audits_by_user, _sb_tracking_events, \
-    _sb_tracking_events_conta
+    _sb_tracking_events_conta, _archivio_c_e
 
 
 def _migliaia(n: int) -> str:
@@ -594,11 +594,19 @@ def _score_class(overall) -> str:
 
 
 def _fmt_date(iso: str | None) -> str:
+    """La data, col mese in italiano.
+
+    ⚠️ Era `strftime("%d %b %Y")`, che dipende dalla locale del processo: sul
+    server non e' impostata e il mese usciva in inglese («01 Oct 2026») in
+    un'interfaccia tutta italiana, in diciassette punti. `_MESI` era gia' qui
+    sopra, usata da `_fmt_datetime`: le due funzioni sorelle scrivevano la
+    stessa data in due lingue.
+    """
     if not iso:
         return "—"
     try:
         d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return d.strftime("%d %b %Y")
+        return f"{d.day} {_MESI[d.month - 1]} {d.year}"
     except Exception:
         return iso
 
@@ -2767,6 +2775,71 @@ def _anteprima_email(dominio: str, r: dict) -> str:
     )
 
 
+def _card_archivio(project: dict) -> str:
+    """Il riquadro «Archivia progetto», in fondo alle impostazioni.
+
+    ⚠️ In fondo e non in cima, e fuori dalla schermata principale (richiesta
+    di Silvio): è l'unico comando della pagina che fa sparire delle cose, e non
+    deve stare accanto a quelli che si usano ogni giorno.
+
+    ⚠️ Dice cosa si ferma, voce per voce, invece di «sei sicuro?». Chi
+    archivia non sta chiedendosi se è sicuro: sta chiedendosi cosa succede.
+    """
+    if not _archivio_c_e():
+        # ⚠️ La migrazione (fase M) non e' ancora stata eseguita sul database.
+        # Un pulsante che non puo' funzionare e' peggio di un pulsante assente:
+        # chi lo preme crede di aver archiviato. Qui si dice com'e'.
+        return (
+            '<div class="settings-card">'
+            '<div class="settings-head">'
+            '<span class="card-title" style="margin:0">Archivia progetto</span>'
+            '<span class="badge neutral">Non ancora attivo</span></div>'
+            '<p class="form-hint" style="margin:0">L’archiviazione sarà '
+            'disponibile appena la migrazione del database viene eseguita.</p>'
+            '</div>'
+        )
+
+    archiviato = project.get("archived_at")
+    if archiviato:
+        da_chi = project.get("archived_by")
+        nota = ("Archiviato il " + geo_audit.esc(_fmt_date(archiviato))
+                + (" da " + geo_audit.esc(da_chi) if da_chi else "") + ".")
+        return (
+            '<div class="settings-card">'
+            '<div class="settings-head">'
+            '<span class="card-title" style="margin:0">Progetto archiviato</span>'
+            '<span class="badge neutral">Archiviato</span></div>'
+            '<p class="form-hint" style="margin:0 0 12px">' + nota
+            + " Non compare in home, non viene più analizzato e non manda email. "
+              "I dati — audit, storico del punteggio, eventi di tracking — "
+              "sono tutti al loro posto.</p>"
+            + '<form method="post" action="/project/' + project["id"] + '/ripristina">'
+            '<button type="submit" class="btn btn-primary">Ripristina progetto</button>'
+            '</form></div>'
+        )
+
+    conferma = ("Archiviare questo progetto? Sparisce dalla home e si fermano audit, "
+                "monitoraggio e email. Nessun dato viene cancellato: si può ripristinare.")
+    return (
+        '<div class="settings-card">'
+        '<div class="card-title">Archivia progetto</div>'
+        '<p class="form-hint" style="margin:0 0 10px">Archiviando il progetto:</p>'
+        '<ul class="form-hint" style="margin:0 0 12px; padding-left:18px">'
+        '<li>sparisce dalla home</li>'
+        '<li>l’audit automatico non parte più</li>'
+        '<li>il monitoraggio AI si ferma</li>'
+        '<li>riepiloghi e avvisi di traffico non vengono più mandati</li>'
+        '</ul>'
+        '<p class="form-hint" style="margin:0 0 12px"><b>Niente viene cancellato.</b> '
+        'Audit, storico del punteggio ed eventi di tracking restano, e il progetto '
+        'si ripristina da qui in qualsiasi momento.</p>'
+        + '<form method="post" action="/project/' + project["id"] + '/archivia" '
+        + 'onsubmit="return confirm(&quot;' + conferma + '&quot;);">'
+        + '<button type="submit" class="btn btn--secondary">Archivia progetto</button>'
+        + '</form></div>'
+    )
+
+
 def _tab_settings(project: dict) -> str:
     freq = project.get("scan_frequency") or "weekly"
     opzioni = "".join(
@@ -2805,6 +2878,8 @@ def _tab_settings(project: dict) -> str:
         f'<div class="settings-head"><span class="card-title" style="margin:0">Tracking del traffico AI</span>{stato}</div>'
         f'{_tracking_snippet_html(project["id"])}'
         '</div>'
+
+        + _card_archivio(project)
     )
 
 

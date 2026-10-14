@@ -44,7 +44,8 @@ from db import _SCAN_INTERVALS, _detect_ai_source, _next_scan_at, _sb_audits_by_
     _sb_audits_recenti, _sb_auth_users, _sb_contact_requests, _sb_progetti_tutti, \
     _sb_audit_fallito, _sb_peso_archivio, _sb_traffic_ricalcola, _sb_traffic_riepilogo, \
     _sb_tracking_events, \
-    _sb_projects_with_tracking, \
+    _sb_projects_with_tracking, _sb_projects_tracking_ultimo, \
+    _sb_project_archivia, _sb_project_ripristina, _sb_progetti_archiviati, \
     _sb_ai_impostazioni, _sb_ai_impostazioni_salva, _sb_ai_domande, _sb_ai_domande_da_approvare, \
     _sb_ai_da_approvare_per_progetto, \
     _sb_ai_domanda_approva, _sb_ai_domanda_crea, _sb_ai_domanda_modifica, _sb_ai_domanda_elimina, \
@@ -782,6 +783,7 @@ def _page(title, body):
     return (
         f'<!doctype html><html lang="it" data-theme="dark"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"{geo_audit.FAVICON_HEAD}"
         f"<title>{title}</title>"
         f"{_DS_LINK}"
         f"<style>"
@@ -2843,6 +2845,22 @@ async def roadmap_avvisami(request: Request):
 _SITEMAP_PATHS = ["/", "/roadmap", "/privacy", "/cookie-policy"]
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon_ico():
+    """I browser e i crawler chiedono /favicon.ico alla radice senza leggere
+    l'HTML, quindi i <link> nelle pagine non bastano: senza questa rotta e' un
+    404 a ogni visita, e nei log del cron sembra un errore del prodotto.
+
+    Stessa ragione per cui /robots.txt e' un endpoint FastAPI e non un file.
+    """
+    percorso = os.path.join(_STATIC_DIR, "favicon.ico")
+    if not os.path.exists(percorso):
+        return Response(status_code=404)
+    with open(percorso, "rb") as f:
+        return Response(content=f.read(), media_type="image/x-icon",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/robots.txt", response_class=Response)
 def robots_txt():
     body = f"User-agent: *\nAllow: /\n\nSitemap: {SITE_URL}/sitemap.xml\n"
@@ -3116,6 +3134,12 @@ async def api_cron_ai(request: Request):
     for s_ in pronti:
         project = _sb_project_get(s_["project_id"])
         if not project or not project.get("domain"):
+            continue
+        # ⚠️ Qui il progetto si legge per id, quindi il filtro «non archiviato»
+        # degli elenchi non protegge niente: senza questo controllo un progetto
+        # archiviato continuerebbe a far girare le domande agli assistenti —
+        # cioe' a costare soldi — dopo che qualcuno l'ha messo via.
+        if project.get("archived_at"):
             continue
         esito = await run_in_threadpool(
             ai_giro.esegui_giro, project["id"], project["domain"], conf["chiavi"],
@@ -3696,6 +3720,47 @@ def report(job_id: str, request: Request, token: str = ""):
     return HTMLResponse(_inject_gate(job["html"], job_id))
 
 
+# ⚠️ Una label che dice «Tracking attivo» promette che il tracciamento sta
+# funzionando ADESSO. Per saperlo serve una finestra: senza, basta un evento
+# arrivato una volta nella vita e il progetto resta «attivo» per sempre. È
+# esattamente quello che faceva (31 progetti su 41 marcati attivi, 6 vivi).
+#
+# Sette giorni e non uno: lo snippet manda un evento quando qualcuno visita il
+# sito, e un sito di cliente piccolo puo' passare un paio di giorni senza
+# visite senza che niente sia rotto. Sette giorni di silenzio su un sito vivo
+# invece non capitano, e se capitano e' una notizia, non un falso allarme.
+_GIORNI_TRACKING_VIVO = 7
+
+
+def _stato_tracking(ultimo_evento: str | None) -> dict:
+    """Lo stato del tracking di un progetto, a partire dall'ultimo evento.
+
+    Tre stati e non due, perche' un booleano su questo dato mente da un lato o
+    dall'altro: «attivo» a chi si e' fermato un mese fa, oppure «non attivo» a
+    chi l'ha installato e non ha visite da tre giorni. Il terzo stato dice il
+    fatto vero — installato, ma fermo da N giorni — e non obbliga a scegliere
+    quale bugia raccontare.
+    """
+    if not ultimo_evento:
+        return {"stato": "assente", "label": "Tracking non installato",
+                "giorni": None, "ultimo": None}
+    try:
+        quando = datetime.fromisoformat(str(ultimo_evento).replace("Z", "+00:00"))
+    except ValueError:
+        # Una data illeggibile non e' una prova di attivita': non si promuove
+        # a «attivo» cio' che non si e' riusciti a datare.
+        return {"stato": "assente", "label": "Tracking non installato",
+                "giorni": None, "ultimo": None}
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=timezone.utc)
+    giorni = (datetime.now(timezone.utc) - quando).days
+    if giorni <= _GIORNI_TRACKING_VIVO:
+        return {"stato": "attivo", "label": "Tracking attivo",
+                "giorni": giorni, "ultimo": ultimo_evento}
+    return {"stato": "fermo", "label": f"Tracking fermo da {giorni} giorni",
+            "giorni": giorni, "ultimo": ultimo_evento}
+
+
 def _backfill_projects(user_id: str) -> None:
     """Aggancia a un project le righe audits create prima che il modello
     project esistesse (idempotente: gira ad ogni /dashboard finché serve)."""
@@ -3747,7 +3812,7 @@ def dashboard(request: Request):
     # progetti erano 38 viaggi al database in fila e la pagina ci metteva quasi
     # 6 secondi. NON rimettere le chiamate dentro il ciclo.
     runs_per_progetto = _sb_audits_by_user_grouped(user["id"], per_progetto=8)
-    con_tracking = _sb_projects_with_tracking([p["id"] for p in projects])
+    ultimo_evento = _sb_projects_tracking_ultimo([p["id"] for p in projects])
 
     cards = []
     for p in projects:
@@ -3763,7 +3828,7 @@ def dashboard(request: Request):
         # dal piu' vecchio al piu' recente, solo i run con un punteggio
         history = [r["overall"] for r in reversed(runs) if r.get("overall") is not None]
 
-        tracking_on = p["id"] in con_tracking
+        tr = _stato_tracking(ultimo_evento.get(p["id"]))
         cards.append({
             "id": p["id"], "name": p["name"], "domain": p["domain"],
             "overall": latest.get("overall") if latest else None,
@@ -3774,8 +3839,13 @@ def dashboard(request: Request):
             "pages_count": latest.get("pages_count") if latest else None,
             "last_scan": latest.get("created_at") if latest else None,
             "status": _project_status(latest),
-            "tracking": "Tracking attivo" if tracking_on else "Tracking not installed",
-            "tracking_active": tracking_on,
+            "tracking": tr["label"],
+            "tracking_stato": tr["stato"],
+            "tracking_giorni": tr["giorni"],
+            # ⚠️ Resta un booleano perche' il KPI in cima conta i progetti che
+            # tracciano davvero, ma ora significa «attivo adesso», non
+            # «installato una volta».
+            "tracking_active": tr["stato"] == "attivo",
         })
     cards.sort(key=lambda c: c["last_scan"] or "", reverse=True)
 
@@ -3789,6 +3859,10 @@ def dashboard(request: Request):
         "critical": len([c for c in cards if c["status"] == "Critical"]),
         "audits_due": len(da_rifare),
         "tracking_active": len([c for c in cards if c["tracking_active"]]),
+        # ⚠️ Va mostrato accanto al numero dei vivi: il KPI scende da 31 a 6
+        # e senza questo conto sembra che i progetti siano spariti, invece
+        # che smesso di tracciare.
+        "tracking_fermo": len([c for c in cards if c["tracking_stato"] == "fermo"]),
         "new_this_month": len([p for p in projects if (p.get("created_at") or "") >= _inizio_mese]),
         "oldest_due": (f'{piu_vecchio["domain"]} — {_fmt_date(piu_vecchio["last_scan"])}'
                        if piu_vecchio and piu_vecchio.get("last_scan") else
@@ -3953,6 +4027,49 @@ def project_settings(project_id: str, request: Request, name: str = Form(...), s
     return _apply_refresh(resp, refreshed)
 
 
+@app.post("/project/{project_id}/archivia")
+def project_archivia(project_id: str, request: Request):
+    """Archivia un progetto: sparisce dalla home e tutto cio' che gira si
+    ferma — audit periodico, monitoraggio AI, riepiloghi, avvisi di traffico.
+
+    ⚠️ Non cancella. Un progetto porta con se' gli audit, gli eventi di
+    tracking e lo storico del punteggio: cancellarlo butterebbe mesi di misure
+    per far sparire una riga da un elenco, e non si torna indietro. Qui si
+    torna indietro con un clic, e i dati restano.
+    """
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    if not _sb_project_archivia(project_id, user.get("email") or ""):
+        # La colonna non c'e' ancora (migrazione fase M non eseguita): si dice,
+        # invece di far finta che sia andata.
+        resp = RedirectResponse(f"/project/{project_id}?tab=settings&archivio=ko",
+                                status_code=303)
+        return _apply_refresh(resp, refreshed)
+
+    _sb_admin_traccia(user.get("email") or "", "progetto_archiviato",
+                      project.get("domain") or project_id)
+    return _apply_refresh(RedirectResponse("/dashboard?archiviato=1", status_code=303),
+                          refreshed)
+
+
+@app.post("/project/{project_id}/ripristina")
+def project_ripristina(project_id: str, request: Request):
+    """Riporta in home un progetto archiviato e rimette in moto cio' che era
+    fermo. Un archivio da cui non si rientra e' una cancellazione con un altro
+    nome."""
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
+    if stop is not None:
+        return _apply_refresh(stop, refreshed)
+
+    _sb_project_ripristina(project_id, project.get("scan_frequency") or "weekly")
+    _sb_admin_traccia(user.get("email") or "", "progetto_ripristinato",
+                      project.get("domain") or project_id)
+    resp = RedirectResponse(f"/project/{project_id}?tab=settings", status_code=303)
+    return _apply_refresh(resp, refreshed)
+
+
 @app.post("/project/{project_id}/rerun")
 async def project_rerun(project_id: str, request: Request):
     user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
@@ -4047,6 +4164,7 @@ def unlock(job_id: str, email: str = Form(...)):
 _SHARED_HEAD = (
     '<meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + geo_audit.FAVICON_HEAD
     + _DS_LINK +
     "<style>"
     "body{min-height:100vh;"
