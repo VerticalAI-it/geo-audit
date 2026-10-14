@@ -1650,7 +1650,7 @@ def _sb_ai_esecuzioni(project_id: str, giorni: int = 30, limit: int = 2000) -> l
         r = req.get(f"{SUPABASE_URL}/rest/v1/prompt_runs", headers=_SB_H, timeout=20,
                     params={"project_id": f"eq.{project_id}", "run_at": f"gte.{da}",
                             "select": "id,prompt_id,provider,model_used,run_at,status,"
-                                      "response_text"
+                                      "error,response_text"
                                       + (",batch_id" if _fase_g_c_e() else ""),
                             "order": "run_at.desc", "limit": str(limit)})
         return r.json() if r.ok else []

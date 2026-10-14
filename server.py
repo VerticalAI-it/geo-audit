@@ -3484,14 +3484,32 @@ async def admin_progetto_ai_comp_rimuovi(request: Request, project_id: str):
 
 @app.post("/admin/progetti/{project_id}/ai/competitor/rigenera")
 async def admin_progetto_ai_comp_rigenera(request: Request, project_id: str):
+    """Propone i domini che ricorrono nelle risposte dei giri.
+
+    ⚠️ Mai `esito: ok` con zero concorrenti nuovi: il 14/10 rispondeva
+    `{"esito":"ok","nuovi":[]}`, la pagina si ricaricava uguale e il bottone
+    sembrava rotto. Zero può essere la risposta giusta (nessun giro ancora,
+    giri falliti, nessun sito abbastanza ricorrente, elenco pieno): allora
+    `esito: nessuno` con il `motivo`, che la pagina mostra nel banner."""
     user, project, body, err = await _admin_ai_azione(request, project_id)
     if err: return err
-    nuovi = await run_in_threadpool(ai_giro.scopri_concorrenti, project_id,
-                                    project.get("domain") or "")
-    if nuovi:
-        await run_in_threadpool(ai_giro.riclassifica_citazioni, project_id,
-                                project.get("domain") or "")
-    _admin_traccia(user, "ai_competitor_rigenerati", f"{project.get('domain')}:{len(nuovi)}")
+    dominio = project.get("domain") or ""
+    try:
+        nuovi = await run_in_threadpool(ai_giro.scopri_concorrenti, project_id, dominio)
+        if nuovi:
+            await run_in_threadpool(ai_giro.riclassifica_citazioni, project_id, dominio)
+            motivo = ""
+        else:
+            motivo = await run_in_threadpool(ai_giro.perche_nessun_concorrente,
+                                             project_id, dominio)
+    except Exception as e:
+        print(f"[ai-concorrenti] {dominio}: errore imprevisto {e!r}")
+        return JSONResponse({"esito": "errore", "motivo": f"errore imprevisto ({str(e)[:80]})"},
+                            status_code=500)
+    _admin_traccia(user, "ai_competitor_rigenerati", f"{dominio}:{len(nuovi)}")
+    if not nuovi:
+        print(f"[ai-concorrenti] {dominio}: nessun concorrente nuovo, {motivo}")
+        return JSONResponse({"esito": "nessuno", "nuovi": [], "motivo": motivo})
     return JSONResponse({"esito": "ok", "nuovi": nuovi})
 
 
