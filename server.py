@@ -18,6 +18,7 @@ import ai_giro
 import ai_monitor
 import ai_schermate
 import geo_audit
+import lead_ops
 import piani
 
 # ── moduli interni ───────────────────────────────────────────────────────────
@@ -4511,6 +4512,7 @@ def miei_report_send(email: str = Form(...)):
 
 @app.post("/contact/{job_id}")
 def contact(job_id: str,
+            background: BackgroundTasks,
             email: str = Form(...),
             phone: str = Form(""),
             preference: str = Form("email")):
@@ -4547,6 +4549,13 @@ def contact(job_id: str,
         _send_contact_notif(job_id, domain, overall, grade, email, phone, preference)
     except Exception as e:
         print(f"[/contact] notifica di contatto NON inviata al team per {email}: {e!r}")
+
+    # Lead nel CRM Ops (14/10/2026): in coda, perché il modulo pubblico non deve
+    # aspettare Ops né fallire con lui. Il link porta il token, così chi richiama
+    # apre il report senza login.
+    background.add_task(lead_ops.invia_lead_a_ops, job_id, domain, overall, grade,
+                        email, phone, preference,
+                        f"{SITE_URL}/r/{job_id}?token={_make_token(job_id)}")
 
     return Response(status_code=200)
 

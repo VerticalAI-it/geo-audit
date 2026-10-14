@@ -5,6 +5,8 @@
 - `server.py` — app FastAPI: route, auth, email, cron
 - `config.py` — variabili d'ambiente condivise
 - `db.py` — accesso Supabase (tutti gli `_sb_*`); **importabile senza toccare `server.py`**
+- `lead_ops.py` — richieste di contatto → lead nel CRM VerticalAI Ops. Modulo
+  foglia (solo `config` e `requests`), in coda e senza mai sollevare
 - `ai_sources.py` — chi sono le AI: crawler (dallo User-Agent) e referral (da
   `Referer`/`utm_source`). Modulo foglia, non importa nulla del progetto
 - `views.py` — costruzione HTML di dashboard e tab di progetto

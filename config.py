@@ -14,3 +14,7 @@ RESEND_KEY   = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL   = os.environ.get("FROM_EMAIL", "")
 SITE_URL     = os.environ.get("SITE_URL", "").rstrip("/")
 _SECRET      = os.environ.get("CRON_SECRET", "fallback-secret").encode()
+
+# Lead verso VerticalAI Ops (lead_ops.py). Senza token l'invio è spento.
+OPS_LEAD_URL   = os.environ.get("OPS_LEAD_URL", "https://verticalai-ops.vercel.app/api/lead-in-ingresso")
+OPS_LEAD_TOKEN = os.environ.get("OPS_LEAD_TOKEN", "")
