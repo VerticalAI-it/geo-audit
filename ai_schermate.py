@@ -693,6 +693,9 @@ def admin_monitoraggio_progetto(project: dict, cliente: dict, imp: dict, dati: d
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'
         '<button type="button" class="btn" data-rigenera="competitor" title="Ripropone i domini che ricorrono nelle risposte; non ripropone quelli esclusi">\u21bb Rigenera suggerimenti</button>'
         '<button type="button" class="btn" data-aggiungi-comp="1">+ Aggiungi concorrente</button></div></div>'
+        # l'esito di «Rigenera suggerimenti»: i concorrenti nuovi, o perché non
+        # ce ne sono (prima la pagina si ricaricava uguale, e sembrava rotto)
+        '<div class="ai-esito" id="esito-concorrenti" role="status" aria-live="polite" hidden style="margin:12px 20px"></div>'
         '<div class="ai-modulo" id="nuovo-comp" hidden>'
         '<input class="ai-input" id="nc-dominio" placeholder="dominio.it" style="width:260px">'
         '<button type="button" class="btn ai-btn-primary" id="nc-salva">Salva</button></div>'
@@ -716,35 +719,49 @@ def admin_monitoraggio_progetto(project: dict, cliente: dict, imp: dict, dati: d
       .then(leggi).then(function(){ location.reload(); })
       .catch(function(e){ alert('Non sono riuscito: ' + e.message); if(bottone){ bottone.disabled=false; bottone.textContent=t; } });
   }
-  var esito = document.getElementById('esito-domande');
-  function mostraEsito(classe, testo){
+  // `quale` = 'domande' o 'concorrenti': i due banner sotto i due bottoni.
+  function mostraEsito(quale, classe, testo){
+    var esito = document.getElementById('esito-' + quale);
     if(!esito) return;
     esito.className = 'ai-esito ' + classe; esito.textContent = testo; esito.hidden = false;
   }
-  // L'esito positivo sopravvive al ricaricamento che porta in pagina le domande
+  // L'esito positivo sopravvive al ricaricamento che porta in pagina le righe
   // nuove. sessionStorage può mancare (finestra privata): allora si perde solo
-  // il messaggio, le domande si vedono comunque.
-  try {
-    var salvato = sessionStorage.getItem('geo-esito-domande');
-    if(salvato){ sessionStorage.removeItem('geo-esito-domande'); mostraEsito('ok', salvato); }
-  } catch(e){}
-  function generaProposte(b){
-    var t = b.innerHTML;
+  // il messaggio, le righe si vedono comunque.
+  ['domande', 'concorrenti'].forEach(function(quale){
+    try {
+      var salvato = sessionStorage.getItem('geo-esito-' + quale);
+      if(salvato){ sessionStorage.removeItem('geo-esito-' + quale); mostraEsito(quale, 'ok', salvato); }
+    } catch(e){}
+  });
+  // Bottone lungo (~10 s): spinner, poi ricarica col messaggio o banner col motivo.
+  function rigenera(b, quale, url, attesa, riuscito, mancato){
+    var t = b.innerHTML, esito = document.getElementById('esito-' + quale);
     b.disabled = true; b.setAttribute('aria-busy', 'true');
-    b.innerHTML = '<span class="ai-spinner" aria-hidden="true"></span>Genero le proposte\\u2026';
+    b.innerHTML = '<span class="ai-spinner" aria-hidden="true"></span>' + attesa;
     if(esito) esito.hidden = true;
-    fetch(BASE + '/prompt/rigenera', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    function sblocca(){ b.disabled = false; b.removeAttribute('aria-busy'); b.innerHTML = t; }
+    fetch(BASE + url, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
       .then(leggi)
       .then(function(j){
-        var n = j.generate || 0;
-        var msg = '\\u2713 ' + n + (n === 1 ? ' domanda generata' : ' domande generate') + ': sono da approvare prima del giro.';
-        try { sessionStorage.setItem('geo-esito-domande', msg); } catch(e){}
+        // zero risultati non è un errore ma non è un successo: si dice perché
+        if(j.esito === 'nessuno'){ mostraEsito(quale, 'avviso', mancato + ': ' + (j.motivo || 'nessun motivo') + '.'); sblocca(); return; }
+        try { sessionStorage.setItem('geo-esito-' + quale, riuscito(j)); } catch(e){}
         location.reload();
       })
-      .catch(function(e){
-        mostraEsito('err', 'Nessuna domanda generata: ' + e.message + '.');
-        b.disabled = false; b.removeAttribute('aria-busy'); b.innerHTML = t;
-      });
+      .catch(function(e){ mostraEsito(quale, 'err', mancato + ': ' + e.message + '.'); sblocca(); });
+  }
+  function generaProposte(b){
+    rigenera(b, 'domande', '/prompt/rigenera', 'Genero le proposte\\u2026', function(j){
+      var n = j.generate || 0;
+      return '\\u2713 ' + n + (n === 1 ? ' domanda generata' : ' domande generate') + ': sono da approvare prima del giro.';
+    }, 'Nessuna domanda generata');
+  }
+  function rigeneraConcorrenti(b){
+    rigenera(b, 'concorrenti', '/competitor/rigenera', 'Cerco i concorrenti\\u2026', function(j){
+      var n = (j.nuovi || []).length;
+      return '\\u2713 ' + n + (n === 1 ? ' concorrente proposto: ' : ' concorrenti proposti: ') + (j.nuovi || []).join(', ') + '.';
+    }, 'Nessun concorrente nuovo');
   }
   document.querySelectorAll('.ai-toggle[data-imp]').forEach(function(b){
     b.addEventListener('click', function(){ manda(BASE + '/impostazioni', {campo: b.dataset.imp, valore: !b.classList.contains('on')}); });
@@ -770,7 +787,7 @@ def admin_monitoraggio_progetto(project: dict, cliente: dict, imp: dict, dati: d
   }); });
   document.querySelectorAll('[data-rigenera]').forEach(function(b){ b.addEventListener('click', function(){
     if(b.dataset.rigenera === 'prompt') generaProposte(b);
-    else manda(BASE + '/competitor/rigenera', {}, b);
+    else rigeneraConcorrenti(b);
   }); });
   function mostra(id, campo){ var f = document.getElementById(id); f.hidden = !f.hidden; if(!f.hidden) document.getElementById(campo).focus(); }
   var ap = document.querySelector('[data-aggiungi-prompt]'); if(ap) ap.addEventListener('click', function(){ mostra('nuovo-prompt', 'np-argomento'); });

@@ -576,27 +576,11 @@ def scopri_concorrenti(project_id: str, dominio_progetto: str,
 
     Torna i domini proposti in questo giro (solo i nuovi).
     """
-    proprio = (dominio_progetto or "").lower().replace("www.", "")
     # anche gli esclusi: sono una decisione già presa, non si ridiscute
     gia_noti = {c["domain"].lower()
                 for c in _sb_ai_concorrenti(project_id, solo_attivi=False)}
-
-    risposte_per_dominio: dict = {}
-    for c in _sb_ai_citazioni(project_id, giorni=giorni):
-        if c.get("is_target"):
-            continue
-        d = (c.get("cited_domain") or "").lower()
-        run = c.get("prompt_run_id")
-        if not d or not run:
-            continue
-        if d == proprio or d.endswith("." + proprio):
-            continue
-        if any(x in d for x in _CONTENITORI) or any(x in d for x in _ELENCHI):
-            continue
-        risposte_per_dominio.setdefault(d, set()).add(run)
-
-    classifica_domini = sorted(risposte_per_dominio.items(),
-                               key=lambda kv: -len(kv[1]))
+    classifica_domini = _domini_ricorrenti(_sb_ai_citazioni(project_id, giorni=giorni),
+                                           dominio_progetto)
     gia_proposti = len([c for c in _sb_ai_concorrenti(project_id)
                         if c.get("source") == "ai_suggested"])
     proposti = []
@@ -610,6 +594,72 @@ def scopri_concorrenti(project_id: str, dominio_progetto: str,
         if _sb_ai_concorrente_aggiungi(project_id, d, "ai_suggested"):
             proposti.append(d)
     return proposti
+
+
+def _domini_ricorrenti(citazioni: list, dominio_progetto: str) -> list:
+    """I domini citati, ognuno con l'insieme delle risposte DIVERSE che lo
+    citano, dal più ricorrente. Fuori il sito del cliente, i contenitori
+    (social, motori, marketplace) e gli elenchi: non sono concorrenti."""
+    proprio = (dominio_progetto or "").lower().replace("www.", "")
+    risposte_per_dominio: dict = {}
+    for c in citazioni:
+        if c.get("is_target"):
+            continue
+        d = (c.get("cited_domain") or "").lower()
+        run = c.get("prompt_run_id")
+        if not d or not run:
+            continue
+        if d == proprio or d.endswith("." + proprio):
+            continue
+        if any(x in d for x in _CONTENITORI) or any(x in d for x in _ELENCHI):
+            continue
+        risposte_per_dominio.setdefault(d, set()).add(run)
+    return sorted(risposte_per_dominio.items(), key=lambda kv: -len(kv[1]))
+
+
+def perche_nessun_concorrente(project_id: str, dominio_progetto: str,
+                              giorni: int = 30) -> str:
+    """Perché «Rigenera suggerimenti» non ha proposto nessun concorrente nuovo.
+
+    ⚠️ Il 14/10 il bottone rispondeva `{"esito":"ok","nuovi":[]}` e la pagina
+    si ricaricava uguale: sembrava rotto, come «Genera proposte» il 05/10. Su
+    verticalai.it non c'era nessun giro (le dieci domande erano da approvare),
+    e in tutto ottobre i giri degli altri progetti erano falliti per il credito
+    OpenAI esaurito. Zero concorrenti può essere la risposta giusta, ma va
+    detto il perché. Stesso ordine dei controlli di `scopri_concorrenti`."""
+    esecuzioni = _sb_ai_esecuzioni(project_id, giorni=giorni)
+    if not esecuzioni:
+        da_approvare = [d for d in _sb_ai_domande(project_id) if d.get("approved") is False]
+        if da_approvare:
+            return (f"non c'è ancora nessun giro: le {len(da_approvare)} domande sono da "
+                    "approvare. I concorrenti si propongono dai siti citati nelle risposte "
+                    "del primo giro")
+        return (f"nessun giro negli ultimi {giorni} giorni: i concorrenti si propongono "
+                "dai siti citati nelle risposte")
+    riuscite = [e for e in esecuzioni if e.get("status") == "completed"]
+    if not riuscite:
+        errore = next((e.get("error") or "" for e in esecuzioni if e.get("error")), "")
+        perche = ("credito esaurito sul provider, va ricaricato"
+                  if re.search(r"insufficient_quota|no credits|credit balance", errore, re.I)
+                  else (errore[:100] or "motivo non registrato"))
+        return (f"le {len(esecuzioni)} interrogazioni degli ultimi {giorni} giorni sono "
+                f"tutte fallite, quindi non ci sono risposte da leggere (ultimo errore: "
+                f"{perche})")
+    ricorrenti = _domini_ricorrenti(_sb_ai_citazioni(project_id, giorni=giorni),
+                                    dominio_progetto)
+    if not ricorrenti:
+        return (f"nelle {len(riuscite)} risposte degli ultimi {giorni} giorni non è citato "
+                "nessun sito che possa essere un concorrente")
+    if len(ricorrenti[0][1]) < _SOGLIA_RISPOSTE:
+        d, risposte = ricorrenti[0]
+        return (f"nessun sito ricorre in almeno {_SOGLIA_RISPOSTE} risposte diverse: il più "
+                f"citato, {d}, compare in {len(risposte)}")
+    gia_proposti = len([c for c in _sb_ai_concorrenti(project_id)
+                        if c.get("source") == "ai_suggested"])
+    if gia_proposti >= _MAX_PROPOSTI:
+        return (f"l'elenco ha già {gia_proposti} concorrenti proposti dal motore, il "
+                "massimo: togline uno per far posto a un altro")
+    return "i siti che ricorrono nelle risposte sono già in elenco, o sono stati esclusi"
 
 
 def riclassifica_citazioni(project_id: str, dominio_progetto: str,
