@@ -12,70 +12,114 @@ def ck(cid, stato="ok", peso=3):
     return {"id": cid, "status": stato, "weight": peso}
 
 
-_B1 = [("crawl.ai", 12), ("crawl.robots", 2), ("crawl.sitemap", 3), ("crawl.llms", 1)]
+_B1 = [("crawl.ai", 20), ("crawl.robots", 5), ("crawl.sitemap", 5), ("crawl.llms", 10),
+       ("crawl.llms_full", 6)]
 _B2 = [("crawl.https", 3), ("sd.present", 18), ("sd.valid", 4), ("sd.highvalue", 6),
        ("sd.completeness", 4), ("sd.sameas", 3), ("meta.og", 3), ("meta.canonical", 2),
        ("meta.lang", 2), ("meta.twitter", 1), ("sem.html", 3), ("trust.social", 3)]
 _B3 = [("content.h1", 6), ("content.len", 5), ("content.q", 4), ("content.struct", 4),
-       ("content.hier", 3), ("content.tldr", 3), ("content.fresh", 2), ("content.alt", 2),
+       ("content.hier", 3), ("content.tldr", 6), ("content.fresh", 2), ("content.alt", 2),
        ("meta.description", 5), ("meta.title", 4), ("page.noindex", 6),
        ("page.status", 4), ("render.parity", 2), ("trust.contact", 4), ("trust.author", 2)]
 
 
-class LaFormulaDellaSpecifica(unittest.TestCase):
+def _sito_ok(**diversi):
+    return [ck(i, diversi.get(i, "ok"), p) for i, p in _B1]
 
-    def test_il_caso_di_collaudo_del_documento_da_80(self):
-        """⚠️ È il numero scritto nella specifica: sito che blocca i crawler AI
-        e perfetto in tutto il resto. Prima della revisione prendeva 98."""
-        sito = [ck("crawl.ai", "fail", 12)] + [ck(i, "ok", p) for i, p in _B1[1:]]
-        pag = [ck(i, "ok", p) for i, p in _B2 + _B3]
-        self.assertEqual(bp.complessivo(sito, pag), 80)
+
+def _pagina_ok(**diversi):
+    return [ck(i, diversi.get(i, "ok"), p) for i, p in _B2 + _B3]
+
+
+class LaFormula(unittest.TestCase):
+    """Quote 40/45/15 e tetto senza requisiti per le AI (revisione del 16/10/2026)."""
 
     def test_le_quote_sono_quelle_concordate(self):
-        self.assertEqual(bp.QUOTA, {1: 0.30, 2: 0.52, 3: 0.18})
+        self.assertEqual(bp.QUOTA, {1: 0.40, 2: 0.45, 3: 0.15})
         self.assertAlmostEqual(sum(bp.QUOTA.values()), 1.0)
 
     def test_tutto_perfetto_fa_cento(self):
-        sito = [ck(i, "ok", p) for i, p in _B1]
-        pag = [ck(i, "ok", p) for i, p in _B2 + _B3]
-        self.assertEqual(bp.complessivo(sito, pag), 100)
+        self.assertEqual(bp.complessivo(_sito_ok(), _pagina_ok()), 100)
 
-    def test_il_massimo_col_blocco_1_azzerato_e_settanta(self):
-        """⚠️ Non c'è un tetto scritto da nessuna parte: esce dalla formula.
-        Se qualcuno aggiungesse un cap esplicito sarebbe la stessa regola in
-        due posti, e due regole uguali divergono al primo cambio."""
+    def test_il_tetto_e_sotto_la_sufficienza(self):
+        self.assertEqual(bp.TETTO_SENZA_REQUISITI, 59)
+
+    def test_senza_llms_txt_niente_sufficienza(self):
+        """⚠️ Il caso del task: perfetto in tutto il resto, ma senza llms.txt.
+        Senza tetto farebbe 91; prima della revisione faceva 99."""
+        sito = _sito_ok(**{"crawl.llms": "fail"})
+        self.assertEqual(bp.complessivo(sito, _pagina_ok()), 59)
+        self.assertEqual(bp.requisiti_mancanti(sito, _pagina_ok()), ["crawl.llms"])
+
+    def test_ogni_requisito_di_sito_fa_scattare_il_tetto(self):
+        for cid in bp.REQUISITI_AI:
+            for stato in ("warn", "fail"):
+                sito = _sito_ok(**{cid: stato})
+                self.assertLessEqual(bp.complessivo(sito, _pagina_ok()), 59, (cid, stato))
+
+    def test_crawler_ai_bloccati_niente_sufficienza(self):
+        sito = _sito_ok(**{"crawl.ai": "fail"})
+        self.assertEqual(bp.complessivo(sito, _pagina_ok()), 59)
+
+    def test_un_unknown_non_fa_scattare_il_tetto(self):
+        """Non aver potuto leggere robots.txt è un limite della misura."""
+        sito = _sito_ok(**{"crawl.robots": "unknown"})
+        self.assertEqual(bp.complessivo(sito, _pagina_ok()), 100)
+
+    def test_un_punteggio_gia_basso_non_sale_al_tetto(self):
         sito = [ck(i, "fail", p) for i, p in _B1]
-        pag = [ck(i, "ok", p) for i, p in _B2 + _B3]
-        self.assertEqual(bp.complessivo(sito, pag), 70)
+        pag = [ck(i, "fail", p) for i, p in _B2 + _B3]
+        self.assertEqual(bp.complessivo(sito, pag), 0)
+
+    def test_json_ld_assente_sulla_maggioranza_delle_pagine(self):
+        senza = _pagina_ok(**{"sd.present": "fail"})
+        con = _pagina_ok()
+        self.assertEqual(bp.complessivo(_sito_ok(), senza + senza + con), 59)
+        self.assertIn("sd.present", bp.requisiti_mancanti(_sito_ok(), senza + senza + con))
+        # metà esatta: non è la maggioranza
+        self.assertGreater(bp.complessivo(_sito_ok(), senza + con), 59)
+
+    def test_sistemato_il_requisito_il_tetto_sparisce(self):
+        prima = bp.complessivo(_sito_ok(**{"crawl.llms_full": "fail"}), _pagina_ok())
+        dopo = bp.complessivo(_sito_ok(), _pagina_ok())
+        self.assertEqual((prima, dopo), (59, 100))
 
     def test_i_check_di_sito_non_si_diluiscono_piu_con_le_pagine(self):
-        """⚠️ Il difetto che la revisione esiste per correggere: prima il peso
-        dei check di sito si schiacciava al crescere delle pagine analizzate."""
-        sito = [ck("crawl.ai", "fail", 12)] + [ck(i, "ok", p) for i, p in _B1[1:]]
-        una = bp.complessivo(sito, [ck(i, "ok", p) for i, p in _B2 + _B3])
-        trenta = bp.complessivo(sito, [ck(i, "ok", p) for i, p in _B2 + _B3] * 30)
+        """⚠️ Il difetto che la revisione a blocchi esiste per correggere:
+        prima il peso dei check di sito si schiacciava al crescere delle pagine."""
+        sito = _sito_ok() + [ck("crawl.conflict", "fail", 4)]
+        una = bp.complessivo(sito, _pagina_ok())
+        trenta = bp.complessivo(sito, _pagina_ok() * 30)
         self.assertEqual(una, trenta)
 
     def test_un_blocco_senza_dati_non_conta_come_zero(self):
         """⚠️ Un sito di cui non si è potuta leggere nessuna pagina non deve
         prendere 82: sarebbe un voto su un limite del crawler, non sul sito."""
-        sito = [ck(i, "ok", p) for i, p in _B1] + [ck("crawl.https", "ok", 3)]
+        sito = _sito_ok() + [ck("crawl.https", "ok", 3)]
         self.assertEqual(bp.complessivo(sito, []), 100)
 
     def test_senza_niente_di_misurabile_e_zero(self):
         self.assertEqual(bp.complessivo([], []), 0)
-        self.assertEqual(bp.complessivo([ck("crawl.ai", "unknown", 12)], []), 0)
+        self.assertEqual(bp.complessivo([ck("crawl.ai", "unknown", 20)], []), 0)
 
     def test_gli_unknown_restano_fuori_dal_denominatore(self):
-        soli_ok = bp.per_blocco([ck("crawl.ai", "ok", 12)], [])[1]["punteggio"]
-        con_unk = bp.per_blocco([ck("crawl.ai", "ok", 12),
-                                 ck("crawl.llms", "unknown", 1)], [])[1]["punteggio"]
+        soli_ok = bp.per_blocco([ck("crawl.ai", "ok", 20)], [])[1]["punteggio"]
+        con_unk = bp.per_blocco([ck("crawl.ai", "ok", 20),
+                                 ck("crawl.llms", "unknown", 10)], [])[1]["punteggio"]
         self.assertEqual(soli_ok, con_unk)
 
     def test_geo_audit_usa_la_formula_nuova(self):
-        sito = [ck("crawl.ai", "fail", 12)] + [ck(i, "ok", p) for i, p in _B1[1:]]
-        pag = [ck(i, "ok", p) for i, p in _B2 + _B3]
-        self.assertEqual(g.score_complessivo(sito, pag), 80)
+        sito = _sito_ok(**{"crawl.ai": "fail"})
+        self.assertEqual(g.score_complessivo(sito, _pagina_ok()), 59)
+        self.assertEqual(g.score_complessivo(_sito_ok(), _pagina_ok()), 100)
+
+    def test_i_pesi_dei_test_sono_quelli_del_motore(self):
+        """I numeri qui sopra valgono solo se i pesi sono quelli veri."""
+        s = g.Site(base_url="https://esempio.it", https=True)
+        g.build_site_checks(s)
+        veri = {c.id: c.weight for c in s.site_checks}
+        for cid, peso in _B1:
+            self.assertEqual(veri[cid], peso, cid)
 
 
 class OgniCheckHaUnBlocco(unittest.TestCase):

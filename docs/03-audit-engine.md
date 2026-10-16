@@ -133,14 +133,19 @@ Da `build_site_checks()` ([geo_audit.py:866-884](../geo_audit.py#L866-L884)).
 
 | ID | Titolo | Area | Peso | Severità | Condizione OK |
 |---|---|---|---:|---|---|
-| `crawl.ai` | Accesso crawler AI (robots.txt) | Rendering & accesso | **12** | `critical` | Nessun bot AI bloccato |
+| `crawl.ai` | Accesso crawler AI (robots.txt) | Rendering & accesso | **20** | `critical` | Nessun bot AI bloccato |
+| `crawl.llms` | llms.txt | Rendering & accesso | **10** | `critical` | `/llms.txt` → 200 con un file di testo, non una pagina HTML |
+| `crawl.llms_full` | llms-full.txt | Rendering & accesso | 6 | `high` | `/llms-full.txt` → 200 con un file di testo |
+| `crawl.robots` | robots.txt | Rendering & accesso | 5 | `high` | `/robots.txt` → 200 |
+| `crawl.sitemap` | sitemap.xml | Rendering & accesso | 5 | `high` | `/sitemap.xml` → 200 |
 | `crawl.https` | HTTPS | Rendering & accesso | 3 | `high` | Schema `https` |
-| `crawl.sitemap` | sitemap.xml | Rendering & accesso | 3 | `medium` | `/sitemap.xml` → 200 |
-| `crawl.robots` | robots.txt | Rendering & accesso | 2 | `low` | `/robots.txt` → 200 |
-| `crawl.llms` | llms.txt | Rendering & accesso | 1 | `info` | `/llms.txt` → 200 (opzionale) |
 
-`crawl.ai` è **il check più pesante e l'unico `critical`** del catalogo, e a
-ragione: se `robots.txt` blocca GPTBot, tutto il resto è irrilevante. I bot
+Pesi e stati sono quelli del motore 1.5.0 (16/10/2026). Se un file **non si è
+potuto leggere** (errore di rete, 5xx, 401/403/429 al nostro User-Agent) il check
+esce `unknown`, non `fail`: un nostro limite non è un difetto del sito
+(`risposta_misurabile`).
+
+`crawl.ai` è **il check più pesante** del catalogo, e a ragione: se `robots.txt` blocca GPTBot, tutto il resto è irrilevante. I bot
 monitorati ([geo_audit.py:47](../geo_audit.py#L47)):
 
 ```
@@ -271,25 +276,30 @@ Da `checks_eeat()` ([geo_audit.py:349-371](../geo_audit.py#L349-L371)).
 
 ### Formula
 
-[geo_audit.py:413-418](../geo_audit.py#L413-L418):
+La logica sta in `blocchi_punteggio.py`. Dentro ogni blocco è una media pesata:
 
 ```python
 frac = {OK: 1.0, WARN: 0.5, FAIL: 0.0}
-score = round(100 * Σ(weight × frac[status]) / Σ(weight))
+blocco = round(100 * Σ(weight × frac[status]) / Σ(weight))
 ```
 
-Media pesata. **I check `unknown` sono esclusi da numeratore e denominatore**: non
-penalizzano e non premiano.
+**I check `unknown` sono esclusi da numeratore e denominatore**: non penalizzano e
+non premiano.
 
-Il punteggio complessivo si calcola su `site_checks + tutti i check di tutte le
-pagine` concatenati ([geo_audit.py:918](../geo_audit.py#L918)).
+I blocchi hanno una quota fissa: **40%** requisiti tecnici di base (file per le AI,
+robots, sitemap), **45%** ottimizzazione tecnica (dati strutturati, meta, HTTPS),
+**15%** contenuto. Un blocco senza niente di misurabile esce dal conto e la sua
+quota si ridistribuisce.
 
-> **Conseguenza da conoscere:** più pagine si analizzano, più i 5 check di sito si
-> diluiscono. Con 6 pagine, `crawl.ai` (peso 12) pesa ~12 su un denominatore di
-> ~500. Un sito che blocca GPTBot può quindi comunque ottenere un punteggio alto.
-> Il report lo evidenzia nella sezione criticità, ma il **numero** non lo riflette
-> in proporzione alla gravità. Da valutare in un futuro rework dello scoring
-> ([doc 10](10-stato-e-debito-tecnico.md#lo-scoring-diluisce-i-check-di-sito)).
+**Tetto (dal 16/10/2026).** Se manca anche uno solo dei requisiti per le AI, il
+punteggio non supera **59**, cioè niente sufficienza. I requisiti sono
+`REQUISITI_AI` (crawler AI non bloccati, robots.txt, sitemap.xml, llms.txt,
+llms-full.txt) più il JSON-LD, che manca se manca su più di metà delle pagine
+lette. Un `unknown` non fa scattare il tetto. Appena il requisito c'è, il tetto
+sparisce e il punteggio fa il salto: è voluto.
+
+I punteggi già salvati non si ricalcolano: cambiano al prossimo audit, col motore
+1.5.0.
 
 ### Bande di punteggio
 
