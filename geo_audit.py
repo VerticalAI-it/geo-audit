@@ -36,7 +36,7 @@ import presenza_offsite
 from bs4 import BeautifulSoup
 
 # ============================================================ CONFIG
-ENGINE_VERSION = "1.4.0"
+ENGINE_VERSION = "1.5.0"
 
 # ⚠️ Un posto solo. Il prodotto ha quindici <head> diversi e nessuno condiviso:
 # scrivere i link a mano in ognuno vuol dire che il sedicesimo nascera' senza
@@ -213,7 +213,11 @@ def get_page(url: str, render: bool):
 @dataclass
 class Site:
     base_url: str; https: bool; robots_found: bool = False; sitemap_found: bool = False
-    llms_found: bool = False; ai_bots_blocked: list = field(default_factory=list)
+    llms_found: bool = False; llms_full_found: bool = False
+    ai_bots_blocked: list = field(default_factory=list)
+    # I file di sito che non si sono potuti leggere ("robots", "sitemap",
+    # "llms", "llms_full"): il loro check esce `unknown`, non «assente».
+    non_misurati: set = field(default_factory=set)
     sitemap_urls: list = field(default_factory=list); site_checks: list = field(default_factory=list)
 
 def parse_robots_ai(body: str) -> list:
@@ -251,10 +255,40 @@ def build_site(base_url: str) -> Site:
     s.robots_found = robots.status == 200
     if s.robots_found:
         s.ai_bots_blocked = parse_robots_ai(robots.html)
-    s.sitemap_found = fetch_static(root + "/sitemap.xml").status == 200
-    s.llms_found = fetch_static(root + "/llms.txt").status == 200
+    sitemap = fetch_static(root + "/sitemap.xml")
+    s.sitemap_found = sitemap.status == 200
+    llms = fetch_static(root + "/llms.txt")
+    s.llms_found = file_testo_presente(llms)
+    llms_full = fetch_static(root + "/llms-full.txt")
+    s.llms_full_found = file_testo_presente(llms_full)
+    for nome, r in (("robots", robots), ("sitemap", sitemap), ("llms", llms), ("llms_full", llms_full)):
+        if not risposta_misurabile(r):
+            s.non_misurati.add(nome)
     s.sitemap_urls = fetch_sitemap_urls(root)
     return s
+
+def risposta_misurabile(r) -> bool:
+    """La risposta dice qualcosa sul file, o solo sul nostro tentativo?
+
+    ⚠️ Un errore di rete, un 5xx o un blocco al nostro User-Agent (401, 403,
+    429) non dicono che il file manca. Dal 16/10/2026 un file mancante toglie
+    la sufficienza: scambiare un timeout per un'assenza punirebbe il sito per
+    un problema nostro.
+    """
+    return r.status is not None and r.status < 500 and r.status not in (401, 403, 429)
+
+def file_testo_presente(r) -> bool:
+    """Un file per le AI (llms.txt, llms-full.txt) c'è davvero.
+
+    ⚠️ Lo stato 200 non basta: molti siti rispondono 200 con la pagina HTML
+    del tema a qualunque indirizzo, e lo faceva anche il plugin con
+    llms-full.txt spento. Ora che il file pesa sul punteggio, una pagina HTML
+    scambiata per llms.txt regalerebbe la sufficienza a chi non ce l'ha.
+    """
+    if r.status != 200:
+        return False
+    corpo = (r.html or "").lstrip()[:200].lower()
+    return bool(corpo) and not corpo.startswith(("<!doctype", "<html", "<head", "<body"))
 
 # ============================================================ URL FILTERING
 def is_page_url(u: str) -> bool:
@@ -300,6 +334,14 @@ def jsonld(soup):
 # nel testo non e' un cambio di significato, cambiare la soglia si'. Se questa
 # mappa diventa «tutti all'ultima versione» smette di servire a qualcosa.
 CHECK_VERSIONE = {
+    # 1.5.0 — i requisiti per le AI pesano di più, e mancarne uno toglie la
+    # sufficienza (tetto in `blocchi_punteggio`). Decisione del 16 ottobre 2026.
+    "crawl.ai": "1.5.0",          # peso 12 -> 20
+    "crawl.robots": "1.5.0",      # assente: da warn a fail, peso 2 -> 5
+    "crawl.sitemap": "1.5.0",     # assente: da warn a fail, peso 3 -> 5
+    "crawl.llms": "1.5.0",        # non più «opzionale»: fail, peso 1 -> 10, e un HTML con 200 non vale
+    "crawl.llms_full": "1.5.0",   # nuovo
+    "content.tldr": "1.5.0",      # peso 3 -> 6
     # 1.4.0 — revisione del punteggio (tre blocchi) del 24 settembre 2026
     "page.noindex": "1.4.0",      # da unknown a fail: ora penalizza
     "render.parity": "1.4.0",     # peso 8 -> 2, e la stima non fallisce mai
@@ -429,7 +471,7 @@ def checks_content(soup, checks):
        recommendation="" if (lists + tables) else "Usa liste e tabelle (formati ripresi dalle AI).")
     tldr = bool(re.search(r"(in breve|in sintesi|tl;dr|riassunto|punti chiave)", text[:600].lower()))
     ck(checks, id="content.tldr", category="Contenuti & answerability", title="Riassunto iniziale (TL;DR)",
-       status=OK if tldr else WARN, weight=3, severity="low", detail="Presente." if tldr else "Assente.",
+       status=OK if tldr else WARN, weight=6, severity="medium", detail="Presente." if tldr else "Assente.",
        recommendation="" if tldr else "Apri con un 'In breve' di 2-3 frasi.")
     fresh = bool(soup.find("time")) or bool(soup.find("meta", attrs={"property": "article:modified_time"})) \
             or bool(re.search(r"(aggiornat|ultimo aggiornamento|updated)", text.lower()))
@@ -1495,6 +1537,18 @@ def checks_offsite(site, offsite=None):
        severity="medium", detail=d2, recommendation=r2)
 
 
+def _esito_file(site, nome, presente):
+    if presente:
+        return OK
+    return UNK if nome in site.non_misurati else FAIL
+
+
+def _dettaglio_file(site, nome, presente):
+    if presente:
+        return "Presente."
+    return "Non leggibile: il server non ha risposto o ha bloccato la richiesta." if nome in site.non_misurati else "Assente."
+
+
 def build_site_checks(site, soup_home=None, pagine_scoperte=None, cwv=None,
                      offsite=None):
     """Il catalogo completo dei check di sito.
@@ -1506,19 +1560,25 @@ def build_site_checks(site, soup_home=None, pagine_scoperte=None, cwv=None,
     """
     site.site_checks = []
     ck(site.site_checks, id="crawl.ai", category="Rendering & accesso", title="Accesso crawler AI (robots.txt)",
-       status=FAIL if site.ai_bots_blocked else OK, weight=12, severity="critical",
-       detail=("Bloccati: " + ", ".join(site.ai_bots_blocked)) if site.ai_bots_blocked else "Nessun blocco esplicito ai crawler AI.",
+       status=(FAIL if site.ai_bots_blocked else UNK if "robots" in site.non_misurati else OK),
+       weight=20, severity="critical",
+       detail=("Bloccati: " + ", ".join(site.ai_bots_blocked)) if site.ai_bots_blocked else _dettaglio_file(site, "robots", False) if "robots" in site.non_misurati else "Nessun blocco esplicito ai crawler AI.",
        recommendation="Sblocca i crawler AI in robots.txt." if site.ai_bots_blocked else "")
     ck(site.site_checks, id="crawl.robots", category="Rendering & accesso", title="robots.txt",
-       status=OK if site.robots_found else WARN, weight=2, severity="low", detail="Presente." if site.robots_found else "Assente.",
+       status=_esito_file(site, "robots", site.robots_found), weight=5, severity="high", detail=_dettaglio_file(site, "robots", site.robots_found),
        recommendation="" if site.robots_found else "Aggiungi un robots.txt.")
     ck(site.site_checks, id="crawl.sitemap", category="Rendering & accesso", title="sitemap.xml",
-       status=OK if site.sitemap_found else WARN, weight=3, detail="Presente." if site.sitemap_found else "Assente.",
+       status=_esito_file(site, "sitemap", site.sitemap_found), weight=5, severity="high",
+       detail=_dettaglio_file(site, "sitemap", site.sitemap_found),
        recommendation="" if site.sitemap_found else "Pubblica una sitemap.xml.")
     ck(site.site_checks, id="crawl.llms", category="Rendering & accesso", title="llms.txt",
-       status=OK if site.llms_found else WARN, weight=1, severity="info",
-       detail="Presente." if site.llms_found else "Assente (opzionale).",
-       recommendation="" if site.llms_found else "Valuta un llms.txt.")
+       status=_esito_file(site, "llms", site.llms_found), weight=10, severity="critical",
+       detail=_dettaglio_file(site, "llms", site.llms_found),
+       recommendation="" if site.llms_found else "Pubblica un llms.txt: è la mappa del sito pensata per gli assistenti AI.")
+    ck(site.site_checks, id="crawl.llms_full", category="Rendering & accesso", title="llms-full.txt",
+       status=_esito_file(site, "llms_full", site.llms_full_found), weight=6, severity="high",
+       detail=_dettaglio_file(site, "llms_full", site.llms_full_found),
+       recommendation="" if site.llms_full_found else "Pubblica un llms-full.txt con il testo completo delle pagine principali.")
     ck(site.site_checks, id="crawl.https", category="Rendering & accesso", title="HTTPS",
        status=OK if site.https else FAIL, weight=3, severity="high",
        detail="Attivo." if site.https else "Assente.", recommendation="" if site.https else "Abilita HTTPS.")

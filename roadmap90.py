@@ -27,7 +27,7 @@ from __future__ import annotations
 # meglio una collocazione approssimata che lasciarlo fuori dalla roadmap.
 _FASE = {
     # ── 1 · senza questo, il resto non viene letto ────────────────────────
-    "crawl.ai": 1, "crawl.robots": 1, "crawl.https": 1, "crawl.sitemap": 1,
+    "crawl.ai": 1, "crawl.llms": 1, "crawl.llms_full": 1, "crawl.robots": 1, "crawl.https": 1, "crawl.sitemap": 1,
     "crawl.conflict": 1, "crawl.coverage": 1, "render.parity": 1,
     "page.status": 1, "page.noindex": 1, "meta.canonical": 1,
     "meta.canonical.consistency": 1,
@@ -40,7 +40,7 @@ _FASE = {
 
     # ── 3 · rifinitura e misurazione ──────────────────────────────────────
     "sd.sameas": 3, "sd.person": 3, "schema.datemodified": 3, "faq.answerlen": 3,
-    "content.fresh": 3, "crawl.llms": 3, "meta.title": 3, "meta.description": 3,
+    "content.fresh": 3, "meta.title": 3, "meta.description": 3,
     "meta.og": 3, "meta.twitter": 3, "meta.lang": 3, "trust.social": 3,
     "sem.html": 3, "perf.lcp": 3, "perf.cls": 3,
 }

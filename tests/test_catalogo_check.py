@@ -175,7 +175,7 @@ class CatalogoDeiCheckDiSito(unittest.TestCase):
 
     ATTESI = {"entity.sameas.fonti", "entity.wikidata",
               "crawl.ai", "crawl.conflict", "crawl.coverage", "crawl.https",
-              "crawl.llms", "crawl.robots", "crawl.sitemap", "perf.cls", "perf.lcp"}
+              "crawl.llms", "crawl.llms_full", "crawl.robots", "crawl.sitemap", "perf.cls", "perf.lcp"}
 
     def _sito(self, **kw):
         s = g.Site(base_url="https://esempio.it", https=True)
@@ -195,12 +195,81 @@ class CatalogoDeiCheckDiSito(unittest.TestCase):
         self.assertIn("GPTBot", c.detail)
 
     def test_crawl_ai_e_il_check_piu_pesante(self):
-        """Il peso 12 e' quello che rende `crawl.ai` il controllo singolo piu'
+        """Il peso 20 e' quello che rende `crawl.ai` il controllo singolo piu'
         importante del catalogo di sito. Se cambia, cambia il significato del
         punteggio."""
-        c = next(x for x in self._sito().site_checks if x.id == "crawl.ai")
-        self.assertEqual(c.weight, 12)
+        sito = self._sito().site_checks
+        c = next(x for x in sito if x.id == "crawl.ai")
+        self.assertEqual(c.weight, 20)
         self.assertEqual(c.severity, "critical")
+        self.assertEqual(max(x.weight for x in sito), 20)
+
+    def test_i_file_per_le_ai_assenti_sono_da_sistemare(self):
+        """Dal 16/10/2026 llms.txt non e' piu' «opzionale»: senza, il sito non
+        e' pronto per le AI."""
+        sito = {c.id: c for c in self._sito().site_checks}
+        for cid in ("crawl.llms", "crawl.llms_full", "crawl.robots", "crawl.sitemap"):
+            self.assertEqual(sito[cid].status, g.FAIL, cid)
+        self.assertEqual(sito["crawl.llms"].weight, 10)
+        self.assertEqual(sito["crawl.llms"].severity, "critical")
+        presenti = {c.id: c for c in self._sito(llms_found=True, llms_full_found=True).site_checks}
+        self.assertEqual(presenti["crawl.llms"].status, g.OK)
+        self.assertEqual(presenti["crawl.llms_full"].status, g.OK)
+
+
+class FileNonLeggibili(unittest.TestCase):
+    """⚠️ Un timeout o un 403 al nostro bot non vuol dire «file assente»:
+    dal 16/10/2026 un'assenza toglie la sufficienza, un `unknown` no."""
+
+    def _r(self, stato):
+        return g.Fetched("https://esempio.it/x", stato, "https://esempio.it/x", "", False, 0)
+
+    def test_quali_risposte_dicono_qualcosa_sul_file(self):
+        for stato in (200, 404, 410):
+            self.assertTrue(g.risposta_misurabile(self._r(stato)), stato)
+        for stato in (None, 401, 403, 429, 500, 503):
+            self.assertFalse(g.risposta_misurabile(self._r(stato)), stato)
+
+    def test_i_file_non_letti_escono_unknown(self):
+        s = g.Site(base_url="https://esempio.it", https=True)
+        s.non_misurati = {"robots", "sitemap", "llms", "llms_full"}
+        g.build_site_checks(s)
+        stati = {c.id: c.status for c in s.site_checks}
+        for cid in ("crawl.ai", "crawl.robots", "crawl.sitemap", "crawl.llms", "crawl.llms_full"):
+            self.assertEqual(stati[cid], g.UNK, cid)
+
+    def test_build_site_distingue_assente_da_non_letto(self):
+        from unittest import mock
+        risposte = {"/robots.txt": 503, "/sitemap.xml": 404, "/llms.txt": None, "/llms-full.txt": 404}
+
+        def finto(url):
+            for fine, stato in risposte.items():
+                if url.endswith(fine):
+                    return g.Fetched(url, stato, url, "", False, 0)
+            return g.Fetched(url, 404, url, "", False, 0)
+        with mock.patch.object(g, "fetch_static", finto):
+            s = g.build_site("https://esempio.it")
+        self.assertEqual(s.non_misurati, {"robots", "llms"})
+
+
+class FileDiTestoPerLeAI(unittest.TestCase):
+    """⚠️ Un 200 con la pagina HTML del tema non e' un llms.txt."""
+
+    def _r(self, stato, corpo):
+        return g.Fetched("https://esempio.it/llms.txt", stato, "https://esempio.it/llms.txt",
+                         corpo, False, 0)
+
+    def test_un_file_di_testo_vale(self):
+        self.assertTrue(g.file_testo_presente(self._r(200, "# Esempio\n> Il sito di esempio")))
+
+    def test_una_pagina_html_con_200_non_vale(self):
+        self.assertFalse(g.file_testo_presente(self._r(200, "\n  <!DOCTYPE html><html><body>404</body></html>")))
+        self.assertFalse(g.file_testo_presente(self._r(200, "<html lang='it'>")))
+
+    def test_vuoto_o_errore_non_vale(self):
+        self.assertFalse(g.file_testo_presente(self._r(200, "   ")))
+        self.assertFalse(g.file_testo_presente(self._r(404, "# Esempio")))
+        self.assertFalse(g.file_testo_presente(self._r(None, "")))
 
 
 if __name__ == "__main__":
