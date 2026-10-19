@@ -1211,7 +1211,7 @@ def _admin_o_no(request: Request):
     return user, refreshed, None
 
 
-def _progetto_del_cliente(request: Request, project_id: str, come: str = "html"):
+def _progetto_del_cliente(request: Request, project_id: str, come: str = "html", lettura_team: bool = False):
     """(utente, progetto, refreshed, stop) per una route che tocca un progetto.
 
     ⚠️ **La service role key bypassa le Row Level Security.** Ogni route che
@@ -1236,6 +1236,11 @@ def _progetto_del_cliente(request: Request, project_id: str, come: str = "html")
 
     ⚠️ A un progetto di un altro si risponde **404, non 403**: un 403
     confermerebbe che quel progetto esiste.
+
+    `lettura_team=True` (Super User, GEO-40): il team apre anche i progetti dei
+    clienti, ma **solo in GET** e solo sulle route che lo chiedono. Chi chiama
+    capisce che e' la vista del team da `project["user_id"] != user["id"]`.
+    Le scritture restano del proprietario: al team rispondono 404 come a tutti.
     """
     user, refreshed = _current_user(request)
 
@@ -1249,7 +1254,8 @@ def _progetto_del_cliente(request: Request, project_id: str, come: str = "html")
         return None, None, refreshed, stop
 
     project = _sb_project_get(project_id)
-    if not project or project.get("user_id") != user["id"]:
+    team = bool(lettura_team and project and request.method == "GET" and _e_admin(user))
+    if not project or (project.get("user_id") != user["id"] and not team):
         if come == "json":
             stop = JSONResponse({"esito": "non_trovato"}, status_code=404)
         elif come == "muto":
@@ -2409,7 +2415,7 @@ def project_export_xlsx(project_id: str, request: Request, cosa: str = "criticit
     quella descrizione va aperta per vederla: un export serve a lavorarci fuori
     dal prodotto, e senza il rimedio è un elenco di problemi senza risposte.
     """
-    user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id, lettura_team=True)
     if stop is not None:
         return _apply_refresh(stop, refreshed)
 
@@ -3727,7 +3733,8 @@ def report(job_id: str, request: Request, token: str = ""):
     # Report associato a un account: richiede login come proprietario, niente più gate email
     if job.get("user_id"):
         user, refreshed = _current_user(request)
-        if not user or user["id"] != job["user_id"]:
+        # il team (Super User, GEO-40) legge anche i report dei clienti
+        if not user or (user["id"] != job["user_id"] and not _e_admin(user)):
             return RedirectResponse(f"/login?next=/r/{job_id}", status_code=303)
         resp = HTMLResponse(_inject_bar(job["html"], job_id, user.get("email", ""), dashboard_link=True))
         return _apply_refresh(resp, refreshed)
@@ -3919,11 +3926,27 @@ for _cat_key, _cat_label, _children in _TAB_CATEGORIES:
     _ALL_TAB_KEYS.extend([_cat_key] if _children is None else [k for k, _ in _children])
 
 
+def _fascia_vista_team(project: dict) -> str:
+    """La fascia rossa del Super User sul progetto di un cliente (GEO-40): di chi e', e che si guarda soltanto."""
+    cliente = _sb_auth_get_user(project.get("user_id") or "") or {}
+    email = geo_audit.esc(cliente.get("email") or "cliente")
+    return ('<div class="alert alert--danger" role="status" style="margin-bottom:18px"><div class="ic">!</div><div>'
+            f'<b>Vista del team, sola lettura.</b> Stai guardando il progetto di {email} come lo vede il cliente. '
+            'I pulsanti che modificano qualcosa qui non funzionano: le modifiche si fanno dal pannello. '
+            f'<a href="/admin/clienti/{geo_audit.esc(project.get("user_id") or "")}">\u2190 Torna alla scheda del cliente</a>'
+            '</div></div>')
+
+
 @app.get("/project/{project_id}", response_class=HTMLResponse)
 def project_detail(project_id: str, request: Request, tab: str = "overview", rerun_error: str = ""):
-    user, project, refreshed, stop = _progetto_del_cliente(request, project_id)
+    user, project, refreshed, stop = _progetto_del_cliente(request, project_id, lettura_team=True)
     if stop is not None:
         return _apply_refresh(stop, refreshed)
+    # Super User (GEO-40): sul progetto di un cliente il team vede quello che vede il cliente, piano compreso, in
+    # sola lettura; sui progetti suoi lavora senza limiti di piano.
+    vista_team = user["id"] != project.get("user_id")
+    if _e_admin(user) and not vista_team:
+        project = {**project, "plan": piani.PAID}
 
     valid_tabs = set(_ALL_TAB_KEYS)
     if tab not in valid_tabs:
@@ -3996,11 +4019,11 @@ def project_detail(project_id: str, request: Request, tab: str = "overview", rer
                     TEMA_PROFILO=_sb_user_theme(user) or "",
                     PROJECT_NAME=geo_audit.esc(project.get("name") or project.get("domain")),
                     PROJECT_DOMAIN=geo_audit.esc(project.get("domain") or ""),
-                    PROJECT_ACTIONS=_project_actions(project),
+                    PROJECT_ACTIONS="" if vista_team else _project_actions(project),
                     SIDEBAR=_sidebar(project, latest_light, aperte, tab, user.get("email", ""),
                                      e_admin=_e_admin(user)),
                     SUBTABS=_subtabs(project_id, tab, conteggi),
-                    TAB_BODY=body,
+                    TAB_BODY=(_fascia_vista_team(project) if vista_team else "") + body,
                     USER_EMAIL=json.dumps(user.get("email", "")))
     resp = HTMLResponse(html)
     return _apply_refresh(resp, refreshed)

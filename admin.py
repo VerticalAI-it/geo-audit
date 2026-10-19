@@ -1151,10 +1151,12 @@ def schermata_cliente(c: dict, accessi: list, note: list, audit: list,
                 f'<td>{_quando(a.get("created_at")) if a else "nessun audit"}</td>'
                 f'<td>{tracc}</td>'
                 f'<td>{_scelta_piano(p)}</td>'
-                f'<td><a class="activity-link" href="/admin/progetti/{p["id"]}/ai">⚙ Configura</a></td></tr>')
+                f'<td><a class="activity-link" href="/admin/progetti/{p["id"]}/ai">⚙ Configura</a></td>'
+                # Super User (GEO-40): il progetto come lo vede il cliente, in sola lettura
+                f'<td><a class="activity-link" href="/project/{p["id"]}">👁 Apri come cliente</a></td></tr>')
         blocco_progetti = ('<div class="tab-wrap" style="margin-bottom:22px">'
                            '<table class="tab"><thead><tr>'
-                           '<th>Sito</th><th>Punteggio</th><th>Ultimo audit</th><th>Tracking</th><th>Piano</th><th>AI Monitoring</th>'
+                           '<th>Sito</th><th>Punteggio</th><th>Ultimo audit</th><th>Tracking</th><th>Piano</th><th>AI Monitoring</th><th>Vista</th>'
                            f'</tr></thead><tbody>{"".join(righe)}</tbody></table></div>')
     else:
         blocco_progetti = ('<div class="vuoto" style="margin-bottom:22px">'
