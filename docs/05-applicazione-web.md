@@ -796,6 +796,24 @@ l'ultimo accesso: dire «mai entrato» a chi è entrato quaranta giorni fa
 significherebbe far passare «non lo sappiamo» per «non è successo», e su questa
 scheda si prendono decisioni commerciali.
 
+### Super User: il progetto come lo vede il cliente (GEO-40)
+
+Dalla tabella dei progetti della scheda cliente, **«Apri come cliente»** porta a
+`/project/{id}`: le stesse linguette che vede il cliente, col suo piano, e una
+fascia rossa «Vista del team, sola lettura» che riporta alla scheda. Vale anche
+per l'export Excel e per i report `/r/{job_id}` del cliente.
+
+La deroga sta nel guardiano: `_progetto_del_cliente(..., lettura_team=True)`
+lascia passare il team **solo in GET** e solo sulle route che la chiedono
+(`project_detail`, `project_export_xlsx`). Ogni scrittura (impostazioni,
+rifai l'audit, risolvi, archivia…) al team risponde 404 come a chiunque non
+sia il proprietario. `tests/test_super_user.py` pretende che `lettura_team`
+compaia solo su route GET.
+
+Sui **progetti del team** non valgono i limiti di piano: anche un progetto
+messo su `free` mostra tutto a chi è admin. Sui progetti dei clienti, invece,
+il team vede il piano del cliente: è quello che serve per capire cosa vede.
+
 ### Le altre azioni sbloccate
 
 | Azione | Dove | Cosa impedisce |
